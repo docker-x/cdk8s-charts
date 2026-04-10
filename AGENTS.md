@@ -58,7 +58,7 @@ npx cdk8s synth      # synthesize K8s manifests to dist/
 
 ## Skills
 
-Detailed step-by-step workflows live in `.devin/skills/`. **Use these instead of improvising.**
+Detailed step-by-step workflows live in `.agents/skills/`. **Use these instead of improvising.**
 
 | Skill | Trigger | What it does |
 |-------|---------|--------------|
@@ -76,7 +76,7 @@ Detailed step-by-step workflows live in `.devin/skills/`. **Use these instead of
 5. Add workspace entry to root `package.json` if needed.
 6. Update `DESIGN.md` with the new construct spec.
 
-Full guide: `.devin/skills/add-chart/SKILL.md`
+Full guide: `.agents/skills/add-chart/SKILL.md`
 
 ### Adding a new recipe (summary)
 
@@ -86,7 +86,7 @@ Full guide: `.devin/skills/add-chart/SKILL.md`
 4. Export from `src/index.ts`.
 5. Update `DESIGN.md`.
 
-Full guide: `.devin/skills/add-recipe/SKILL.md`
+Full guide: `.agents/skills/add-recipe/SKILL.md`
 
 ## Dependencies
 
