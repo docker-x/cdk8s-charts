@@ -156,7 +156,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
                 image: 'curlimages/curl:8.12.1',
                 command: ['sh', '-c'],
                 args: [
-                  `until curl -sf ${baseUrl}/health/liveliness; do echo "Waiting for LiteLLM..."; sleep 5; done; echo "LiteLLM is ready"`,
+                  `for i in $(seq 1 60); do if curl -sf ${baseUrl}/health/liveliness; then echo "LiteLLM is ready"; exit 0; fi; echo "Waiting for LiteLLM... ($i/60)"; sleep 5; done; echo "Timed out waiting for LiteLLM" >&2; exit 1`,
                 ],
               },
             ],

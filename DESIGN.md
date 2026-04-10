@@ -153,7 +153,7 @@ Bank templates live in `examples/coding-agent-memory/banks/`. They define:
 | Section | Purpose |
 |---------|---------|
 | `bank.retain_mission` | Instructions for LLM during fact extraction |
-| `bank.retain_extraction_mode` | `concise` (selective) or `verbose` (everything) |
+| `bank.retain_extraction_mode` | `concise`, `verbose`, `verbatim`, `chunks`, or `custom` |
 | `bank.entity_labels` | Structured classification with filterable tags |
 | `bank.disposition_*` | Personality traits (skepticism, literalism, empathy) |
 | `mental_models` | Named reflect queries that auto-refresh after consolidation |

@@ -52,17 +52,16 @@ packages/charts/<name>/
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "build": "tsc -b",
-    "lint": "tsc --noEmit"
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cdk8s-charts/utils": "*",
-    "cdk8s": "^2",
-    "constructs": "^10"
+    "@cdk8s-charts/utils": "*"
   },
   "devDependencies": {
     "typescript": "^5",
-    "@types/node": "^22"
+    "@types/node": "^22",
+    "tsdown": "^0.21"
   },
   "peerDependencies": {
     "cdk8s": "^2",
@@ -70,6 +69,10 @@ packages/charts/<name>/
   }
 }
 ```
+
+> **Note:** `main` and `types` point at source (`./src/index.ts`) for in-workspace
+> development via bun symlinks. For npm publishing, a `prepublishOnly` script
+> rewrites them to `./dist/index.mjs` and `./dist/index.d.mts` respectively.
 
 ### Step 5: Create types.ts
 
