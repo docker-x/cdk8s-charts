@@ -13,8 +13,10 @@ export function deepMerge<T extends Record<string, any>>(a: T, b: DeepPartial<T>
     const bVal = (b as Record<string, any>)[key];
     if (
       bVal !== undefined &&
+      bVal !== null &&
       typeof bVal === 'object' &&
       !Array.isArray(bVal) &&
+      out[key] !== null &&
       typeof out[key] === 'object' &&
       !Array.isArray(out[key])
     ) {

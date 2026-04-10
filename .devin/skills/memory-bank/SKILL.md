@@ -66,7 +66,7 @@ curl -X POST $BASE/v1/default/banks/$BANK/memories \
     "items": [{
       "content": "The project uses NX monorepo with cdk8s constructs for typed Helm chart deployment.",
       "document_id": "discovery_monorepo_structure",
-      "tags": ["type:context", "domain:infrastructure"]
+      "tags": ["type:discovery", "domain:infrastructure"]
     }],
     "async": true
   }'

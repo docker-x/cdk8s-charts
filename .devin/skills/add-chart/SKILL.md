@@ -168,6 +168,6 @@ npm run lint
 - [ ] `src/types.ts` created with Props, Exports, Values
 - [ ] `src/construct.ts` created extending HelmConstruct
 - [ ] `src/index.ts` exports all public types
-- [ ] `tsconfig.base.json` path alias added
+- [ ] Workspace entry added to root `package.json`
 - [ ] `README.md` with usage example
 - [ ] `npm run lint` passes

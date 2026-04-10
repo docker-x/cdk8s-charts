@@ -105,7 +105,7 @@
     },
     {
       "name": "prioritize-corrections",
-      "content": "User feedback tagged type:feedback carries the highest behavioral weight. Emphatic or repeated corrections must surface prominently during recall. A correction that appears across multiple sessions is a pattern — treat it as a hard rule, not a suggestion.",
+      "content": "User feedback tagged type:correction carries the highest behavioral weight. Emphatic or repeated corrections must surface prominently during recall. A correction that appears across multiple sessions is a pattern — treat it as a hard rule, not a suggestion.",
       "priority": 90,
       "is_active": true
     },

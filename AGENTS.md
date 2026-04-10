@@ -73,7 +73,7 @@ Detailed step-by-step workflows live in `.devin/skills/`. **Use these instead of
 2. Define `src/types.ts` with `Values`, `Props`, and `Exports` interfaces.
 3. Implement `src/construct.ts` extending `HelmConstruct<Values>`.
 4. Export from `src/index.ts`.
-5. Add path alias to `tsconfig.base.json`.
+5. Add workspace entry to root `package.json` if needed.
 6. Update `DESIGN.md` with the new construct spec.
 
 Full guide: `.devin/skills/add-chart/SKILL.md`
@@ -84,8 +84,7 @@ Full guide: `.devin/skills/add-chart/SKILL.md`
 2. Import chart constructs from `@cdk8s-charts/<chart>`.
 3. Compose them in a single construct with cross-wiring.
 4. Export from `src/index.ts`.
-5. Add path alias to `tsconfig.base.json`.
-6. Update `DESIGN.md`.
+5. Update `DESIGN.md`.
 
 Full guide: `.devin/skills/add-recipe/SKILL.md`
 

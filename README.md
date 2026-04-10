@@ -29,7 +29,7 @@ npx cdk8s synth
 
 ## Architecture
 
-```
+```text
 cdk8s-charts/
   packages/
     utils/                          # Shared types & base class
@@ -186,9 +186,8 @@ See the full guide in [`.devin/skills/add-chart/SKILL.md`](.devin/skills/add-cha
 2. Define `types.ts` with `Values`, `Props`, and `Exports` interfaces
 3. Implement `construct.ts` extending `HelmConstruct<Values>`
 4. Export everything from `src/index.ts`
-5. Add path alias to `tsconfig.base.json`
-6. Add workspace entry to root `package.json`
-7. Update [DESIGN.md](DESIGN.md) with the new construct spec
+5. Add workspace entry to root `package.json`
+6. Update [DESIGN.md](DESIGN.md) with the new construct spec
 
 ## License
 

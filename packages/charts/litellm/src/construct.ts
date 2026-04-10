@@ -9,7 +9,9 @@ export class Litellm extends HelmConstruct<LitellmValues> {
   constructor(scope: Construct, id: string, props: LitellmProps) {
     super(scope, id);
 
-    if (props.env && Object.keys(props.env).length > 0) {
+    const hasEnv = props.env && Object.keys(props.env).length > 0;
+
+    if (hasEnv) {
       new ApiObject(this, 'env', {
         apiVersion: 'v1',
         kind: 'Secret',
@@ -46,11 +48,12 @@ export class Litellm extends HelmConstruct<LitellmValues> {
 
     const computed: LitellmValues = {
       masterkey: props.masterKey,
-      environmentSecrets: props.env ? [`${id}-env`] : [],
+      environmentSecrets: hasEnv ? [`${id}-env`] : [],
       proxy_config: props.proxyConfig,
       postgresql: { enabled: true },
       redis: { enabled: true, architecture: 'standalone' },
-      ...(allVolumes.length > 0 ? { volumes: allVolumes, volumeMounts: allMounts } : {}),
+      ...(allVolumes.length > 0 ? { volumes: allVolumes } : {}),
+      ...(allMounts.length > 0 ? { volumeMounts: allMounts } : {}),
     };
 
     // Strip volumes/volumeMounts from overrides so deepMerge doesn't clobber
@@ -117,13 +120,19 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       });
       return [
         `echo "Provisioning key: ${vk.alias}"`,
-        `RESP=$(curl -sf -X POST ${baseUrl}/key/generate \\`,
+        `RESP=$(curl -s -w "\\n%{http_code}" -X POST ${baseUrl}/key/generate \\`,
         `  -H "Authorization: Bearer ${masterKey}" \\`,
         `  -H "Content-Type: application/json" \\`,
-        `  -d '${payload}' 2>&1) || true`,
-        `echo "Response: $RESP"`,
-        `if echo "$RESP" | grep -q "already exists"; then`,
+        `  -d '${payload}')`,
+        `HTTP_CODE=$(echo "$RESP" | tail -1)`,
+        `BODY=$(echo "$RESP" | sed '$d')`,
+        `echo "Response ($HTTP_CODE): $BODY"`,
+        `if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then`,
+        `  echo "Key ${vk.alias} provisioned successfully"`,
+        `elif echo "$BODY" | grep -q "already exists"; then`,
         `  echo "Key ${vk.alias} already exists — skipping"`,
+        `else`,
+        `  echo "ERROR: Failed to provision key ${vk.alias}" >&2; exit 1`,
         `fi`,
       ].join('\n');
     });

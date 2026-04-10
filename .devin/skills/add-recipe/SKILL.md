@@ -90,7 +90,7 @@ npm run lint
 - [ ] DESIGN.md updated with recipe spec
 - [ ] `src/construct.ts` composes charts with auto-wiring
 - [ ] `src/index.ts` exports construct and types
-- [ ] `tsconfig.base.json` path alias added
+- [ ] Workspace dependency added to root `package.json`
 - [ ] `README.md` with usage example
 - [ ] Example created in `examples/`
 - [ ] `npm run lint` passes

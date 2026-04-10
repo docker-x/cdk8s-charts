@@ -45,12 +45,15 @@ export class Hindsight extends HelmConstruct<HindsightValues> {
       }
     }
 
+    // Compute effective API port from overrides
+    const apiPort = props.values?.api?.service?.port ?? 8888;
+
     const computed: HindsightValues = {
       postgresql: { enabled: true },
       controlPlane: {
         enabled: true,
         env: {
-          HINDSIGHT_CP_DATAPLANE_API_URL: `http://${id}-api:8888`,
+          HINDSIGHT_CP_DATAPLANE_API_URL: `http://${id}-api:${apiPort}`,
         },
       },
       api: {

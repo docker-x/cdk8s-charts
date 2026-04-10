@@ -175,9 +175,8 @@ The `coding-agent.json` template is optimized for AI coding assistants:
 3. Define `Props` (what users configure) and `Exports` (what downstream consumers need)
 4. Implement `src/construct.ts` extending `HelmConstruct<Values>`
 5. Export from `src/index.ts`
-6. Add path alias to `tsconfig.base.json`
-7. Add workspace entry to root `package.json` if needed
-8. Update this document with the new construct spec
+6. Add workspace entry to root `package.json` if needed
+7. Update this document with the new construct spec
 
 ## 6. Adding a new recipe
 
@@ -186,6 +185,5 @@ The `coding-agent.json` template is optimized for AI coding assistants:
 3. Compose them in a single construct with automatic cross-wiring
 4. Define `Props` that expose only what users need to configure
 5. Export from `src/index.ts`
-6. Add path alias to `tsconfig.base.json`
-7. Create an example in `examples/`
-8. Update this document
+6. Create an example in `examples/`
+7. Update this document

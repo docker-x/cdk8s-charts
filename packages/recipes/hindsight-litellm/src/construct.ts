@@ -1,8 +1,6 @@
-import type { HindsightValues } from '@cdk8s-charts/hindsight';
-import { Hindsight, type HindsightApiConfig } from '@cdk8s-charts/hindsight';
-import type { LitellmValues } from '@cdk8s-charts/litellm';
-import { Litellm, type LitellmProxyConfig } from '@cdk8s-charts/litellm';
-import type { DeepPartial } from '@cdk8s-charts/utils';
+import { Hindsight, type HindsightApiConfig, type HindsightValues } from '@cdk8s-charts/hindsight';
+import { Litellm, type LitellmProxyConfig, type LitellmValues } from '@cdk8s-charts/litellm';
+import { type DeepPartial, deepMerge } from '@cdk8s-charts/utils';
 import { Construct } from 'constructs';
 
 // ---------------------------------------------------------------------------
@@ -92,9 +90,10 @@ export class HindsightWithLitellm extends Construct {
     const svcType = props.serviceType ?? 'ClusterIP';
     const litellmId = 'litellm';
     const hindsightId = 'hindsight';
-    const litellmPort = 4000;
     const hindsightApiHost = `${hindsightId}-api`;
-    const hindsightApiPort = 8888;
+
+    // Compute effective Hindsight API port from overrides
+    const hindsightApiPort = props.hindsightValues?.api?.service?.port ?? 8888;
 
     // Inject Hindsight MCP server into LiteLLM's proxy config
     const proxyConfig: LitellmProxyConfig = {
@@ -109,7 +108,8 @@ export class HindsightWithLitellm extends Construct {
       },
     };
 
-    // Deploy LiteLLM
+    // Deploy LiteLLM — deepMerge ensures user overrides don't clobber serviceType
+    const litellmBaseValues: DeepPartial<LitellmValues> = { service: { type: svcType } };
     const litellm = new Litellm(this, litellmId, {
       namespace: props.namespace,
       masterKey: props.masterKey,
@@ -117,13 +117,16 @@ export class HindsightWithLitellm extends Construct {
       env: props.litellmEnv,
       callbacks: props.litellmCallbacks,
       virtualKeys: [{ alias: 'hindsight', key: props.hindsightLlmKey }],
-      values: {
-        service: { type: svcType },
-        ...props.litellmValues,
-      },
+      values: props.litellmValues
+        ? deepMerge(litellmBaseValues, props.litellmValues)
+        : litellmBaseValues,
     });
 
-    // Deploy Hindsight, wired to LiteLLM
+    // Deploy Hindsight, wired to LiteLLM — use exports.port for correct wiring
+    const hindsightBaseValues: DeepPartial<HindsightValues> = {
+      api: { service: { type: svcType } },
+      controlPlane: { service: { type: svcType } },
+    };
     const hindsight = new Hindsight(this, hindsightId, {
       namespace: props.namespace,
       api: {
@@ -131,15 +134,13 @@ export class HindsightWithLitellm extends Construct {
         llm: {
           ...props.hindsightApi.llm,
           provider: props.hindsightApi.llm.provider ?? 'openai',
-          base_url: `http://${litellm.exports.host}:${litellmPort}/v1`,
+          base_url: `http://${litellm.exports.host}:${litellm.exports.port}/v1`,
           api_key: litellm.exports.virtualKeys.hindsight,
         },
       },
-      values: {
-        api: { service: { type: svcType } },
-        controlPlane: { service: { type: svcType } },
-        ...props.hindsightValues,
-      },
+      values: props.hindsightValues
+        ? deepMerge(hindsightBaseValues, props.hindsightValues)
+        : hindsightBaseValues,
     });
 
     this.exports = {
