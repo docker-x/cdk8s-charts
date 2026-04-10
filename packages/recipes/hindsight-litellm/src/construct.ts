@@ -131,11 +131,10 @@ export class HindsightWithLitellm extends Construct {
       api: {
         ...props.hindsightApi,
         llm: {
+          ...props.hindsightApi.llm,
           provider: props.hindsightApi.llm.provider ?? 'openai',
           base_url: `http://${litellm.exports.host}:${litellmPort}/v1`,
           api_key: litellm.exports.virtualKeys['hindsight'],
-          model: props.hindsightApi.llm.model,
-          ...props.hindsightApi.llm,
         },
       },
       values: {

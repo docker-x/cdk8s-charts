@@ -12,12 +12,6 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "types": ["node"],
-    "paths": {
-      "@cdk8s-charts/utils": ["packages/utils/src/index.ts"],
-      "@cdk8s-charts/litellm": ["packages/charts/litellm/src/index.ts"],
-      "@cdk8s-charts/hindsight": ["packages/charts/hindsight/src/index.ts"],
-      "@cdk8s-charts/hindsight-litellm": ["packages/recipes/hindsight-litellm/src/index.ts"]
-    }
+    "types": ["node"]
   }
 }

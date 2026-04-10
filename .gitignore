@@ -36,3 +36,4 @@ Thumbs.db
 # NX
 .nx/
 bun.lock
+tsconfig.tsbuildinfo

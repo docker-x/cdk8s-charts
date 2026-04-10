@@ -151,6 +151,23 @@ The `examples/coding-agent-memory/banks/` directory contains a ready-to-use memo
 
 See the [Hindsight documentation](https://hindsight.vectorize.io/) for details on bank configuration.
 
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [DESIGN.md](DESIGN.md) | Architecture, construct specs (Props/Exports/Values), memory bank config |
+| [AGENTS.md](AGENTS.md) | Project rules, code conventions, build commands, skill index |
+| [examples/coding-agent-memory/](examples/coding-agent-memory/) | Full working example with bank template and `.env.example` |
+
+### AI agent skills (`.devin/skills/`)
+
+| Skill | When to use |
+|-------|-------------|
+| [`add-chart`](.devin/skills/add-chart/SKILL.md) | Wrapping a new Helm chart with a typed cdk8s construct |
+| [`add-recipe`](.devin/skills/add-recipe/SKILL.md) | Composing multiple charts into a pre-wired stack |
+| [`setup-project`](.devin/skills/setup-project/SKILL.md) | Bootstrapping the project, installing deps, running the example |
+| [`memory-bank`](.devin/skills/memory-bank/SKILL.md) | Creating/importing bank templates, retain/recall API usage |
+
 ## Development
 
 ```bash
@@ -163,12 +180,15 @@ This is an [NX](https://nx.dev/) monorepo. NX handles dependency ordering, cachi
 
 ## Adding a New Chart
 
+See the full guide in [`.devin/skills/add-chart/SKILL.md`](.devin/skills/add-chart/SKILL.md). Summary:
+
 1. Create `packages/charts/<name>/` with `package.json`, `tsconfig.json`, and `src/`
 2. Define `types.ts` with `Values`, `Props`, and `Exports` interfaces
 3. Implement `construct.ts` extending `HelmConstruct<Values>`
 4. Export everything from `src/index.ts`
 5. Add path alias to `tsconfig.base.json`
 6. Add workspace entry to root `package.json`
+7. Update [DESIGN.md](DESIGN.md) with the new construct spec
 
 ## License
 
