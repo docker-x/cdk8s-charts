@@ -1,6 +1,6 @@
-import { Construct } from 'constructs';
 import { Helm } from 'cdk8s';
-import { DeepPartial } from './k8s-types';
+import { Construct } from 'constructs';
+import type { DeepPartial } from './k8s-types';
 
 // ---------------------------------------------------------------------------
 // Shared utility
@@ -54,10 +54,7 @@ export abstract class HelmConstruct<V extends Record<string, any>> extends Const
    *   this.flattenToEnv({ llm: { provider: 'openai' } }, 'HINDSIGHT_API')
    *   -> { HINDSIGHT_API_LLM_PROVIDER: 'openai' }
    */
-  protected flattenToEnv(
-    obj: Record<string, unknown>,
-    prefix: string,
-  ): Record<string, string> {
+  protected flattenToEnv(obj: Record<string, unknown>, prefix: string): Record<string, string> {
     const result: Record<string, string> = {};
     for (const [key, val] of Object.entries(obj)) {
       if (val === undefined || val === null) continue;

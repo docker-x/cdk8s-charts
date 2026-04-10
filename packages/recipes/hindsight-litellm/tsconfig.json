@@ -1,14 +1,7 @@
 {
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
-    "composite": true,
-    "outDir": "./dist",
     "rootDir": "./src"
   },
-  "include": ["src/**/*.ts"],
-  "references": [
-    { "path": "../../utils" },
-    { "path": "../../charts/litellm" },
-    { "path": "../../charts/hindsight" }
-  ]
+  "include": ["src/**/*.ts"]
 }

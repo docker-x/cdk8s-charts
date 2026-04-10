@@ -11,12 +11,25 @@
   ],
   "scripts": {
     "build": "nx run-many --target=build",
-    "lint": "nx run-many --target=lint",
+    "typecheck": "nx run-many --target=typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
     "test": "nx run-many --target=test",
-    "synth": "nx run-many --target=synth"
+    "synth": "nx run-many --target=synth",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{js,ts,mjs,cjs,jsx,tsx,json,jsonc}": [
+      "biome check --write --no-errors-on-unmatched"
+    ]
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.10",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "nx": "^21",
+    "tsdown": "^0.21.7",
     "typescript": "^5"
   }
 }

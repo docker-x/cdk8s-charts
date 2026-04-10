@@ -18,7 +18,7 @@
  * goes into `api.env`.
  */
 
-import {
+import type {
   AutoscalingConfig,
   DeepPartial,
   HttpGetProbeConfig,
@@ -116,7 +116,16 @@ export interface HindsightEmbeddingsSettings {
 }
 
 export interface HindsightRerankerSettings {
-  provider?: 'local' | 'tei' | 'cohere' | 'zeroentropy' | 'flashrank' | 'litellm' | 'litellm-sdk' | 'jina-mlx' | 'rrf';
+  provider?:
+    | 'local'
+    | 'tei'
+    | 'cohere'
+    | 'zeroentropy'
+    | 'flashrank'
+    | 'litellm'
+    | 'litellm-sdk'
+    | 'jina-mlx'
+    | 'rrf';
   local_model?: string;
   local_max_concurrent?: number;
   local_trust_remote_code?: boolean;

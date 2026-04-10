@@ -1,9 +1,9 @@
-import { Construct } from 'constructs';
-import { Litellm, LitellmProxyConfig } from '@cdk8s-charts/litellm';
-import { Hindsight, HindsightApiConfig } from '@cdk8s-charts/hindsight';
-import { DeepPartial } from '@cdk8s-charts/utils';
-import type { LitellmValues } from '@cdk8s-charts/litellm';
 import type { HindsightValues } from '@cdk8s-charts/hindsight';
+import { Hindsight, type HindsightApiConfig } from '@cdk8s-charts/hindsight';
+import type { LitellmValues } from '@cdk8s-charts/litellm';
+import { Litellm, type LitellmProxyConfig } from '@cdk8s-charts/litellm';
+import type { DeepPartial } from '@cdk8s-charts/utils';
+import { Construct } from 'constructs';
 
 // ---------------------------------------------------------------------------
 // Props & Exports
@@ -116,9 +116,7 @@ export class HindsightWithLitellm extends Construct {
       proxyConfig,
       env: props.litellmEnv,
       callbacks: props.litellmCallbacks,
-      virtualKeys: [
-        { alias: 'hindsight', key: props.hindsightLlmKey },
-      ],
+      virtualKeys: [{ alias: 'hindsight', key: props.hindsightLlmKey }],
       values: {
         service: { type: svcType },
         ...props.litellmValues,
@@ -134,7 +132,7 @@ export class HindsightWithLitellm extends Construct {
           ...props.hindsightApi.llm,
           provider: props.hindsightApi.llm.provider ?? 'openai',
           base_url: `http://${litellm.exports.host}:${litellmPort}/v1`,
-          api_key: litellm.exports.virtualKeys['hindsight'],
+          api_key: litellm.exports.virtualKeys.hindsight,
         },
       },
       values: {

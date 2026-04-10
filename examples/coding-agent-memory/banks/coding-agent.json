@@ -15,12 +15,12 @@
         "type": "value",
         "optional": true,
         "values": [
-          {"value": "infrastructure", "description": "K8s, Docker, deployment, CI/CD"},
-          {"value": "backend", "description": "Server-side code, APIs, services"},
-          {"value": "frontend", "description": "UI, browser, client-side code"},
-          {"value": "tooling", "description": "Dev tools, CLI, build systems, agent skills"},
-          {"value": "config", "description": "Configuration, env vars, settings"},
-          {"value": "debugging", "description": "Error investigation, root cause analysis"}
+          { "value": "infrastructure", "description": "K8s, Docker, deployment, CI/CD" },
+          { "value": "backend", "description": "Server-side code, APIs, services" },
+          { "value": "frontend", "description": "UI, browser, client-side code" },
+          { "value": "tooling", "description": "Dev tools, CLI, build systems, agent skills" },
+          { "value": "config", "description": "Configuration, env vars, settings" },
+          { "value": "debugging", "description": "Error investigation, root cause analysis" }
         ]
       },
       {
@@ -30,13 +30,16 @@
         "optional": true,
         "tag": true,
         "values": [
-          {"value": "decision", "description": "A technical decision and its rationale"},
-          {"value": "pattern", "description": "A coding pattern or convention"},
-          {"value": "fix", "description": "A bug fix or workaround"},
-          {"value": "preference", "description": "A developer preference or style choice"},
-          {"value": "discovery", "description": "A new finding about a tool or system"},
-          {"value": "correction", "description": "Something the agent did wrong and must not repeat"},
-          {"value": "lesson", "description": "A behavioral lesson learned from user feedback"}
+          { "value": "decision", "description": "A technical decision and its rationale" },
+          { "value": "pattern", "description": "A coding pattern or convention" },
+          { "value": "fix", "description": "A bug fix or workaround" },
+          { "value": "preference", "description": "A developer preference or style choice" },
+          { "value": "discovery", "description": "A new finding about a tool or system" },
+          {
+            "value": "correction",
+            "description": "Something the agent did wrong and must not repeat"
+          },
+          { "value": "lesson", "description": "A behavioral lesson learned from user feedback" }
         ]
       },
       {
@@ -46,11 +49,11 @@
         "optional": true,
         "tag": true,
         "values": [
-          {"value": "correction", "description": "User correcting agent behavior"},
-          {"value": "preference", "description": "User stating a preference"},
-          {"value": "frustration", "description": "User expressing frustration"},
-          {"value": "instruction", "description": "User giving a directive"},
-          {"value": "praise", "description": "User expressing satisfaction"}
+          { "value": "correction", "description": "User correcting agent behavior" },
+          { "value": "preference", "description": "User stating a preference" },
+          { "value": "frustration", "description": "User expressing frustration" },
+          { "value": "instruction", "description": "User giving a directive" },
+          { "value": "praise", "description": "User expressing satisfaction" }
         ]
       }
     ],
@@ -62,35 +65,35 @@
       "name": "Project Context",
       "source_query": "What is the project tech stack, architecture, and key conventions? What are the main components and how do they fit together?",
       "max_tokens": 4096,
-      "trigger": {"refresh_after_consolidation": true}
+      "trigger": { "refresh_after_consolidation": true }
     },
     {
       "id": "developer-preferences",
       "name": "Developer Preferences",
       "source_query": "What are the developer preferences for tools, libraries, coding style, and workflow? How do they like code to be written and reviewed? What patterns do they insist on?",
       "max_tokens": 2048,
-      "trigger": {"refresh_after_consolidation": true}
+      "trigger": { "refresh_after_consolidation": true }
     },
     {
       "id": "solved-problems",
       "name": "Solved Problems & Lessons",
       "source_query": "What problems have been solved, what debugging approaches worked, and what lessons were learned? Include error messages and their fixes.",
       "max_tokens": 4096,
-      "trigger": {"refresh_after_consolidation": true}
+      "trigger": { "refresh_after_consolidation": true }
     },
     {
       "id": "agent-corrections",
       "name": "Agent Corrections & Rules",
       "source_query": "What has the agent done wrong? What corrections has the user given? What behaviors must the agent never repeat? Look for patterns — if the same correction appears multiple times, it is critical.",
       "max_tokens": 4096,
-      "trigger": {"refresh_after_consolidation": true}
+      "trigger": { "refresh_after_consolidation": true }
     },
     {
       "id": "active-work",
       "name": "Active Work & Open Items",
       "source_query": "What tasks, features, or issues are currently being worked on or are still unresolved?",
       "max_tokens": 2048,
-      "trigger": {"refresh_after_consolidation": true}
+      "trigger": { "refresh_after_consolidation": true }
     }
   ],
   "directives": [

@@ -12,11 +12,9 @@
  *   - npx cdk8s synth
  */
 
-import { App, Chart } from 'cdk8s';
-import { Construct } from 'constructs';
-import * as fs from 'node:fs';
-import * as yaml from 'yaml';
 import { HindsightWithLitellm } from '@cdk8s-charts/hindsight-litellm';
+import { App, Chart } from 'cdk8s';
+import type { Construct } from 'constructs';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -97,7 +95,7 @@ class CodingAgentMemory extends Chart {
         },
         router_settings: {
           model_group_alias: {
-            'embedding': 'text-embedding-3-small',
+            embedding: 'text-embedding-3-small',
           },
         },
       },

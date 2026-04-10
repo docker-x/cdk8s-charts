@@ -1,12 +1,7 @@
-import { Construct } from 'constructs';
-import { ApiObject } from 'cdk8s';
 import { HelmConstruct } from '@cdk8s-charts/utils';
-import {
-  LitellmProps,
-  LitellmExports,
-  LitellmValues,
-  LitellmVirtualKey,
-} from './types';
+import { ApiObject } from 'cdk8s';
+import type { Construct } from 'constructs';
+import type { LitellmExports, LitellmProps, LitellmValues, LitellmVirtualKey } from './types';
 
 export class Litellm extends HelmConstruct<LitellmValues> {
   public readonly exports: LitellmExports;
@@ -46,14 +41,8 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     }
 
     // Concatenate construct-internal volumes with any user-supplied volumes
-    const allVolumes = [
-      ...extraVolumes,
-      ...(props.values?.volumes ?? []),
-    ];
-    const allMounts = [
-      ...extraMounts,
-      ...(props.values?.volumeMounts ?? []),
-    ];
+    const allVolumes = [...extraVolumes, ...(props.values?.volumes ?? [])];
+    const allMounts = [...extraMounts, ...(props.values?.volumeMounts ?? [])];
 
     const computed: LitellmValues = {
       masterkey: props.masterKey,
@@ -61,9 +50,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       proxy_config: props.proxyConfig,
       postgresql: { enabled: true },
       redis: { enabled: true, architecture: 'standalone' },
-      ...(allVolumes.length > 0
-        ? { volumes: allVolumes, volumeMounts: allMounts }
-        : {}),
+      ...(allVolumes.length > 0 ? { volumes: allVolumes, volumeMounts: allMounts } : {}),
     };
 
     // Strip volumes/volumeMounts from overrides so deepMerge doesn't clobber

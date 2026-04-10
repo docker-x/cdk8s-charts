@@ -6,7 +6,7 @@
  * chart supplies defaults.
  */
 
-import {
+import type {
   AutoscalingConfig,
   DeepPartial,
   HttpProbeConfig,
@@ -46,7 +46,15 @@ export interface LitellmModelParams {
 
 export interface LitellmModelInfo {
   id?: string;
-  mode?: 'chat' | 'embedding' | 'completion' | 'image_generation' | 'audio_transcription' | 'audio_speech' | 'moderation' | 'rerank';
+  mode?:
+    | 'chat'
+    | 'embedding'
+    | 'completion'
+    | 'image_generation'
+    | 'audio_transcription'
+    | 'audio_speech'
+    | 'moderation'
+    | 'rerank';
   input_cost_per_token?: number;
   output_cost_per_token?: number;
   max_tokens?: number;
@@ -286,7 +294,11 @@ export interface LitellmAllowedFailsPolicy {
 }
 
 export interface LitellmRouterSettings {
-  routing_strategy?: 'simple-shuffle' | 'least-busy' | 'usage-based-routing' | 'latency-based-routing';
+  routing_strategy?:
+    | 'simple-shuffle'
+    | 'least-busy'
+    | 'usage-based-routing'
+    | 'latency-based-routing';
   redis_host?: string;
   redis_password?: string;
   redis_port?: string | number;

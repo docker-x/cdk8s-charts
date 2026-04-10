@@ -1,6 +1,6 @@
-import { Construct } from 'constructs';
 import { HelmConstruct } from '@cdk8s-charts/utils';
-import { HindsightProps, HindsightExports, HindsightValues } from './types';
+import type { Construct } from 'constructs';
+import type { HindsightExports, HindsightProps, HindsightValues } from './types';
 
 // ---------------------------------------------------------------------------
 // Helpers
