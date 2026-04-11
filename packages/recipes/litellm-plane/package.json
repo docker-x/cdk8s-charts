@@ -1,0 +1,27 @@
+{
+  "name": "@cdk8s-charts/litellm-plane",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cdk8s-charts/utils": "*",
+    "@cdk8s-charts/litellm": "*",
+    "@cdk8s-charts/plane-ce": "*",
+    "@cdk8s-charts/redis": "*",
+    "cdk8s": "^2",
+    "constructs": "^10"
+  },
+  "peerDependencies": {
+    "cdk8s": "^2",
+    "constructs": "^10"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/node": "^22"
+  }
+}

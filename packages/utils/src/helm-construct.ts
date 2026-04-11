@@ -80,6 +80,7 @@ export abstract class HelmConstruct<V extends Record<string, any>> extends Const
     namespace: string,
     computed: V,
     overrides?: DeepPartial<V>,
+    options?: { helmFlags?: string[]; version?: string },
   ): V {
     const values = overrides ? deepMerge(computed, overrides) : computed;
 
@@ -88,6 +89,8 @@ export abstract class HelmConstruct<V extends Record<string, any>> extends Const
       releaseName,
       namespace,
       values,
+      ...(options?.helmFlags ? { helmFlags: options.helmFlags } : {}),
+      ...(options?.version ? { version: options.version } : {}),
     });
 
     return values;

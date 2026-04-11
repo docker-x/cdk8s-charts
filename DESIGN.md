@@ -30,9 +30,14 @@ cdk8s-charts/
       hindsight/                    @cdk8s-charts/hindsight
         src/types.ts                Full Hindsight Helm values + Props/Exports
         src/construct.ts            Hindsight construct
+      plane-ce/                     @cdk8s-charts/plane-ce
+        src/types.ts                Full Plane CE Helm values + Props/Exports
+        src/construct.ts            PlaneCe construct
     recipes/
       hindsight-litellm/            @cdk8s-charts/hindsight-litellm
         src/construct.ts            Composed stack with auto cross-wiring
+      litellm-plane/                @cdk8s-charts/litellm-plane
+        src/construct.ts            LiteLLM + Plane CE with shared Redis & A2A gateway
   examples/
     coding-agent-memory/            Full working example
 ```
@@ -42,7 +47,9 @@ cdk8s-charts/
 ```
 utils  <--  litellm
 utils  <--  hindsight
+utils  <--  plane-ce
 utils + litellm + hindsight  <--  hindsight-litellm
+utils + litellm + plane-ce   <--  litellm-plane
 hindsight-litellm  <--  examples/coding-agent-memory
 ```
 
@@ -56,7 +63,7 @@ All chart constructs extend `HelmConstruct<V>` from `@cdk8s-charts/utils`:
 |--------|-----------|---------|
 | `deepMerge` | `(a: V, b: DeepPartial<V>) -> V` | Recursive merge; b wins on conflict, arrays replaced |
 | `flattenToEnv` | `(obj, prefix) -> Record<string, string>` | Nested object -> `UPPER_SNAKE_CASE` env vars |
-| `renderChart` | `(chart, release, ns, computed, overrides?) -> V` | Merge values + instantiate `Helm` construct |
+| `renderChart` | `(chart, release, ns, computed, overrides?, options?) -> V` | Merge values + instantiate `Helm` construct. `options` supports `helmFlags` (e.g. `['--repo', url]`) and `version`. |
 
 **Invariants:**
 - `renderChart` always deep-merges `props.values` (user overrides) on top of computed values
@@ -144,6 +151,62 @@ Composes Litellm + Hindsight with automatic cross-wiring:
 | `litellmEnv` | `Record<string, string>` | no | Extra LiteLLM env vars |
 | `hindsightApi` | `HindsightApiConfig` (minus llm wiring) | yes | Hindsight config (llm.model required) |
 | `hindsightLlmKey` | `string` | yes | Virtual key for Hindsight |
+| `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
+
+### 3.5 Plane CE Construct
+
+**Package**: `@cdk8s-charts/plane-ce`
+**Chart**: `plane-ce` from `https://helm.plane.so/` (non-OCI Helm repo, uses `helmFlags: ['--repo', ...]`)
+
+**Props** (`PlaneCeProps`):
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `version` | `string` | no | App version tag (default: `v1.2.3`) |
+| `secretKey` | `string` | no | Django secret key |
+| `liveSecretKey` | `string` | no | Live collaboration secret key |
+| `externalPostgres` | `{ url }` | no | Use external PostgreSQL |
+| `externalRedis` | `{ url }` | no | Use external Redis |
+| `externalRabbitmq` | `{ url }` | no | Use external RabbitMQ |
+| `externalS3` | `{ accessKey, secretAccessKey, region, endpointUrl, ... }` | no | Use external S3 |
+| `ingress` | `{ enabled, appHost, ingressClass }` | no | Ingress configuration |
+| `values` | `DeepPartial<PlaneCeValues>` | no | Raw Helm value overrides |
+
+**Exports** (`PlaneCeExports`):
+
+| Export | Value | Description |
+|--------|-------|-------------|
+| `apiHost` | `"{id}-api"` | API service DNS name |
+| `apiPort` | `8000` | API port |
+| `webHost` | `"{id}-web"` | Web frontend DNS name |
+| `webPort` | `3000` | Web frontend port |
+
+### 3.6 LitellmWithPlane Recipe
+
+**Package**: `@cdk8s-charts/litellm-plane`
+
+Composes LiteLLM + Plane CE with:
+
+1. **Shared Redis** — Plane CE reuses LiteLLM's Bitnami Redis subchart via `externalRedis`
+2. **A2A agent gateway** — optional agent registration in LiteLLM's proxy config for the `/a2a` endpoint
+
+**Props** (`LitellmWithPlaneProps`):
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `masterKey` | `string` | yes | LiteLLM master key |
+| `proxyConfig` | `LitellmProxyConfig` | yes | Model list and settings |
+| `litellmEnv` | `Record<string, string>` | no | Extra LiteLLM env vars |
+| `litellmCallbacks` | `{ mountPath, files }` | no | Python callbacks |
+| `litellmValues` | `DeepPartial<LitellmValues>` | no | LiteLLM Helm overrides |
+| `planeVersion` | `string` | no | Plane CE version |
+| `planeSecretKey` | `string` | no | Django secret key |
+| `planeLiveSecretKey` | `string` | no | Live secret key |
+| `planeIngress` | `{ enabled, appHost, ingressClass }` | no | Plane ingress |
+| `planeValues` | `DeepPartial<PlaneCeValues>` | no | Plane Helm overrides |
+| `agents` | `A2aAgentConfig[]` | no | A2A agents to register |
 | `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
 
 ## 4. Memory bank configuration
