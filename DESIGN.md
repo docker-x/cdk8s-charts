@@ -33,6 +33,12 @@ cdk8s-charts/
       plane-ce/                     @cdk8s-charts/plane-ce
         src/types.ts                Full Plane CE Helm values + Props/Exports
         src/construct.ts            PlaneCe construct
+      redis/                        @cdk8s-charts/redis
+        src/types.ts                Bitnami Redis Helm values + Props/Exports
+        src/construct.ts            Redis construct
+      headlamp/                     @cdk8s-charts/headlamp
+        src/types.ts                Headlamp Helm values + Props/Exports
+        src/construct.ts            Headlamp construct (K8s Dashboard)
     recipes/
       hindsight-litellm/            @cdk8s-charts/hindsight-litellm
         src/construct.ts            Composed stack with auto cross-wiring
@@ -48,6 +54,8 @@ cdk8s-charts/
 utils  <--  litellm
 utils  <--  hindsight
 utils  <--  plane-ce
+utils  <--  redis
+utils  <--  headlamp
 utils + litellm + hindsight  <--  hindsight-litellm
 utils + litellm + plane-ce   <--  litellm-plane
 hindsight-litellm  <--  examples/coding-agent-memory
@@ -208,6 +216,24 @@ Composes LiteLLM + Plane CE with:
 | `planeValues` | `DeepPartial<PlaneCeValues>` | no | Plane Helm overrides |
 | `agents` | `A2aAgentConfig[]` | no | A2A agents to register |
 | `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
+
+### 3.7 Headlamp Construct
+
+**Package**: `@cdk8s-charts/headlamp`
+
+Wraps the [Headlamp](https://headlamp.dev/) Helm chart — a modern Kubernetes Dashboard from `kubernetes-sigs`. Single-container deployment with cluster-admin RBAC.
+
+**Chart:** `headlamp` from `https://kubernetes-sigs.github.io/headlamp/` (non-OCI, uses `helmFlags`)
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `values` | `DeepPartial<HeadlampValues>` | no | Raw Helm value overrides |
+
+| Export | Type | Value |
+|--------|------|-------|
+| `host` | `string` | Service DNS name |
+| `port` | `number` | `80` |
 
 ## 4. Memory bank configuration
 
