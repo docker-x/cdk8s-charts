@@ -40,7 +40,7 @@ ten underlying chart constructs into a single, batteries-included deployment:
 | **Gateway** | LiteLLM | Unified LLM proxy, API gateway, A2A agent router |
 | **Memory** | Hindsight | Long-term memory — retain, recall, reflect |
 | **Cache** | Redis | Shared cache / session store (Bitnami) |
-| **Orchestration** | Temporal | Durable workflow execution for agents |
+| **Workflows** | Temporal | Durable workflow management for agents |
 | **Vector DB** | Qdrant | Embeddings / similarity search |
 | **Observability** | Langfuse | LLM tracing, cost tracking, evaluation |
 | **Project Mgmt** | Plane CE | Issue tracking + MCP tools (55+ tools) |
