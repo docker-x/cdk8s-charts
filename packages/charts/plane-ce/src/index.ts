@@ -1,4 +1,6 @@
 export { PlaneCe } from './construct';
+export { PlaneExtras } from './extras-construct';
+export { PlaneMcp } from './mcp-construct';
 export type {
   PlaneCeEnvValues,
   PlaneCeExports,
@@ -12,4 +14,8 @@ export type {
   PlaneCeStatefulComponent,
   PlaneCeValues,
   PlaneCeWorkerComponent,
+  PlaneExtrasProps,
+  PlaneMcpExports,
+  PlaneMcpProps,
+  PlaneMcpValues,
 } from './types';

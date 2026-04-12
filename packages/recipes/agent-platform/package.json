@@ -1,0 +1,33 @@
+{
+  "name": "@cdk8s-charts/agent-platform",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cdk8s-charts/utils": "*",
+    "@cdk8s-charts/litellm": "*",
+    "@cdk8s-charts/hindsight": "*",
+    "@cdk8s-charts/redis": "*",
+    "@cdk8s-charts/temporal": "*",
+    "@cdk8s-charts/qdrant": "*",
+    "@cdk8s-charts/langfuse": "*",
+    "@cdk8s-charts/plane-ce": "*",
+    "@cdk8s-charts/headlamp": "*",
+    "@cdk8s-charts/a2a-agent": "*",
+    "cdk8s": "^2",
+    "constructs": "^10"
+  },
+  "peerDependencies": {
+    "cdk8s": "^2",
+    "constructs": "^10"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/node": "^22"
+  }
+}

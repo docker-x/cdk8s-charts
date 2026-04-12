@@ -260,3 +260,59 @@ export interface PlaneCeExports {
   /** Web frontend port (default: 3000). */
   webPort: number;
 }
+
+// ---------------------------------------------------------------------------
+// Plane MCP Server — companion construct
+// ---------------------------------------------------------------------------
+
+export interface PlaneMcpValues {
+  image?: { repository?: string; tag?: string };
+  service?: { type?: 'ClusterIP' | 'NodePort' | 'LoadBalancer' };
+  resources?: {
+    requests?: { cpu?: string; memory?: string };
+    limits?: { cpu?: string; memory?: string };
+  };
+}
+
+export interface PlaneMcpProps {
+  namespace: string;
+  /** Plane API key for authentication. */
+  apiKey: string;
+  /** Plane workspace slug. */
+  workspaceSlug: string;
+  /** Plane API base URL (default: http://plane-api:8000). */
+  baseUrl?: string;
+  /** Value overrides (deep-merged into computed values). */
+  values?: DeepPartial<PlaneMcpValues>;
+}
+
+export interface PlaneMcpExports {
+  /** Service DNS name. */
+  host: string;
+  /** MCP HTTP transport port. */
+  port: number;
+}
+
+// ---------------------------------------------------------------------------
+// Plane Extras — supplementary resources the upstream chart doesn't provide
+// ---------------------------------------------------------------------------
+
+export interface PlaneExtrasProps {
+  namespace: string;
+  /** Plane Helm release name (used to derive service DNS names). */
+  planeId: string;
+  /** K8s Service type for the proxy (default: ClusterIP). */
+  serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
+  /** Plane application version (image tag for seed job). */
+  version: string;
+  /** Admin credentials for the seed job. */
+  admin: { email: string; password: string };
+  /** Workspace to create in the seed job. */
+  workspace: { slug: string; name: string };
+  /** API token to provision in the seed job (for MCP / agent access). */
+  apiToken: string;
+  /** Override the default nginx proxy.conf template. Use __PLANE_ID__ as placeholder. */
+  proxyConf?: string;
+  /** Override the default seed-admin.py script. */
+  seedScript?: string;
+}
