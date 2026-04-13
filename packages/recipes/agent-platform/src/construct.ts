@@ -246,6 +246,7 @@ export class AgentPlatform extends Construct {
       masterKey: props.litellm.masterKey,
       proxyConfig,
       env: litellmEnv,
+      envSecretNames: props.litellm.envSecretNames,
       callbacks: props.litellm.callbacks,
       virtualKeys: [
         { alias: 'hindsight', key: props.hindsight.llmKey },

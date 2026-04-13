@@ -10,7 +10,9 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     super(scope, id);
 
     const hasEnv = props.env && Object.keys(props.env).length > 0;
+    const externalSecrets = props.envSecretNames ?? [];
 
+    // Create a Secret from inline env vars (non-secret wiring like Redis host).
     if (hasEnv) {
       new ApiObject(this, 'env', {
         apiVersion: 'v1',
@@ -19,6 +21,9 @@ export class Litellm extends HelmConstruct<LitellmValues> {
         stringData: props.env,
       });
     }
+
+    // Collect all secret names: inline + externally-managed
+    const allSecretNames = [...(hasEnv ? [`${id}-env`] : []), ...externalSecrets];
 
     const extraVolumes: Array<{ name: string; configMap: { name: string } }> = [];
     const extraMounts: Array<{ name: string; mountPath: string; subPath?: string }> = [];
@@ -48,7 +53,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
 
     const computed: LitellmValues = {
       masterkey: props.masterKey,
-      environmentSecrets: hasEnv ? [`${id}-env`] : [],
+      environmentSecrets: allSecretNames.length > 0 ? allSecretNames : [],
       proxy_config: props.proxyConfig,
       postgresql: { enabled: true },
       redis: { enabled: true, architecture: 'standalone' },

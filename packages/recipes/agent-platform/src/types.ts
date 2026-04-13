@@ -70,8 +70,13 @@ export interface AgentPlatformProps {
     masterKey: string;
     /** Proxy config (model list, cache settings, aliases). */
     proxyConfig: LitellmProxyConfig;
-    /** Additional env vars (e.g. upstream API keys). */
+    /** Additional env vars (e.g. upstream API keys). Creates a Secret. */
     env?: Record<string, string>;
+    /**
+     * Names of externally-managed K8s Secrets to mount as env vars.
+     * Use instead of `env` when secrets live outside cdk8s (e.g. created from .env).
+     */
+    envSecretNames?: string[];
     /** Python callbacks mounted alongside config.yaml. */
     callbacks?: { mountPath: string; files: Record<string, string> };
     /** Extra virtual keys (hindsight key is auto-provisioned). */

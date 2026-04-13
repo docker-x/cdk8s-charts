@@ -635,8 +635,18 @@ export interface LitellmProps {
   namespace: string;
   /** Admin master key for LiteLLM API + UI. */
   masterKey: string;
-  /** Additional env vars injected into the container via K8s Secret. */
+  /**
+   * Additional env vars injected into the container via K8s Secret.
+   * The construct creates the Secret. Mutually exclusive with `envSecretNames`.
+   */
   env?: Record<string, string>;
+  /**
+   * Names of externally-managed K8s Secrets to mount as env vars (envFrom).
+   * Use this instead of `env` when secrets are managed outside of cdk8s
+   * (e.g. created by deploy.sh from .env file).
+   * The construct does NOT create these Secrets — they must exist at deploy time.
+   */
+  envSecretNames?: string[];
   /** Proxy config (model list, cache settings, aliases). */
   proxyConfig: LitellmProxyConfig;
   /** Virtual keys to provision after LiteLLM starts. */

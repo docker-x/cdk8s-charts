@@ -1,6 +1,53 @@
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { Helm } from 'cdk8s';
 import { Construct } from 'constructs';
 import type { DeepPartial } from './k8s-types';
+
+// ---------------------------------------------------------------------------
+// Helm chart cache resolution
+// ---------------------------------------------------------------------------
+
+const HELM_CACHE_DIR = process.env.HELM_CACHE_HOME
+  ? join(process.env.HELM_CACHE_HOME, 'repository')
+  : join(process.env.HOME ?? '/root', '.cache', 'helm', 'repository');
+
+/**
+ * Resolve an OCI chart reference to a local cached .tgz if available.
+ * Falls back to the original reference when no cache hit.
+ *
+ * Set HELM_USE_CACHE=1 to force local cache usage (useful when OCI
+ * registries are unreachable, e.g. WSL2 IPv6 issues).
+ */
+function resolveChart(chart: string, version?: string): { chart: string; fromCache: boolean } {
+  if (process.env.HELM_USE_CACHE !== '1') return { chart, fromCache: false };
+  if (!existsSync(HELM_CACHE_DIR)) return { chart, fromCache: false };
+
+  // Extract chart name: last segment for OCI URLs, or the name itself
+  const chartName = chart.startsWith('oci://') ? chart.split('/').pop()! : chart;
+
+  const files = readdirSync(HELM_CACHE_DIR);
+
+  // If version is pinned, look for exact match
+  if (version) {
+    const exact = `${chartName}-${version}.tgz`;
+    if (files.includes(exact)) {
+      const resolved = join(HELM_CACHE_DIR, exact);
+      console.log(`[helm-cache] ${chart}@${version} -> ${resolved}`);
+      return { chart: resolved, fromCache: true };
+    }
+  }
+
+  // Otherwise pick the latest cached version (lexicographic sort)
+  const matches = files.filter((f) => f.startsWith(`${chartName}-`) && f.endsWith('.tgz')).sort();
+  if (matches.length > 0) {
+    const resolved = join(HELM_CACHE_DIR, matches[matches.length - 1]);
+    console.log(`[helm-cache] ${chart} -> ${resolved}`);
+    return { chart: resolved, fromCache: true };
+  }
+
+  return { chart, fromCache: false };
+}
 
 // ---------------------------------------------------------------------------
 // Shared utility
@@ -84,13 +131,19 @@ export abstract class HelmConstruct<V extends Record<string, any>> extends Const
   ): V {
     const values = overrides ? deepMerge(computed, overrides) : computed;
 
+    const { chart: resolved, fromCache } = resolveChart(chart, options?.version);
+    // When using a local .tgz: version is already baked in, --repo is irrelevant
+    const flags = fromCache
+      ? options?.helmFlags?.filter((f, i, arr) => f !== '--repo' && arr[i - 1] !== '--repo')
+      : options?.helmFlags;
+
     new Helm(this, 'chart', {
-      chart,
+      chart: resolved,
       releaseName,
       namespace,
       values,
-      ...(options?.helmFlags ? { helmFlags: options.helmFlags } : {}),
-      ...(options?.version ? { version: options.version } : {}),
+      ...(flags?.length ? { helmFlags: flags } : {}),
+      ...(!fromCache && options?.version ? { version: options.version } : {}),
     });
 
     return values;
