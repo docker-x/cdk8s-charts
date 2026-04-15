@@ -77,6 +77,7 @@ export class GitlabCe extends Construct {
 
     const svcType = v.service?.type ?? 'ClusterIP';
     const image = `${v.image?.repository ?? 'gitlab/gitlab-ce'}:${v.image?.tag ?? 'latest'}`;
+    const imagePullPolicy = v.image?.pullPolicy ?? 'IfNotPresent';
     const labels = { app: id };
     const externalUrl = props.externalUrl ?? `http://${id}:80`;
     const token = props.seed?.token ?? DEFAULT_TOKEN;
@@ -98,6 +99,7 @@ export class GitlabCe extends Construct {
               {
                 name: 'gitlab',
                 image,
+                imagePullPolicy,
                 ports: [
                   { containerPort: 80, name: 'http' },
                   { containerPort: 22, name: 'ssh' },

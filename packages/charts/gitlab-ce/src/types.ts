@@ -5,14 +5,14 @@
  * No Helm chart — raw K8s resources (StatefulSet + Service + seed Job).
  */
 
-import type { DeepPartial, ResourceRequirements } from '@cdk8s-charts/utils';
+import type { DeepPartial, ImageConfig, ResourceRequirements } from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
 // Values (overrideable configuration)
 // ---------------------------------------------------------------------------
 
 export interface GitlabCeValues {
-  image?: { repository?: string; tag?: string };
+  image?: ImageConfig;
   service?: { type?: 'ClusterIP' | 'NodePort' | 'LoadBalancer' };
   resources?: ResourceRequirements;
   storage?: {
@@ -74,7 +74,7 @@ export interface GitlabCeExports {
 // ---------------------------------------------------------------------------
 
 export interface GitlabMcpValues {
-  image?: { repository?: string; tag?: string };
+  image?: ImageConfig;
   service?: { type?: 'ClusterIP' | 'NodePort' | 'LoadBalancer' };
   resources?: ResourceRequirements;
 }
