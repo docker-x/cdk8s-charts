@@ -70,6 +70,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       props.namespace,
       computed,
       Object.keys(restOverrides).length > 0 ? restOverrides : undefined,
+      { helmFlags: ['--skip-tests'] },
     );
 
     const svcHost = id;
@@ -153,6 +154,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       },
       spec: {
         backoffLimit: 5,
+        ttlSecondsAfterFinished: 300,
         template: {
           spec: {
             initContainers: [

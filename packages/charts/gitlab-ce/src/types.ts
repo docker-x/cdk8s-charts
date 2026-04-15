@@ -85,10 +85,8 @@ export interface GitlabMcpProps {
   gitlabApiUrl: string;
   /** GitLab Personal Access Token for the MCP server. */
   gitlabToken: string;
-  /** MCP SSE server port. Default: 3000. */
+  /** MCP HTTP server port. Default: 3000. */
   port?: number;
-  /** npm registry URL for installing the MCP package (corporate proxy). */
-  npmRegistry?: string;
   /** Value overrides. */
   values?: DeepPartial<GitlabMcpValues>;
 }
@@ -96,6 +94,6 @@ export interface GitlabMcpProps {
 export interface GitlabMcpExports {
   /** Service DNS name. */
   host: string;
-  /** SSE port. */
+  /** MCP HTTP port. */
   port: number;
 }

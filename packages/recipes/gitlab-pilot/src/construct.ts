@@ -14,10 +14,10 @@ import type { GitlabPilotExports, GitlabPilotProps } from './types';
  *
  * Auto-wiring:
  *   GitLab CE    → GitLab MCP (API URL + token)
- *   GitLab MCP   → LiteLLM   (MCP server registration)
- *   GitLab CE    → Agent     (webhook → agent worker)
- *   LiteLLM      → Agent     (LITELLM_URL env + LITELLM_API_KEY secret)
- *   Agent         → LiteLLM   (Responses API with MCP tools)
+ *   GitLab MCP   → LiteLLM  (MCP server registration)
+ *   GitLab CE    → webhook  (issue/MR/note ingress)
+ *   LiteLLM      → Agent    (when embedded agent runtime is enabled)
+ *   Agent        → LiteLLM  (Responses API with MCP tools)
  */
 export class GitlabPilot extends Construct {
   public readonly exports: GitlabPilotExports;
@@ -28,9 +28,14 @@ export class GitlabPilot extends Construct {
     const { namespace } = props;
     const svcType = props.serviceType ?? 'ClusterIP';
 
-    // ── Agent Worker (deploy first to know the webhook URL) ──────────
     const agentDef = props.agent;
-    const agentPort = agentDef.port ?? 10001;
+    const agentPort = agentDef?.port ?? 10001;
+    const webhookUrl =
+      props.webhook?.url ??
+      (agentDef ? `http://${agentDef.id}:${agentPort}/webhooks/gitlab` : undefined);
+    if (!webhookUrl) {
+      throw new Error('GitlabPilot requires either webhook.url or agent.id/port');
+    }
 
     // ── GitLab CE ────────────────────────────────────────────────────
     const gitlabToken = props.gitlab.token ?? 'glpat-agent-seed-token';
@@ -43,7 +48,8 @@ export class GitlabPilot extends Construct {
       seed: {
         token: gitlabToken,
         projectName,
-        webhookUrl: `http://${agentDef.id}:${agentPort}/webhooks/gitlab`,
+        webhookUrl,
+        webhookSecret: props.webhook?.secret,
       },
       values: props.gitlab.values
         ? deepMerge({ service: { type: svcType } }, props.gitlab.values)
@@ -55,7 +61,6 @@ export class GitlabPilot extends Construct {
       namespace,
       gitlabApiUrl: `http://${gitlab.exports.host}:${gitlab.exports.httpPort}/api/v4`,
       gitlabToken,
-      npmRegistry: props.gitlabMcp?.npmRegistry,
       values: props.gitlabMcp?.values
         ? deepMerge({ service: { type: svcType } }, props.gitlabMcp.values)
         : { service: { type: svcType } },
@@ -67,10 +72,9 @@ export class GitlabPilot extends Construct {
       mcp_servers: {
         ...props.litellm.proxyConfig.mcp_servers,
         gitlab: {
-          url: `http://${gitlabMcp.exports.host}:${gitlabMcp.exports.port}/sse`,
-          transport: 'sse',
-          description:
-            'GitLab — repos, issues, MRs, branches, CI/CD, wikis, labels, milestones (86 tools)',
+          url: `http://${gitlabMcp.exports.host}:${gitlabMcp.exports.port}/mcp`,
+          transport: 'http',
+          description: 'GitLab — repos, issues, MRs, branches, CI/CD, wikis, labels, milestones',
         },
       },
     };
@@ -94,32 +98,35 @@ export class GitlabPilot extends Construct {
         : litellmBaseValues,
     });
 
-    // ── Agent Worker ─────────────────────────────────────────────────
-    const autoEnv: Record<string, string> = {
-      LITELLM_URL: `http://${litellm.exports.host}:${litellm.exports.port}`,
-      GITLAB_URL: `http://${gitlab.exports.host}:${gitlab.exports.httpPort}`,
-      GITLAB_TOKEN: gitlabToken,
-      GITLAB_PROJECT: projectName,
-    };
+    // ── Embedded agent runtime (optional) ────────────────────────────
+    let agent: A2aAgent | undefined;
+    if (agentDef) {
+      const autoEnv: Record<string, string> = {
+        LITELLM_URL: `http://${litellm.exports.host}:${litellm.exports.port}`,
+        GITLAB_URL: `http://${gitlab.exports.host}:${gitlab.exports.httpPort}`,
+        GITLAB_TOKEN: gitlabToken,
+        GITLAB_PROJECT: projectName,
+      };
 
-    const agent = new A2aAgent(this, agentDef.id, {
-      namespace,
-      script: agentDef.script,
-      dependencies: agentDef.dependencies,
-      env: { ...autoEnv, ...agentDef.env },
-      secrets: {
-        LITELLM_API_KEY: props.litellm.masterKey,
-        ...agentDef.secrets,
-      },
-      port: agentPort,
-      healthPath: agentDef.healthPath,
-      values: agentDef.values
-        ? deepMerge(
-            { service: { type: svcType } } as DeepPartial<typeof agentDef.values>,
-            agentDef.values,
-          )
-        : { service: { type: svcType } },
-    });
+      agent = new A2aAgent(this, agentDef.id, {
+        namespace,
+        script: agentDef.script,
+        dependencies: agentDef.dependencies,
+        env: { ...autoEnv, ...agentDef.env },
+        secrets: {
+          LITELLM_API_KEY: props.litellm.masterKey,
+          ...agentDef.secrets,
+        },
+        port: agentPort,
+        healthPath: agentDef.healthPath,
+        values: agentDef.values
+          ? deepMerge(
+              { service: { type: svcType } } as DeepPartial<typeof agentDef.values>,
+              agentDef.values,
+            )
+          : { service: { type: svcType } },
+      });
+    }
 
     // ── Exports ──────────────────────────────────────────────────────
     this.exports = {
@@ -138,7 +145,7 @@ export class GitlabPilot extends Construct {
         host: gitlabMcp.exports.host,
         port: gitlabMcp.exports.port,
       },
-      agent: agent.exports,
+      ...(agent ? { agent: agent.exports } : {}),
     };
   }
 }

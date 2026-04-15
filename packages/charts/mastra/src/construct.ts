@@ -15,6 +15,12 @@ const DEFAULTS: MastraValues = {
     requests: { cpu: '100m', memory: '256Mi' },
     limits: { memory: '512Mi' },
   },
+  persistence: {
+    enabled: false,
+    size: '1Gi',
+    accessModes: ['ReadWriteOnce'],
+    mountPath: '/var/lib/mastra',
+  },
 };
 
 const DEFAULT_PORT = 4111;
@@ -53,6 +59,9 @@ export class Mastra extends Construct {
     const image =
       props.image ?? `${v.image?.repository ?? 'mastra-agents'}:${v.image?.tag ?? 'latest'}`;
     const labels = { app: id };
+    const persistenceEnabled = v.persistence?.enabled ?? false;
+    const persistenceMountPath = v.persistence?.mountPath ?? '/var/lib/mastra';
+    const persistenceClaimName = `${id}-data`;
 
     // -- Secret (if secrets provided) ------------------------------------------
     const secretName = `${id}-env`;
@@ -64,6 +73,25 @@ export class Mastra extends Construct {
         kind: 'Secret',
         metadata: { name: secretName, namespace },
         stringData: props.secrets,
+      });
+    }
+
+    if (persistenceEnabled) {
+      new ApiObject(this, 'pvc', {
+        apiVersion: 'v1',
+        kind: 'PersistentVolumeClaim',
+        metadata: { name: persistenceClaimName, namespace },
+        spec: {
+          accessModes: v.persistence?.accessModes ?? ['ReadWriteOnce'],
+          resources: {
+            requests: {
+              storage: v.persistence?.size ?? '1Gi',
+            },
+          },
+          ...(v.persistence?.storageClassName
+            ? { storageClassName: v.persistence.storageClassName }
+            : {}),
+        },
       });
     }
 
@@ -93,6 +121,16 @@ export class Mastra extends Construct {
                 ports: [{ containerPort: port }],
                 env: envVars,
                 ...(hasSecrets ? { envFrom: [{ secretRef: { name: secretName } }] } : {}),
+                ...(persistenceEnabled
+                  ? {
+                      volumeMounts: [
+                        {
+                          name: 'data',
+                          mountPath: persistenceMountPath,
+                        },
+                      ],
+                    }
+                  : {}),
                 readinessProbe: {
                   httpGet: { path: '/health', port },
                   initialDelaySeconds: 10,
@@ -106,6 +144,18 @@ export class Mastra extends Construct {
                 resources: v.resources ?? DEFAULTS.resources,
               },
             ],
+            ...(persistenceEnabled
+              ? {
+                  volumes: [
+                    {
+                      name: 'data',
+                      persistentVolumeClaim: {
+                        claimName: persistenceClaimName,
+                      },
+                    },
+                  ],
+                }
+              : {}),
           },
         },
       },

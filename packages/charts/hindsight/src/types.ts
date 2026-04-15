@@ -405,6 +405,8 @@ export interface HindsightProps {
   namespace: string;
   /** API service config — flattened to HINDSIGHT_API_* env vars. */
   api?: HindsightApiConfig;
+  /** Memory bank templates to import on startup (bankId -> JSON content). */
+  banks?: Record<string, string>;
   /** Chart-level value overrides (deep-merged into computed values). */
   values?: DeepPartial<HindsightValues>;
 }

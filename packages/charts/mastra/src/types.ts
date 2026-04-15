@@ -19,6 +19,13 @@ export interface MastraValues {
   image?: { repository?: string; tag?: string };
   service?: { type?: 'ClusterIP' | 'NodePort' | 'LoadBalancer' };
   resources?: ResourceRequirements;
+  persistence?: {
+    enabled?: boolean;
+    size?: string;
+    storageClassName?: string;
+    accessModes?: string[];
+    mountPath?: string;
+  };
 }
 
 // ---------------------------------------------------------------------------

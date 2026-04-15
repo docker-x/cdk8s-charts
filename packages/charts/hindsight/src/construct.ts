@@ -1,4 +1,5 @@
 import { HelmConstruct } from '@cdk8s-charts/utils';
+import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { HindsightExports, HindsightProps, HindsightValues } from './types';
 
@@ -76,5 +77,52 @@ export class Hindsight extends HelmConstruct<HindsightValues> {
       cpHost: `${id}-control-plane`,
       cpPort: values.controlPlane?.service?.port ?? 3000,
     };
+
+    if (props.banks && Object.keys(props.banks).length > 0) {
+      const bankImportCmds = Object.entries(props.banks)
+        .map(
+          ([bankId, content]) =>
+            `echo "Importing bank: ${bankId}" && ` +
+            `wget -q --post-data='${content.replace(/'/g, "'\\''")}' ` +
+            `--header='Content-Type: application/json' ` +
+            `-O - "http://${this.exports.apiHost}:${this.exports.apiPort}/v1/default/banks/${bankId}/import" && ` +
+            `echo " -> done"`,
+        )
+        .join(' && ');
+
+      new ApiObject(this, 'bank-import', {
+        apiVersion: 'batch/v1',
+        kind: 'Job',
+        metadata: { name: `${id}-bank-import`, namespace: props.namespace },
+        spec: {
+          backoffLimit: 5,
+          ttlSecondsAfterFinished: 300,
+          template: {
+            metadata: { labels: { app: `${id}-bank-import` } },
+            spec: {
+              restartPolicy: 'OnFailure',
+              initContainers: [
+                {
+                  name: 'wait-for-hindsight',
+                  image: 'busybox',
+                  command: [
+                    'sh',
+                    '-c',
+                    `until wget -q -O /dev/null http://${this.exports.apiHost}:${this.exports.apiPort}/health; do echo "waiting for hindsight-api"; sleep 5; done`,
+                  ],
+                },
+              ],
+              containers: [
+                {
+                  name: 'import',
+                  image: 'busybox',
+                  command: ['sh', '-c', bankImportCmds],
+                },
+              ],
+            },
+          },
+        },
+      });
+    }
   }
 }

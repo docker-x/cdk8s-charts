@@ -1,5 +1,5 @@
 /**
- * GitLab Pilot — minimal recipe: LiteLLM + GitLab CE + GitLab MCP + Agent Worker.
+ * GitLab Pilot — minimal recipe: LiteLLM + GitLab CE + GitLab MCP + optional agent runtime.
  *
  * 5 pods total. No Hindsight, no Temporal, no Qdrant, no Langfuse, no Redis.
  * GitLab IS the UI. The agent is triggered by GitLab webhooks.
@@ -79,14 +79,21 @@ export interface GitlabPilotProps {
   // ── GitLab MCP (auto-configured) ──────────────────────────────────
 
   gitlabMcp?: {
-    /** npm registry for installing MCP package (corporate proxy). */
-    npmRegistry?: string;
     values?: DeepPartial<GitlabMcpValues>;
   };
 
-  // ── Agent Worker (required) ───────────────────────────────────────
+  // ── Webhook ingress (required) ────────────────────────────────────
 
-  agent: AgentDefinition;
+  webhook?: {
+    /** Explicit webhook URL for GitLab to call. */
+    url: string;
+    /** Optional secret token for webhook validation. */
+    secret?: string;
+  };
+
+  // ── Embedded agent runtime (optional) ─────────────────────────────
+
+  agent?: AgentDefinition;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +116,7 @@ export interface GitlabPilotExports {
     host: string;
     port: number;
   };
-  agent: {
+  agent?: {
     host: string;
     port: number;
     url: string;

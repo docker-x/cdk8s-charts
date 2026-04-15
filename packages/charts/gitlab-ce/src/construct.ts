@@ -114,6 +114,15 @@ else
   echo "Project creation returned $HTTP_CODE (continuing anyway)"
 fi
 
+# Step 2.5: Allow webhooks to call cluster-local services
+echo "Enabling local webhook requests..."
+curl -sf -X PUT "$GITLAB_HOST/api/v4/application/settings" \\
+  -H "PRIVATE-TOKEN: $TOKEN" \\
+  -d "allow_local_requests_from_hooks_and_services=true" \\
+  -d "allow_local_requests_from_web_hooks_and_services=true" \\
+  -d "allow_local_requests_from_system_hooks=true" >/dev/null
+echo "Local webhook requests enabled"
+
 # Step 3: Find project ID
 sleep 2
 PROJECT_ID=$(curl -sf "$GITLAB_HOST/api/v4/projects?search=$PROJECT_NAME" \\
@@ -335,6 +344,7 @@ export class GitlabCe extends Construct {
         metadata: { name: `${id}-seed`, namespace },
         spec: {
           backoffLimit: 10,
+          ttlSecondsAfterFinished: 300,
           template: {
             metadata: { labels: { app: `${id}-seed` } },
             spec: {

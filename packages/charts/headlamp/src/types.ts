@@ -39,6 +39,26 @@ export interface HeadlampConfigValues {
   };
 }
 
+export interface HeadlampEnvVar {
+  name: string;
+  value?: string;
+}
+
+export interface HeadlampVolumeMount {
+  name: string;
+  mountPath: string;
+  subPath?: string;
+  readOnly?: boolean;
+}
+
+export interface HeadlampVolume {
+  name: string;
+  configMap?: {
+    name?: string;
+    items?: Array<{ key: string; path: string }>;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // RBAC
 // ---------------------------------------------------------------------------
@@ -76,8 +96,11 @@ export interface HeadlampValues {
   };
   config?: HeadlampConfigValues;
   service?: HeadlampServiceValues;
+  env?: HeadlampEnvVar[];
   serviceAccount?: HeadlampServiceAccountValues;
   clusterRoleBinding?: HeadlampClusterRoleBindingValues;
+  volumeMounts?: HeadlampVolumeMount[];
+  volumes?: HeadlampVolume[];
   ingress?: { enabled?: boolean };
   resources?: HeadlampResourceValues;
 }

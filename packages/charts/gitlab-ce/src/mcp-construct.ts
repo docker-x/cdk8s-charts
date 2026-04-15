@@ -9,7 +9,7 @@ import type { GitlabMcpExports, GitlabMcpProps, GitlabMcpValues } from './types'
 // ---------------------------------------------------------------------------
 
 const DEFAULTS: GitlabMcpValues = {
-  image: { repository: 'node', tag: '22-slim' },
+  image: { repository: 'zereight050/gitlab-mcp', tag: 'latest' },
   service: { type: 'ClusterIP' },
   resources: {
     requests: { cpu: '50m', memory: '128Mi' },
@@ -18,16 +18,14 @@ const DEFAULTS: GitlabMcpValues = {
 };
 
 const DEFAULT_PORT = 3000;
-const MCP_PACKAGE = '@yoda.digital/gitlab-mcp-server';
 
 // ---------------------------------------------------------------------------
 // Construct
 // ---------------------------------------------------------------------------
 
 /**
- * Deploys the yoda-digital/gitlab-mcp-server as a K8s Deployment + Service.
- * Uses SSE transport for LiteLLM MCP gateway compatibility.
- * 86 tools: repos, files, branches, issues, MRs, CI/CD, wikis, labels, milestones.
+ * Deploys the zereight GitLab MCP server as a K8s Deployment + Service.
+ * Uses Streamable HTTP transport for remote MCP clients such as Mastra.
  */
 export class GitlabMcp extends Construct {
   public readonly exports: GitlabMcpExports;
@@ -42,9 +40,8 @@ export class GitlabMcp extends Construct {
       : DEFAULTS;
 
     const svcType = v.service?.type ?? 'ClusterIP';
-    const image = `${v.image?.repository ?? 'node'}:${v.image?.tag ?? '22-slim'}`;
+    const image = `${v.image?.repository ?? 'zereight050/gitlab-mcp'}:${v.image?.tag ?? 'latest'}`;
     const labels = { app: id };
-    const registryFlag = props.npmRegistry ? ` --registry=${props.npmRegistry}` : '';
 
     // -- Secret ----------------------------------------------------------------
     const secretName = `${id}-env`;
@@ -69,49 +66,35 @@ export class GitlabMcp extends Construct {
         template: {
           metadata: { labels },
           spec: {
-            initContainers: [
-              {
-                name: 'install',
-                image,
-                command: [
-                  'sh',
-                  '-c',
-                  `npm install --global --prefix=/deps${registryFlag} ${MCP_PACKAGE} 2>&1 | tail -3`,
-                ],
-                volumeMounts: [{ name: 'deps', mountPath: '/deps' }],
-              },
-            ],
             containers: [
               {
                 name: 'mcp',
                 image,
-                command: [
-                  'sh',
-                  '-c',
-                  `export PATH=/deps/bin:$PATH && export NODE_PATH=/deps/lib/node_modules && gitlab-mcp-server`,
-                ],
                 ports: [{ containerPort: port }],
                 env: [
-                  { name: 'USE_SSE', value: 'true' },
+                  { name: 'HOST', value: '0.0.0.0' },
                   { name: 'PORT', value: String(port) },
+                  { name: 'STREAMABLE_HTTP', value: 'true' },
                   { name: 'GITLAB_API_URL', value: props.gitlabApiUrl },
+                  { name: 'GITLAB_READ_ONLY_MODE', value: 'false' },
+                  { name: 'USE_GITLAB_WIKI', value: 'true' },
+                  { name: 'USE_MILESTONE', value: 'true' },
+                  { name: 'USE_PIPELINE', value: 'true' },
                 ],
                 envFrom: [{ secretRef: { name: secretName } }],
-                volumeMounts: [{ name: 'deps', mountPath: '/deps', readOnly: true }],
                 readinessProbe: {
-                  tcpSocket: { port },
+                  httpGet: { path: '/health', port },
                   initialDelaySeconds: 10,
                   periodSeconds: 10,
                 },
                 livenessProbe: {
-                  tcpSocket: { port },
+                  httpGet: { path: '/health', port },
                   initialDelaySeconds: 30,
                   periodSeconds: 30,
                 },
                 resources: v.resources ?? DEFAULTS.resources,
               },
             ],
-            volumes: [{ name: 'deps', emptyDir: {} }],
           },
         },
       },
@@ -125,7 +108,7 @@ export class GitlabMcp extends Construct {
       spec: {
         type: svcType,
         selector: labels,
-        ports: [{ name: 'sse', port, targetPort: port, protocol: 'TCP' }],
+        ports: [{ name: 'http', port, targetPort: port, protocol: 'TCP' }],
       },
     });
 
