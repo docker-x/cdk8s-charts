@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { HelmConstruct } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
@@ -16,6 +17,15 @@ const SECRET_SUFFIXES = [
   '_ACCOUNT_KEY',
   '_AUTH_TOKEN',
 ];
+
+const WAIT_FOR_HINDSIGHT_SCRIPT = readFileSync(
+  new URL('./scripts/wait-for-hindsight.sh', import.meta.url),
+  'utf8',
+);
+const IMPORT_BANKS_SCRIPT = readFileSync(
+  new URL('./scripts/import-banks.sh', import.meta.url),
+  'utf8',
+);
 
 function isSecretKey(key: string): boolean {
   return SECRET_SUFFIXES.some((s) => key.endsWith(s));
@@ -79,16 +89,33 @@ export class Hindsight extends HelmConstruct<HindsightValues> {
     };
 
     if (props.banks && Object.keys(props.banks).length > 0) {
-      const bankImportCmds = Object.entries(props.banks)
-        .map(
-          ([bankId, content]) =>
-            `echo "Importing bank: ${bankId}" && ` +
-            `wget -q --post-data='${content.replace(/'/g, "'\\''")}' ` +
-            `--header='Content-Type: application/json' ` +
-            `-O - "http://${this.exports.apiHost}:${this.exports.apiPort}/v1/default/banks/${bankId}/import" && ` +
-            `echo " -> done"`,
-        )
-        .join(' && ');
+      const scriptConfigMapName = `${id}-bank-import-scripts`;
+      const bankConfigMapName = `${id}-bank-import-data`;
+      const bankSpecs: string[] = [];
+      const bankFiles: Record<string, string> = {};
+
+      Object.entries(props.banks).forEach(([bankId, content], index) => {
+        const fileName = `bank-${index}.json`;
+        bankFiles[fileName] = content;
+        bankSpecs.push(`${bankId}\t${fileName}`);
+      });
+
+      new ApiObject(this, 'bank-import-scripts', {
+        apiVersion: 'v1',
+        kind: 'ConfigMap',
+        metadata: { name: scriptConfigMapName, namespace: props.namespace },
+        data: {
+          'wait-for-hindsight.sh': WAIT_FOR_HINDSIGHT_SCRIPT,
+          'import-banks.sh': IMPORT_BANKS_SCRIPT,
+        },
+      });
+
+      new ApiObject(this, 'bank-import-data', {
+        apiVersion: 'v1',
+        kind: 'ConfigMap',
+        metadata: { name: bankConfigMapName, namespace: props.namespace },
+        data: bankFiles,
+      });
 
       new ApiObject(this, 'bank-import', {
         apiVersion: 'batch/v1',
@@ -104,19 +131,47 @@ export class Hindsight extends HelmConstruct<HindsightValues> {
               initContainers: [
                 {
                   name: 'wait-for-hindsight',
-                  image: 'busybox',
-                  command: [
-                    'sh',
-                    '-c',
-                    `until wget -q -O /dev/null http://${this.exports.apiHost}:${this.exports.apiPort}/health; do echo "waiting for hindsight-api"; sleep 5; done`,
+                  image: 'curlimages/curl:8.12.1',
+                  command: ['sh', '/scripts/wait-for-hindsight.sh'],
+                  env: [
+                    {
+                      name: 'HINDSIGHT_BASE_URL',
+                      value: `http://${this.exports.apiHost}:${this.exports.apiPort}`,
+                    },
+                    { name: 'HINDSIGHT_WAIT_SLEEP_SECONDS', value: '5' },
+                  ],
+                  volumeMounts: [
+                    { name: 'bank-import-scripts', mountPath: '/scripts', readOnly: true },
                   ],
                 },
               ],
               containers: [
                 {
                   name: 'import',
-                  image: 'busybox',
-                  command: ['sh', '-c', bankImportCmds],
+                  image: 'curlimages/curl:8.12.1',
+                  command: ['sh', '/scripts/import-banks.sh'],
+                  env: [
+                    {
+                      name: 'HINDSIGHT_BASE_URL',
+                      value: `http://${this.exports.apiHost}:${this.exports.apiPort}`,
+                    },
+                    { name: 'HINDSIGHT_BANK_SPECS', value: bankSpecs.join('\n') },
+                    { name: 'HINDSIGHT_BANK_DIR', value: '/banks' },
+                  ],
+                  volumeMounts: [
+                    { name: 'bank-import-scripts', mountPath: '/scripts', readOnly: true },
+                    { name: 'bank-import-data', mountPath: '/banks', readOnly: true },
+                  ],
+                },
+              ],
+              volumes: [
+                {
+                  name: 'bank-import-scripts',
+                  configMap: { name: scriptConfigMapName, defaultMode: 0o755 },
+                },
+                {
+                  name: 'bank-import-data',
+                  configMap: { name: bankConfigMapName },
                 },
               ],
             },

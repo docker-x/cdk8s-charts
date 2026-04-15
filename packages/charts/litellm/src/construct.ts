@@ -1,7 +1,17 @@
+import { readFileSync } from 'node:fs';
 import { HelmConstruct } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { LitellmExports, LitellmProps, LitellmValues, LitellmVirtualKey } from './types';
+
+const WAIT_FOR_LITELLM_SCRIPT = readFileSync(
+  new URL('./scripts/wait-for-litellm.sh', import.meta.url),
+  'utf8',
+);
+const PROVISION_KEYS_SCRIPT = readFileSync(
+  new URL('./scripts/provision-keys.sh', import.meta.url),
+  'utf8',
+);
 
 export class Litellm extends HelmConstruct<LitellmValues> {
   public readonly exports: LitellmExports;
@@ -116,34 +126,44 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     keys: LitellmVirtualKey[],
   ): void {
     const baseUrl = `http://${host}:${port}`;
+    const scriptConfigMapName = `${releaseName}-provision-keys-scripts`;
+    const payloadConfigMapName = `${releaseName}-provision-keys-data`;
+    const keySpecs: string[] = [];
+    const payloadFiles: Record<string, string> = {};
 
-    const provisionCmds = keys.map((vk) => {
-      const payload = JSON.stringify({
+    keys.forEach((vk, index) => {
+      const fileName = `key-${index}.json`;
+      payloadFiles[fileName] = JSON.stringify({
         key_alias: vk.alias,
         key: vk.key,
         ...(vk.models ? { models: vk.models } : {}),
         ...(vk.max_budget !== undefined ? { max_budget: vk.max_budget } : {}),
       });
-      return [
-        `echo "Provisioning key: ${vk.alias}"`,
-        `RESP=$(curl -s -w "\\n%{http_code}" -X POST ${baseUrl}/key/generate \\`,
-        `  -H "Authorization: Bearer ${masterKey}" \\`,
-        `  -H "Content-Type: application/json" \\`,
-        `  -d '${payload}')`,
-        `HTTP_CODE=$(echo "$RESP" | tail -1)`,
-        `BODY=$(echo "$RESP" | sed '$d')`,
-        `echo "Response ($HTTP_CODE): $BODY"`,
-        `if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then`,
-        `  echo "Key ${vk.alias} provisioned successfully"`,
-        `elif echo "$BODY" | grep -q "already exists"; then`,
-        `  echo "Key ${vk.alias} already exists — skipping"`,
-        `else`,
-        `  echo "ERROR: Failed to provision key ${vk.alias}" >&2; exit 1`,
-        `fi`,
-      ].join('\n');
+      keySpecs.push(`${vk.alias}\t${fileName}`);
     });
 
-    const script = provisionCmds.join('\necho "---"\n');
+    new ApiObject(this, 'provision-scripts', {
+      apiVersion: 'v1',
+      kind: 'ConfigMap',
+      metadata: {
+        name: scriptConfigMapName,
+        namespace,
+      },
+      data: {
+        'wait-for-litellm.sh': WAIT_FOR_LITELLM_SCRIPT,
+        'provision-keys.sh': PROVISION_KEYS_SCRIPT,
+      },
+    });
+
+    new ApiObject(this, 'provision-data', {
+      apiVersion: 'v1',
+      kind: 'ConfigMap',
+      metadata: {
+        name: payloadConfigMapName,
+        namespace,
+      },
+      data: payloadFiles,
+    });
 
     new ApiObject(this, 'provision-keys', {
       apiVersion: 'batch/v1',
@@ -161,9 +181,14 @@ export class Litellm extends HelmConstruct<LitellmValues> {
               {
                 name: 'wait-for-litellm',
                 image: 'curlimages/curl:8.12.1',
-                command: ['sh', '-c'],
-                args: [
-                  `for i in $(seq 1 60); do if curl -sf ${baseUrl}/health/liveliness; then echo "LiteLLM is ready"; exit 0; fi; echo "Waiting for LiteLLM... ($i/60)"; sleep 5; done; echo "Timed out waiting for LiteLLM" >&2; exit 1`,
+                command: ['sh', '/scripts/wait-for-litellm.sh'],
+                env: [
+                  { name: 'LITELLM_BASE_URL', value: baseUrl },
+                  { name: 'LITELLM_WAIT_RETRIES', value: '60' },
+                  { name: 'LITELLM_WAIT_SLEEP_SECONDS', value: '5' },
+                ],
+                volumeMounts: [
+                  { name: 'provision-scripts', mountPath: '/scripts', readOnly: true },
                 ],
               },
             ],
@@ -171,11 +196,30 @@ export class Litellm extends HelmConstruct<LitellmValues> {
               {
                 name: 'provision',
                 image: 'curlimages/curl:8.12.1',
-                command: ['sh', '-c'],
-                args: [script],
+                command: ['sh', '/scripts/provision-keys.sh'],
+                env: [
+                  { name: 'LITELLM_BASE_URL', value: baseUrl },
+                  { name: 'LITELLM_MASTER_KEY', value: masterKey },
+                  { name: 'LITELLM_KEY_SPECS', value: keySpecs.join('\n') },
+                  { name: 'LITELLM_KEY_DIR', value: '/keys' },
+                ],
+                volumeMounts: [
+                  { name: 'provision-scripts', mountPath: '/scripts', readOnly: true },
+                  { name: 'provision-data', mountPath: '/keys', readOnly: true },
+                ],
               },
             ],
             restartPolicy: 'OnFailure',
+            volumes: [
+              {
+                name: 'provision-scripts',
+                configMap: { name: scriptConfigMapName, defaultMode: 0o755 },
+              },
+              {
+                name: 'provision-data',
+                configMap: { name: payloadConfigMapName },
+              },
+            ],
           },
         },
       },
