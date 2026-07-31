@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Helm } from 'cdk8s';
@@ -13,6 +13,28 @@ import type { DeepPartial } from './k8s-types';
 const HELM_CACHE_DIR = process.env.HELM_CACHE_HOME
   ? join(process.env.HELM_CACHE_HOME, 'repository')
   : join(process.env.HOME ?? '/root', '.cache', 'helm', 'repository');
+
+// Restrict PATH to fixed system directories when shelling out to helm.
+const HELM_PATH = '/usr/local/bin:/usr/bin:/bin';
+const HELM_PULL_TIMEOUT_MS = Number(process.env.HELM_PULL_TIMEOUT_MS) || 300_000;
+
+const ociPullCache = new Map<string, string>();
+const ociPullTempDirs: string[] = [];
+let ociPullCleanupRegistered = false;
+
+function registerOciPullCleanup(): void {
+  if (ociPullCleanupRegistered) return;
+  ociPullCleanupRegistered = true;
+  process.on('exit', () => {
+    for (const dir of ociPullTempDirs) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup errors on exit
+      }
+    }
+  });
+}
 
 /**
  * Resolve an OCI chart reference to a local cached .tgz if available.
@@ -62,17 +84,48 @@ function resolveChart(chart: string, version?: string): { chart: string; fromCac
 }
 
 function pullOciChart(chart: string, version?: string): string {
+  const cacheKey = `${chart}@${version ?? 'latest'}`;
+  const cached = ociPullCache.get(cacheKey);
+  if (cached) return cached;
+
+  registerOciPullCleanup();
+
   const destination = mkdtempSync(join(tmpdir(), 'cdk8s-chart-'));
-  const args = ['pull', chart, '--destination', destination];
-  if (version) args.push('--version', version);
+  ociPullTempDirs.push(destination);
 
-  const result = spawnSync('helm', args, { encoding: 'utf8' });
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(result.stderr || `Unable to pull Helm chart ${chart}`);
+  try {
+    const args = ['pull', chart, '--destination', destination];
+    if (version) args.push('--version', version);
 
-  const archive = readdirSync(destination).find((file) => file.endsWith('.tgz'));
-  if (!archive) throw new Error(`Helm did not produce a chart archive for ${chart}`);
-  return join(destination, archive);
+    const result = spawnSync('helm', args, {
+      encoding: 'utf8',
+      timeout: HELM_PULL_TIMEOUT_MS,
+      env: { ...process.env, PATH: HELM_PATH },
+    });
+    if (result.error) {
+      if ((result.error as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
+        throw new Error(`Helm pull timed out after ${HELM_PULL_TIMEOUT_MS}ms for ${chart}`);
+      }
+      throw result.error;
+    }
+    if (result.status !== 0) throw new Error(result.stderr || `Unable to pull Helm chart ${chart}`);
+
+    const archive = readdirSync(destination).find((file) => file.endsWith('.tgz'));
+    if (!archive) throw new Error(`Helm did not produce a chart archive for ${chart}`);
+
+    const resolved = join(destination, archive);
+    ociPullCache.set(cacheKey, resolved);
+    return resolved;
+  } catch (err) {
+    try {
+      rmSync(destination, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors on failure
+    }
+    const idx = ociPullTempDirs.indexOf(destination);
+    if (idx !== -1) ociPullTempDirs.splice(idx, 1);
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------
