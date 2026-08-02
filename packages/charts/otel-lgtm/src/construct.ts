@@ -67,7 +67,8 @@ export class OtelLgtm extends HelmConstruct<Values> {
       values.podLabels = {};
     }
 
-    const labels = { app: id, ...values.podLabels };
+    const selectorLabels = { app: id };
+    const labels = { ...values.podLabels, ...selectorLabels };
     const hasConfig = Object.keys(values.configMapData ?? {}).length > 0;
     const configMapName = values.configMapName ?? `${id}-config`;
 
@@ -105,7 +106,7 @@ export class OtelLgtm extends HelmConstruct<Values> {
       metadata: { name: id, namespace: props.namespace },
       spec: {
         replicas: 1,
-        selector: { matchLabels: labels },
+        selector: { matchLabels: selectorLabels },
         template: {
           metadata: { labels, annotations: values.podAnnotations },
           spec: {
@@ -143,7 +144,7 @@ export class OtelLgtm extends HelmConstruct<Values> {
       metadata: { name: id, namespace: props.namespace },
       spec: {
         type: values.serviceType,
-        selector: labels,
+        selector: selectorLabels,
         ports: [
           { name: 'grafana', port: values.grafanaPort, targetPort: values.grafanaPort },
           { name: 'otlp-grpc', port: values.otlpGrpcPort, targetPort: values.otlpGrpcPort },
