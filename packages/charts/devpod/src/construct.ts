@@ -1,50 +1,72 @@
+import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
+import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
-import { Deployment, Service, PersistentVolumeClaim, ServiceAccount } from 'cdk8s-plus-27';
-import type { DevPodExports, DevPodProps } from './types';
+import type { Exports, Props, Values } from './types';
 
-export class DevPod extends Deployment {
-  public readonly exports: DevPodExports;
+const DEFAULT_IMAGE = 'codercom/code-server:4.23.1';
 
-  constructor(scope: Construct, id: string, props: DevPodProps) {
-    const {
-      namespace,
-      password,
-      storageSize = '10Gi',
-      storageClass,
-      resources = {
+export class DevPod extends HelmConstruct<Values> {
+  public readonly exports: Exports;
+
+  constructor(scope: Construct, id: string, props: Props) {
+    super(scope, id);
+
+    const computed: Values = {
+      image: props.image ?? DEFAULT_IMAGE,
+      replicas: props.replicas ?? 1,
+      resources: props.resources ?? {
         requests: { cpu: '200m', memory: '512Mi' },
         limits: { cpu: '1', memory: '2Gi' },
       },
-      image = 'codercom/code-server:4.23.1',
-      replicas = 1,
-    } = props;
+      storageSize: props.storageSize ?? '10Gi',
+      storageClass: props.storageClass,
+      password: props.password,
+      passwordSecret: props.passwordSecret,
+    };
 
-    if (!password || password.trim() === '') {
-      throw new Error('password is required and cannot be empty');
+    const values = props.values ? deepMerge(computed, props.values) : computed;
+
+    const secretName = values.passwordSecret?.name ?? `${id}-secret`;
+    const secretKey = values.passwordSecret?.key ?? 'password';
+
+    if (!values.passwordSecret) {
+      if (!values.password || values.password.trim() === '') {
+        throw new Error('password is required and cannot be empty');
+      }
+
+      new ApiObject(this, 'secret', {
+        apiVersion: 'v1',
+        kind: 'Secret',
+        metadata: { name: secretName, namespace: props.namespace },
+        stringData: { [secretKey]: values.password },
+      });
     }
 
-    // ServiceAccount
-    const serviceAccount = new ServiceAccount(scope, `${id}-sa`, {
-      metadata: { name: `${id}-sa`, namespace },
+    new ApiObject(this, 'sa', {
+      apiVersion: 'v1',
+      kind: 'ServiceAccount',
+      metadata: { name: `${id}-sa`, namespace: props.namespace },
     });
 
-    // PVC
-    const pvc = new PersistentVolumeClaim(scope, `${id}-pvc`, {
-      metadata: { name: `${id}-pvc`, namespace },
+    new ApiObject(this, 'pvc', {
+      apiVersion: 'v1',
+      kind: 'PersistentVolumeClaim',
+      metadata: { name: `${id}-pvc`, namespace: props.namespace },
       spec: {
         accessModes: ['ReadWriteMany'],
         resources: {
-          requests: { storage: storageSize },
+          requests: { storage: values.storageSize },
         },
-        ...(storageClass ? { storageClassName: storageClass } : {}),
+        ...(values.storageClass ? { storageClassName: values.storageClass } : {}),
       },
     });
 
-    // Deployment
-    super(scope, id, {
-      metadata: { name: id, namespace },
+    new ApiObject(this, 'deployment', {
+      apiVersion: 'apps/v1',
+      kind: 'Deployment',
+      metadata: { name: id, namespace: props.namespace },
       spec: {
-        replicas,
+        replicas: values.replicas,
         selector: { matchLabels: { app: id } },
         template: {
           metadata: { labels: { app: id } },
@@ -58,10 +80,26 @@ export class DevPod extends Deployment {
             containers: [
               {
                 name: 'workspace',
-                image,
+                image: values.image,
                 env: [
-                  { name: 'PASSWORD', value: password },
-                  { name: 'SUDO_PASSWORD', value: password },
+                  {
+                    name: 'PASSWORD',
+                    valueFrom: {
+                      secretKeyRef: {
+                        name: secretName,
+                        key: secretKey,
+                      },
+                    },
+                  },
+                  {
+                    name: 'SUDO_PASSWORD',
+                    valueFrom: {
+                      secretKeyRef: {
+                        name: secretName,
+                        key: secretKey,
+                      },
+                    },
+                  },
                 ],
                 ports: [{ containerPort: 8080 }],
                 volumeMounts: [
@@ -70,7 +108,7 @@ export class DevPod extends Deployment {
                     mountPath: '/home/coder',
                   },
                 ],
-                resources,
+                resources: values.resources,
               },
             ],
             volumes: [
@@ -84,9 +122,10 @@ export class DevPod extends Deployment {
       },
     });
 
-    // Service
-    const service = new Service(scope, `${id}-service`, {
-      metadata: { name: id, namespace },
+    new ApiObject(this, 'service', {
+      apiVersion: 'v1',
+      kind: 'Service',
+      metadata: { name: id, namespace: props.namespace },
       spec: {
         selector: { app: id },
         ports: [{ port: 8080, targetPort: 8080 }],
@@ -96,7 +135,8 @@ export class DevPod extends Deployment {
     this.exports = {
       host: id,
       port: 8080,
-      password,
+      secretName,
+      password: values.password ?? '',
     };
   }
 }

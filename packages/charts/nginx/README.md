@@ -1,6 +1,6 @@
 # @cdk8s-charts/nginx
 
-Typed cdk8s construct for Nginx proxy/sidecar.
+Typed cdk8s construct for an Nginx proxy/sidecar backed by raw K8s ApiObjects.
 
 ## Usage
 
@@ -15,13 +15,13 @@ const nginx = new Nginx(this, 'nginx', {
   proxyConfigs: [
     {
       path: '/supervisor/',
-      targetHost: '127.0.0.1',
+      targetHost: 'gascity-supervisor',
       targetPort: 8372,
       sseSupport: true,
     },
     {
       path: '/',
-      targetHost: '127.0.0.1',
+      targetHost: 'gascity-dashboard',
       targetPort: 8081,
     },
   ],
@@ -36,14 +36,24 @@ const { host, port } = nginx.exports;
 ```typescript
 import { Nginx } from '@cdk8s-charts/nginx';
 
-const nginxContainer = Nginx.getSidecarContainer(
-  'nginx-config',
-  8080,
-  { cpu: '100m', memory: '128Mi' }
+// Create only the ConfigMap
+const nginx = new Nginx(this, 'nginx', {
+  namespace: 'my-namespace',
+  targetDeployment: 'my-app',
+  proxyConfigs: [
+    { path: '/', targetHost: '127.0.0.1', targetPort: 8080 },
+  ],
+});
+
+// Get the sidecar container definition
+const sidecar = Nginx.getSidecarContainer(
+  nginx.exports.port,
+  { cpu: '100m', memory: '128Mi' },
 );
 
-// Add to your deployment
-deployment.spec.template.spec.containers.push(nginxContainer);
+// Mount volumes named nginx-config, nginx-cache, and nginx-run. The
+// nginx-config volume must reference the ConfigMap `nginx.exports.configMapName`.
+// Then add the container to the target Deployment's pod spec.
 ```
 
 ## Props
@@ -55,14 +65,16 @@ deployment.spec.template.spec.containers.push(nginxContainer);
 | `resources` | `ResourceValues` | no | CPU/memory requests/limits |
 | `replicas` | `number` | no | Number of replicas (default: `1`) |
 | `proxyConfigs` | `ProxyConfig[]` | yes | Array of proxy configurations |
-| `targetDeployment` | `string` | no | Target deployment for sidecar pattern |
+| `targetDeployment` | `string` | no | Target deployment for sidecar pattern; only the ConfigMap is created |
+| `values` | `DeepPartial<Values>` | no | Raw value overrides |
 
 ## Exports
 
 | Export | Type | Description |
 |--------|------|-------------|
-| `host` | `string` | Service DNS name |
+| `host` | `string` | Service DNS name or `targetDeployment` value |
 | `port` | `number` | Nginx listen port |
+| `configMapName` | `string` | Generated `nginx.conf` ConfigMap name |
 
 ## Proxy Config
 

@@ -1,31 +1,49 @@
 /**
- * Types for Gascity AI agent framework deployment.
+ * Types for the Gascity AI agent framework construct.
+ *
+ * Extends HelmConstruct<Values> for deep-merge utilities, but renders raw K8s
+ * ApiObjects because there is no upstream Helm chart.
  */
+
+import type { DeepPartial } from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
 // Resources
 // ---------------------------------------------------------------------------
 
-export interface GascityResourceValues {
+export interface ResourceValues {
   requests?: { memory?: string; cpu?: string };
   limits?: { memory?: string; cpu?: string };
 }
 
-// ---------------------------------------------------------------------------
-// Storage
-// ---------------------------------------------------------------------------
-
-export interface GascityStorageValues {
+export interface StorageValues {
   size?: string;
   storageClass?: string;
   accessMode?: 'ReadWriteOnce' | 'ReadWriteMany' | 'ReadOnlyMany';
 }
 
 // ---------------------------------------------------------------------------
+// Internal values (deep-merged with user overrides)
+// ---------------------------------------------------------------------------
+
+export interface Values {
+  imageUrl?: string;
+  storageSize?: string;
+  storageClass?: string;
+  supervisorPort?: number;
+  dashboardPort?: number;
+  resources?: ResourceValues;
+  replicas?: number;
+  withDashboard?: boolean;
+  withSupervisor?: boolean;
+  supervisorUrl?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Construct props & exports
 // ---------------------------------------------------------------------------
 
-export interface GascityProps {
+export interface Props {
   namespace: string;
   /** Gascity image URL (required). */
   imageUrl: string;
@@ -38,7 +56,7 @@ export interface GascityProps {
   /** Dashboard port. Default: 8081. */
   dashboardPort?: number;
   /** Resource requests/limits. */
-  resources?: GascityResourceValues;
+  resources?: ResourceValues;
   /** Number of replicas. Default: 1. */
   replicas?: number;
   /** Enable dashboard. Default: true. */
@@ -47,9 +65,11 @@ export interface GascityProps {
   withSupervisor?: boolean;
   /** Supervisor URL for dashboard (e.g., '/supervisor' or 'http://127.0.0.1:8372'). */
   supervisorUrl?: string;
+  /** Raw value overrides (deep-merged into computed defaults). */
+  values?: DeepPartial<Values>;
 }
 
-export interface GascityExports {
+export interface Exports {
   /** Supervisor service DNS name (if enabled). */
   supervisorHost?: string;
   /** Supervisor port. */

@@ -43,6 +43,15 @@ cdk8s-charts/
       gitlab-runner/                @cdk8s-charts/gitlab-runner
         src/types.ts                GitLab Runner Helm values + Props/Exports
         src/construct.ts            GitlabRunner construct
+      devpod/                       @cdk8s-charts/devpod
+        src/types.ts                DevPod raw-deployment values + Props/Exports
+        src/construct.ts            DevPod construct (ApiObject based)
+      gascity/                      @cdk8s-charts/gascity
+        src/types.ts                Gascity raw-deployment values + Props/Exports
+        src/construct.ts            Gascity construct (ApiObject based)
+      nginx/                        @cdk8s-charts/nginx
+        src/types.ts                Nginx raw-deployment values + Props/Exports
+        src/construct.ts            Nginx construct (ApiObject based)
       kodus/                        @cdk8s-charts/kodus
         src/types.ts                Kodus Helm values + Props/Exports
         src/construct.ts            Kodus construct with local K3s exposure
@@ -68,10 +77,14 @@ utils  <--  plane-ce
 utils  <--  redis
 utils  <--  headlamp
 utils  <--  gitlab-runner
+utils  <--  devpod
+utils  <--  gascity
+utils  <--  nginx
 utils  <--  kodus
 utils  <--  mastra-studio
 utils + litellm + hindsight  <--  hindsight-litellm
 utils + litellm + plane-ce   <--  litellm-plane
+devpod + gascity + nginx  <--  devspace
 hindsight-litellm  <--  examples/coding-agent-memory
 ```
 
@@ -330,7 +343,132 @@ Wraps the [GitLab Runner](https://docs.gitlab.com/runner/install/kubernetes/) He
 4. Enables RBAC for pods, attach/exec, logs, secrets, serviceaccounts, services, and events in the core API group.
 5. Exposes `deploymentName` based on the chart fullname helper (`{release}-{chart}` by default; `fullnameOverride` or `nameOverride` may change it).
 
-### 3.9 Kodus Construct
+### 3.9 DevPod Construct
+
+**Package**: `@cdk8s-charts/devpod`
+
+Deploys a [code-server](https://coder.com/docs/code-server) DevPod/VS Code
+workspace as raw K8s ApiObjects.
+
+**Props (`Props`):**
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `password` | `string` | yes* | VS Code password |
+| `passwordSecret` | `{ name, key }` | no | Reference to an existing Secret containing the password |
+| `storageSize` | `string` | no | PVC size (default: `10Gi`) |
+| `storageClass` | `string` | no | Storage class for PVC |
+| `resources` | `ResourceValues` | no | CPU/memory requests/limits |
+| `image` | `string` | no | Code-server image (default: `codercom/code-server:4.23.1`) |
+| `replicas` | `number` | no | Replica count (default: `1`) |
+| `values` | `DeepPartial<Values>` | no | Raw value overrides |
+
+*Either `password` or `passwordSecret` is required. When `password` is supplied, a Secret named `{id}-secret` is created automatically.
+
+**Exports (`Exports`):**
+
+| Export | Value | Description |
+|--------|-------|-------------|
+| `host` | `id` | Service DNS name |
+| `port` | `8080` | Service port |
+| `secretName` | `{id}-secret` or supplied value | Secret with the VS Code password |
+| `password` | same as input | Plain password for downstream wiring |
+
+**Resources created:**
+
+1. `Secret` (`{id}-secret`) — written from `password` when `passwordSecret` is not supplied
+2. `ServiceAccount` (`{id}-sa`)
+3. `PersistentVolumeClaim` (`{id}-pvc`)
+4. `Deployment` (`{id}`) — uses `valueFrom.secretKeyRef` for `PASSWORD` and `SUDO_PASSWORD`
+5. `Service` (`{id}`)
+
+### 3.10 Gascity Construct
+
+**Package**: `@cdk8s-charts/gascity`
+
+Deploys the Gascity AI agent framework as raw K8s ApiObjects.
+
+**Props (`Props`):**
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `imageUrl` | `string` | yes | Gascity image URL |
+| `storageSize` | `string` | no | PVC size (default: `20Gi`) |
+| `storageClass` | `string` | no | Storage class for PVC |
+| `supervisorPort` | `number` | no | Supervisor port (default: `8372`) |
+| `dashboardPort` | `number` | no | Dashboard port (default: `8081`) |
+| `resources` | `ResourceValues` | no | CPU/memory requests/limits |
+| `replicas` | `number` | no | Replica count (default: `1`) |
+| `withDashboard` | `boolean` | no | Enable dashboard (default: `true`) |
+| `withSupervisor` | `boolean` | no | Enable supervisor (default: `true`) |
+| `supervisorUrl` | `string` | no | Supervisor URL for dashboard (default: `/supervisor`) |
+| `values` | `DeepPartial<Values>` | no | Raw value overrides |
+
+**Exports (`Exports`):**
+
+| Export | Value | Description |
+|--------|-------|-------------|
+| `dashboardHost` | `{id}-dashboard` (if enabled) | Dashboard Service DNS name |
+| `dashboardPort` | `dashboardPort` | Dashboard port |
+| `supervisorHost` | `{id}-supervisor` (if enabled) | Supervisor Service DNS name |
+| `supervisorPort` | `supervisorPort` | Supervisor port |
+
+**Process lifecycle:**
+
+- A startup script (`start.sh` mounted from a ConfigMap) starts `gc supervisor run` in the background.
+- It polls `http://127.0.0.1:${SUPERVISOR_PORT}/` with `curl` or `wget` for up to 60 seconds.
+- Once the supervisor is reachable, it starts `gc dashboard` and `wait`s for both processes.
+- A `trap` cleans up the supervisor/dashboard processes on container exit.
+- Dashboard mode adds Kubernetes `readinessProbe` and `livenessProbe` HTTP checks on `/`.
+
+**Resources created:**
+
+1. `ConfigMap` (`{id}-config`) — startup script and `dashboard-supervisor-url`
+2. `PersistentVolumeClaim` (`{id}-pvc`)
+3. `Deployment` (`{id}`)
+4. `Service` (`{id}-dashboard`) when `withDashboard`
+5. `Service` (`{id}-supervisor`) when `withSupervisor`
+
+### 3.11 Nginx Construct
+
+**Package**: `@cdk8s-charts/nginx`
+
+Deploys an Nginx reverse proxy/sidecar as raw K8s ApiObjects.
+
+**Props (`Props`):**
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `listenPort` | `number` | no | Listen port (default: `8080`) |
+| `resources` | `ResourceValues` | no | CPU/memory requests/limits |
+| `replicas` | `number` | no | Replica count (default: `1`) |
+| `proxyConfigs` | `ProxyConfig[]` | yes | Proxy locations |
+| `targetDeployment` | `string` | no | If set, only create the ConfigMap; caller mounts the sidecar |
+| `values` | `DeepPartial<Values>` | no | Raw value overrides |
+
+**Exports (`Exports`):**
+
+| Export | Value | Description |
+|--------|-------|-------------|
+| `host` | `id` or `targetDeployment` | Service or target DNS name |
+| `port` | `listenPort` | Nginx listen port |
+| `configMapName` | `{id}-config` | Generated `nginx.conf` ConfigMap |
+
+**Helpers:**
+
+- `Nginx.generateNginxConfig(listenPort, proxyConfigs)` — returns an `nginx.conf` string with `proxy_set_header Host $host;` (no hardcoded `localhost`).
+- `Nginx.getSidecarContainer(configMapName, listenPort, resources?)` — returns a raw container spec for mounting into another Deployment.
+
+**Resources created:**
+
+1. `ConfigMap` (`{id}-config`) — `nginx.conf`
+2. `Deployment` (`{id}`) — standalone mode
+3. `Service` (`{id}`) — standalone mode
+
+### 3.12 Kodus Construct
 
 **Package**: `@cdk8s-charts/kodus`
 

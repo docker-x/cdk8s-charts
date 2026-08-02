@@ -37,6 +37,10 @@ const devspace = new DevSpace(this, 'devspace', {
     withSupervisor: true,
     supervisorUrl: '/supervisor',
   },
+  nginx: {
+    enabled: true,
+    listenPort: 8080,
+  },
   openshift: {
     enabled: true,
     createRoutes: true,
@@ -82,7 +86,7 @@ new DevSpace(this, 'devspace', {
 |------|------|---------|
 | `enabled` | `boolean` | `true` |
 | `storageSize` | `string` | `20Gi` |
-| `imageUrl` | `string` | OpenShift registry |
+| `imageUrl` | `string` | **Required** (when enabled) |
 | `withDashboard` | `boolean` | `true` |
 | `withSupervisor` | `boolean` | `true` |
 | `supervisorUrl` | `string` | `/supervisor` |
@@ -105,12 +109,13 @@ new DevSpace(this, 'devspace', {
 |--------|------|-------------|
 | `devpodHost` | `string \| undefined` | DevPod service DNS name |
 | `devpodPort` | `number \| undefined` | DevPod service port |
-| `gascityDashboardHost` | `string \| undefined` | Gascity dashboard service DNS name |
+| `gascityDashboardHost` | `string \| undefined` | Gascity dashboard service DNS name (Nginx proxy if enabled) |
 | `gascityDashboardPort` | `number \| undefined` | Gascity dashboard service port |
 
 ## Components
 
 ### DevPod
+- Secret: `devpod-secret`
 - ServiceAccount: `devpod-sa`
 - PVC: `devpod-pvc`
 - Deployment: `devpod`
@@ -118,11 +123,17 @@ new DevSpace(this, 'devspace', {
 - Route: `devpod-workspace` (OpenShift)
 
 ### Gascity
-- ConfigMap: `gascity-config`, `gascity-nginx-config`
+- ConfigMap: `gascity-config`
 - PVC: `gascity-pvc`
-- Deployment: `gascity` (with nginx sidecar)
+- Deployment: `gascity`
 - Service: `gascity-dashboard`
+- Service: `gascity-supervisor` (if supervisor enabled)
 - Route: `gascity-dashboard` (OpenShift)
+
+### Nginx
+- ConfigMap: `gascity-nginx-config`
+- Deployment: `gascity-nginx`
+- Service: `gascity-nginx`
 
 ## Architecture
 
@@ -132,9 +143,9 @@ new DevSpace(this, 'devspace', {
 └──────────────┬──────────────────────────┘
                │
 ┌──────────────▼──────────────────────────┐
-│         Nginx Sidecar (8080)            │
-│  /supervisor → localhost:8372          │
-│  / → localhost:8081                    │
+│         Nginx Proxy (8080)              │
+│  /supervisor → gascity-supervisor:8372 │
+│  / → gascity-dashboard:8081            │
 └──────────────┬──────────────────────────┘
                │
        ┌───────┴───────┐
@@ -148,4 +159,4 @@ new DevSpace(this, 'devspace', {
 ## Access
 
 - **DevPod (VS Code):** Port 8080 (via Route if OpenShift)
-- **Gascity Dashboard:** Port 8080 (via nginx sidecar)
+- **Gascity Dashboard:** Port 8080 (via Nginx proxy if enabled, otherwise `gascity-dashboard` directly)
