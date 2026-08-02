@@ -46,6 +46,27 @@ export class OtelLgtm extends HelmConstruct<Values> {
     };
 
     const values = deepMerge(computed, props.values ?? {});
+
+    // Guard against JavaScript callers passing `null` for nested overrides and
+    // keep the readiness probe port aligned with the final merged Grafana port.
+    if (!values.readinessProbe) {
+      values.readinessProbe = {
+        path: '/api/health',
+        port: values.grafanaPort,
+        initialDelaySeconds: 10,
+        periodSeconds: 10,
+      };
+    } else {
+      values.readinessProbe.port = props.values?.readinessProbe?.port ?? values.grafanaPort;
+    }
+
+    if (!values.podAnnotations) {
+      values.podAnnotations = {};
+    }
+    if (!values.podLabels) {
+      values.podLabels = {};
+    }
+
     const labels = { app: id, ...values.podLabels };
     const hasConfig = Object.keys(values.configMapData ?? {}).length > 0;
     const configMapName = values.configMapName ?? `${id}-config`;
@@ -73,8 +94,8 @@ export class OtelLgtm extends HelmConstruct<Values> {
       ? (values.configMapMounts ?? []).map((mount) => ({
           name: 'config',
           mountPath: mount.mountPath,
-          ...(mount.subPath ? { subPath: mount.subPath } : {}),
-          ...(mount.readOnly === undefined ? { readOnly: true } : { readOnly: mount.readOnly }),
+          subPath: mount.subPath ?? mount.key,
+          readOnly: mount.readOnly ?? true,
         }))
       : [];
 

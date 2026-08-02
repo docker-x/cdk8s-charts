@@ -412,7 +412,16 @@ chart.
 | `image` | `string` | no | OTEL-LGTM image, default `grafana/otel-lgtm:latest` |
 | `serviceType` | `'ClusterIP' \| 'NodePort' \| 'LoadBalancer'` | no | Service type, default `ClusterIP` |
 | `dataSize` | `string` | no | PVC size, default `10Gi` |
+| `dataMountPath` | `string` | no | Container path for the PVC, default `/data` |
+| `configMapName` | `string` | no | ConfigMap name, default `{id}-config` |
 | `configMapData` | `Record<string, string>` | no | Files mounted into Grafana/Loki configuration paths |
+| `configMapMounts` | `OtelLgtmMount[]` | no | Per-file ConfigMap volume mounts |
+| `grafanaPort` | `number` | no | Grafana port, default `3000` |
+| `otlpGrpcPort` | `number` | no | OTLP gRPC port, default `4317` |
+| `otlpHttpPort` | `number` | no | OTLP HTTP port, default `4318` |
+| `podAnnotations` | `Record<string, string>` | no | Pod annotations, default `{}` |
+| `podLabels` | `Record<string, string>` | no | Pod labels, default `{}` |
+| `resources` | `ResourceRequirements` | no | Container resource requests/limits |
 | `values` | `DeepPartial<Values>` | no | Raw construct value overrides |
 
 **Exports** (`Exports`):
@@ -423,6 +432,7 @@ chart.
 | `grafanaPort` | `number` | `3000` |
 | `otlpGrpcPort` | `number` | `4317` |
 | `otlpHttpPort` | `number` | `4318` |
+| `grafanaUrl` | `string` | `http://{id}:{grafanaPort}` |
 
 The construct creates one Deployment, one Service, one PVC, and an optional
 ConfigMap. It is suitable for local development and demos; production
