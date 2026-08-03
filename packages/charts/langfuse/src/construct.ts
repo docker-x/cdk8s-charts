@@ -87,7 +87,7 @@ export class Langfuse extends HelmConstruct<LangfuseValues> {
       computed,
       props.values,
       {
-        helmFlags: ['--repo', props.repo ?? CHART_REPO],
+        repo: props.repo ?? CHART_REPO,
         version: props.version ?? DEFAULT_VERSION,
       },
     );
