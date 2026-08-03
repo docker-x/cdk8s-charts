@@ -4,6 +4,8 @@ import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { HindsightExports, HindsightProps, HindsightValues } from './types';
 
+const DEFAULT_VERSION = '0.8.6';
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -77,7 +79,7 @@ export class Hindsight extends HelmConstruct<HindsightValues> {
       props.namespace,
       computed,
       props.values,
-      { version: props.version },
+      { version: props.version ?? DEFAULT_VERSION },
     );
 
     this.exports = {

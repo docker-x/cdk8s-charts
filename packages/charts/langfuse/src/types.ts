@@ -166,6 +166,12 @@ export interface LangfuseProps {
   litellmBaseUrl?: string;
   /** LiteLLM API key for playground (optional). */
   litellmApiKey?: string;
+  /** Helm chart name (default: langfuse). */
+  chart?: string;
+  /** Helm chart repository URL (default: https://langfuse.github.io/langfuse-k8s). */
+  repo?: string;
+  /** Helm chart version pin (default: 1.5.41). */
+  version?: string;
   /** Raw Helm value overrides (deep-merged into computed values). */
   values?: DeepPartial<LangfuseValues>;
 }

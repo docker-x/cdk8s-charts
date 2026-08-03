@@ -13,6 +13,8 @@ const PROVISION_KEYS_SCRIPT = readFileSync(
   'utf8',
 );
 
+const DEFAULT_VERSION = '1.95.0';
+
 export class Litellm extends HelmConstruct<LitellmValues> {
   public readonly exports: LitellmExports;
 
@@ -80,7 +82,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       props.namespace,
       computed,
       Object.keys(restOverrides).length > 0 ? restOverrides : undefined,
-      { helmFlags: ['--skip-tests'], version: props.version },
+      { helmFlags: ['--skip-tests'], version: props.version ?? DEFAULT_VERSION },
     );
 
     const svcHost = id;

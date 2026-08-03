@@ -4,6 +4,7 @@ import type { PlaneCeExports, PlaneCeProps, PlaneCeValues } from './types';
 
 const CHART_NAME = 'plane-ce';
 const CHART_REPO = 'https://helm.plane.so/';
+const DEFAULT_CHART_VERSION = '1.6.1';
 
 export class PlaneCe extends HelmConstruct<PlaneCeValues> {
   public readonly exports: PlaneCeExports;
@@ -56,6 +57,7 @@ export class PlaneCe extends HelmConstruct<PlaneCeValues> {
 
     this.renderChart(CHART_NAME, id, props.namespace, computed, props.values, {
       helmFlags: ['--repo', CHART_REPO],
+      version: props.chartVersion ?? DEFAULT_CHART_VERSION,
     });
 
     this.exports = {

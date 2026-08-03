@@ -218,6 +218,8 @@ export interface PlaneCeProps {
   namespace: string;
   /** Plane application version tag (e.g. 'v1.2.3'). */
   version?: string;
+  /** Plane CE Helm chart version (default: 1.6.1). */
+  chartVersion?: string;
   /**
    * Django secret key for hashing/encryption.
    * If not provided, a default is used (NOT for production).

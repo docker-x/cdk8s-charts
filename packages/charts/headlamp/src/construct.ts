@@ -4,6 +4,7 @@ import type { HeadlampExports, HeadlampProps, HeadlampValues } from './types';
 
 const CHART_NAME = 'headlamp';
 const CHART_REPO = 'https://kubernetes-sigs.github.io/headlamp/';
+const DEFAULT_VERSION = '0.44.0';
 
 export class Headlamp extends HelmConstruct<HeadlampValues> {
   public readonly exports: HeadlampExports;
@@ -33,7 +34,7 @@ export class Headlamp extends HelmConstruct<HeadlampValues> {
       props.values,
       {
         repo: props.repo ?? CHART_REPO,
-        version: props.version,
+        version: props.version ?? DEFAULT_VERSION,
       },
     );
 
