@@ -49,6 +49,9 @@ cdk8s-charts/
       mastra-studio/                @cdk8s-charts/mastra-studio
         src/types.ts                Mastra Studio Helm values + Props/Exports
         src/construct.ts            MastraStudio construct (Deployment + Service)
+      otel-lgtm/                    @cdk8s-charts/otel-lgtm
+        src/types.ts                Grafana OTEL-LGTM container values + Props/Exports
+        src/construct.ts            OtelLgtm construct (Deployment + Service + PVC)
     recipes/
       hindsight-litellm/            @cdk8s-charts/hindsight-litellm
         src/construct.ts            Composed stack with auto cross-wiring
@@ -70,6 +73,7 @@ utils  <--  headlamp
 utils  <--  gitlab-runner
 utils  <--  kodus
 utils  <--  mastra-studio
+utils  <--  otel-lgtm
 utils + litellm + hindsight  <--  hindsight-litellm
 utils + litellm + plane-ce   <--  litellm-plane
 hindsight-litellm  <--  examples/coding-agent-memory
@@ -388,6 +392,51 @@ Deploys a standalone [Mastra Studio](https://mastra.ai/docs/studio/overview) UI 
 - Creates a Deployment with a readiness probe and a Service.
 - Sets the `composed.docker-x/depends-on` pod annotation so Studio starts after the Mastra server is healthy in compose projections.
 - The default startup script installs the pinned `mastra` version only when the CLI is unavailable, then runs `mastra studio` against the configured server. For prebuilt images, set `command`/`args` to invoke the baked CLI directly.
+
+### 3.11 OTEL-LGTM Construct
+
+**Package**: `@cdk8s-charts/otel-lgtm`
+
+Deploys the local development backend from
+[grafana/docker-otel-lgtm](https://github.com/grafana/docker-otel-lgtm). The
+image bundles Grafana, Loki, Tempo, Prometheus, and the OpenTelemetry
+Collector. This is intentionally a direct cdk8s construct rather than a Helm
+wrapper because the upstream project publishes a Docker image, not a Helm
+chart.
+
+**Props** (`Props`):
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | Kubernetes namespace |
+| `image` | `string` | no | OTEL-LGTM image, default `grafana/otel-lgtm:latest` |
+| `serviceType` | `'ClusterIP' \| 'NodePort' \| 'LoadBalancer'` | no | Service type, default `ClusterIP` |
+| `dataSize` | `string` | no | PVC size, default `10Gi` |
+| `dataMountPath` | `string` | no | Container path for the PVC, default `/data` |
+| `configMapName` | `string` | no | ConfigMap name, default `{id}-config` |
+| `configMapData` | `Record<string, string>` | no | Files mounted into Grafana/Loki configuration paths |
+| `configMapMounts` | `OtelLgtmMount[]` | no | Per-file ConfigMap volume mounts |
+| `grafanaPort` | `number` | no | Grafana port, default `3000` |
+| `otlpGrpcPort` | `number` | no | OTLP gRPC port, default `4317` |
+| `otlpHttpPort` | `number` | no | OTLP HTTP port, default `4318` |
+| `podAnnotations` | `Record<string, string>` | no | Pod annotations, default `{}` |
+| `podLabels` | `Record<string, string>` | no | Pod labels, default `{}` |
+| `resources` | `ResourceRequirements` | no | Container resource requests/limits |
+| `values` | `DeepPartial<Values>` | no | Raw construct value overrides |
+
+**Exports** (`Exports`):
+
+| Export | Type | Value |
+|--------|------|-------|
+| `host` | `string` | Service DNS name |
+| `grafanaPort` | `number` | `3000` |
+| `otlpGrpcPort` | `number` | `4317` |
+| `otlpHttpPort` | `number` | `4318` |
+| `grafanaUrl` | `string` | `http://{id}:{grafanaPort}` |
+
+The construct creates one Deployment, one Service, one PVC, and an optional
+ConfigMap. It is suitable for local development and demos; production
+deployments should use the individual Grafana component charts.
 
 ## 4. Memory bank configuration
 
