@@ -4,6 +4,7 @@ import type { QdrantExports, QdrantProps, QdrantValues } from './types';
 
 const CHART = 'qdrant';
 const CHART_REPO = 'https://qdrant.github.io/qdrant-helm';
+const DEFAULT_VERSION = '1.18.2';
 const HTTP_PORT = 6333;
 const GRPC_PORT = 6334;
 
@@ -23,9 +24,17 @@ export class Qdrant extends HelmConstruct<QdrantValues> {
       ...(props.apiKey ? { apiKey: props.apiKey } : {}),
     };
 
-    const values = this.renderChart(CHART, id, props.namespace, computed, props.values, {
-      helmFlags: ['--repo', CHART_REPO],
-    });
+    const values = this.renderChart(
+      props.chart ?? CHART,
+      id,
+      props.namespace,
+      computed,
+      props.values,
+      {
+        helmFlags: ['--repo', props.repo ?? CHART_REPO],
+        version: props.version ?? DEFAULT_VERSION,
+      },
+    );
 
     this.exports = {
       host: id,

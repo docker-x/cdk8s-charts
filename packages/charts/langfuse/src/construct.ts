@@ -4,6 +4,7 @@ import type { LangfuseExports, LangfuseProps, LangfuseValues } from './types';
 
 const CHART = 'langfuse';
 const CHART_REPO = 'https://langfuse.github.io/langfuse-k8s';
+const DEFAULT_VERSION = '1.5.41';
 const DEFAULT_PORT = 3000;
 
 export class Langfuse extends HelmConstruct<LangfuseValues> {
@@ -79,9 +80,17 @@ export class Langfuse extends HelmConstruct<LangfuseValues> {
       },
     };
 
-    const values = this.renderChart(CHART, id, props.namespace, computed, props.values, {
-      helmFlags: ['--repo', CHART_REPO],
-    });
+    const values = this.renderChart(
+      props.chart ?? CHART,
+      id,
+      props.namespace,
+      computed,
+      props.values,
+      {
+        helmFlags: ['--repo', props.repo ?? CHART_REPO],
+        version: props.version ?? DEFAULT_VERSION,
+      },
+    );
 
     const port = values.langfuse?.web?.service?.port ?? DEFAULT_PORT;
 

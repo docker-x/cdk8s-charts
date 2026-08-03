@@ -107,6 +107,12 @@ export interface QdrantProps {
   storageSize?: string;
   /** API key for authentication (optional, no auth if omitted). */
   apiKey?: string;
+  /** Helm chart name (default: qdrant). */
+  chart?: string;
+  /** Helm chart repository URL (default: https://qdrant.github.io/qdrant-helm). */
+  repo?: string;
+  /** Helm chart version pin (default: 1.18.2). */
+  version?: string;
   /** Raw Helm value overrides (deep-merged into computed values). */
   values?: DeepPartial<QdrantValues>;
 }
