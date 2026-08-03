@@ -1,13 +1,69 @@
+import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
+import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
-import { Deployment, Service, PersistentVolumeClaim, ConfigMap, Container } from 'cdk8s-plus-27';
-import type { GascityExports, GascityProps } from './types';
+import type { Exports, Props, Values } from './types';
 
-export class Gascity extends Deployment {
-  public readonly exports: GascityExports;
+function startupScript(): string {
+  return `#!/bin/sh
+set -eu
+cd /workspace
+rm -f /workspace/.gc/supervisor.pid /workspace/.gc/supervisor.lock
 
-  constructor(scope: Construct, id: string, props: GascityProps) {
+gc supervisor run &
+SUPERVISOR_PID=$!
+DASHBOARD_PID=""
+
+cleanup() {
+  [ -n "$SUPERVISOR_PID" ] && kill "$SUPERVISOR_PID" 2>/dev/null || true
+  [ -n "$DASHBOARD_PID" ] && kill "$DASHBOARD_PID" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+READY=0
+for i in $(seq 1 60); do
+  if { command -v curl >/dev/null 2>&1 && curl -sf "http://127.0.0.1:\${SUPERVISOR_PORT}/" >/dev/null 2>&1; } || { command -v wget >/dev/null 2>&1 && wget -qO- "http://127.0.0.1:\${SUPERVISOR_PORT}/" >/dev/null 2>&1; }; then
+    READY=1
+    break
+  fi
+  sleep 1
+done
+
+if [ "$READY" -ne 1 ]; then
+  echo "Supervisor did not become ready on port \${SUPERVISOR_PORT}" >&2
+  exit 1
+fi
+
+gc dashboard --api "\${SUPERVISOR_URL}" --port "\${DASHBOARD_PORT}" &
+DASHBOARD_PID=$!
+wait
+`;
+}
+
+export class Gascity extends HelmConstruct<Values> {
+  public readonly exports: Exports;
+
+  constructor(scope: Construct, id: string, props: Props) {
+    super(scope, id);
+
+    const computed: Values = {
+      imageUrl: props.imageUrl,
+      storageSize: props.storageSize ?? '20Gi',
+      storageClass: props.storageClass,
+      supervisorPort: props.supervisorPort ?? 8372,
+      dashboardPort: props.dashboardPort ?? 8081,
+      resources: props.resources ?? {
+        requests: { cpu: '200m', memory: '512Mi' },
+        limits: { cpu: '1', memory: '2Gi' },
+      },
+      replicas: props.replicas ?? 1,
+      withDashboard: props.withDashboard ?? true,
+      withSupervisor: props.withSupervisor ?? true,
+      supervisorUrl: props.supervisorUrl ?? '/supervisor',
+    };
+
+    const values = props.values ? deepMerge(computed, props.values) : computed;
+
     const {
-      namespace,
       imageUrl,
       storageSize = '20Gi',
       storageClass,
@@ -21,7 +77,7 @@ export class Gascity extends Deployment {
       withDashboard = true,
       withSupervisor = true,
       supervisorUrl = '/supervisor',
-    } = props;
+    } = values;
 
     if (!imageUrl) {
       throw new Error('imageUrl is required');
@@ -31,17 +87,42 @@ export class Gascity extends Deployment {
       throw new Error('At least one of withDashboard or withSupervisor must be true');
     }
 
-    // ConfigMap
-    const configMap = new ConfigMap(scope, `${id}-config`, {
-      metadata: { name: `${id}-config`, namespace },
-      data: {
-        'dashboard-supervisor-url': supervisorUrl,
-      },
+    const configData: Record<string, string> = {
+      'dashboard-supervisor-url': supervisorUrl,
+    };
+    let command: string[];
+    let args: string[] | undefined;
+    let volumeMounts: Array<Record<string, unknown>>;
+
+    if (withSupervisor && withDashboard) {
+      configData['start.sh'] = startupScript();
+      command = ['/bin/sh', '/scripts/start.sh'];
+      args = undefined;
+      volumeMounts = [
+        { name: 'workspace', mountPath: '/workspace' },
+        { name: 'config', mountPath: '/scripts/start.sh', subPath: 'start.sh', readOnly: true },
+      ];
+    } else if (withSupervisor) {
+      command = ['/bin/bash'];
+      args = ['-c', 'cd /workspace && gc supervisor run'];
+      volumeMounts = [{ name: 'workspace', mountPath: '/workspace' }];
+    } else {
+      command = ['/bin/bash'];
+      args = ['-c', `gc dashboard --api none --port ${dashboardPort}`];
+      volumeMounts = [{ name: 'workspace', mountPath: '/workspace' }];
+    }
+
+    new ApiObject(this, 'config', {
+      apiVersion: 'v1',
+      kind: 'ConfigMap',
+      metadata: { name: `${id}-config`, namespace: props.namespace },
+      data: configData,
     });
 
-    // PVC
-    const pvc = new PersistentVolumeClaim(scope, `${id}-pvc`, {
-      metadata: { name: `${id}-pvc`, namespace },
+    new ApiObject(this, 'pvc', {
+      apiVersion: 'v1',
+      kind: 'PersistentVolumeClaim',
+      metadata: { name: `${id}-pvc`, namespace: props.namespace },
       spec: {
         accessModes: ['ReadWriteOnce'],
         resources: {
@@ -51,18 +132,58 @@ export class Gascity extends Deployment {
       },
     });
 
-    // Build command
-    const command = withSupervisor && withDashboard
-      ? `cd /workspace && pkill -9 gc || true && rm -f /workspace/.gc/supervisor.pid /workspace/.gc/supervisor.lock && gc supervisor run & sleep 5 && gc dashboard --api ${supervisorUrl} --port ${dashboardPort}`
-      : withSupervisor
-      ? 'cd /workspace && gc supervisor run'
-      : withDashboard
-      ? `gc dashboard --api none --port ${dashboardPort}`
-      : 'gc version';
+    const env: Array<Record<string, unknown>> = [
+      { name: 'HOME', value: '/workspace' },
+      {
+        name: 'GC_DASHBOARD_SUPERVISOR_URL',
+        valueFrom: { configMapKeyRef: { name: `${id}-config`, key: 'dashboard-supervisor-url' } },
+      },
+      {
+        name: 'PATH',
+        value:
+          '/usr/local/bin:/workspace/.local/bin:/workspace/.opencode/bin:/workspace/node-v20.16.0-linux-x64/bin:/usr/local/go/bin:/workspace/bin:/usr/bin:/bin',
+      },
+    ];
 
-    // Deployment
-    super(scope, id, {
-      metadata: { name: id, namespace },
+    if (withSupervisor && withDashboard) {
+      env.push(
+        { name: 'SUPERVISOR_PORT', value: String(supervisorPort) },
+        { name: 'DASHBOARD_PORT', value: String(dashboardPort) },
+        { name: 'SUPERVISOR_URL', value: supervisorUrl },
+      );
+    }
+
+    const ports: Array<{ containerPort: number; name?: string }> = [];
+    if (withDashboard) {
+      ports.push({ containerPort: dashboardPort, name: 'dashboard' });
+    }
+    if (withSupervisor) {
+      ports.push({ containerPort: supervisorPort, name: 'supervisor' });
+    }
+
+    const probes = withDashboard
+      ? {
+          readinessProbe: {
+            httpGet: { path: '/', port: dashboardPort },
+            initialDelaySeconds: 10,
+            periodSeconds: 10,
+            timeoutSeconds: 5,
+            failureThreshold: 3,
+          },
+          livenessProbe: {
+            httpGet: { path: '/', port: dashboardPort },
+            initialDelaySeconds: 30,
+            periodSeconds: 30,
+            timeoutSeconds: 5,
+            failureThreshold: 3,
+          },
+        }
+      : {};
+
+    new ApiObject(this, 'deployment', {
+      apiVersion: 'apps/v1',
+      kind: 'Deployment',
+      metadata: { name: id, namespace: props.namespace },
       spec: {
         replicas,
         selector: { matchLabels: { app: id } },
@@ -78,27 +199,13 @@ export class Gascity extends Deployment {
               {
                 name: 'gascity',
                 image: imageUrl,
-                env: [
-                  { name: 'HOME', value: '/workspace' },
-                  {
-                    name: 'GC_DASHBOARD_SUPERVISOR_URL',
-                    valueFrom: { configMapKeyRef: { name: `${id}-config`, key: 'dashboard-supervisor-url' } },
-                  },
-                  {
-                    name: 'PATH',
-                    value: '/usr/local/bin:/workspace/.local/bin:/workspace/.opencode/bin:/workspace/node-v20.16.0-linux-x64/bin:/usr/local/go/bin:/workspace/bin:/usr/bin:/bin',
-                  },
-                ],
-                command: ['/bin/bash'],
-                args: ['-c', command],
-                ports: withDashboard ? [{ containerPort: dashboardPort, name: 'dashboard' }] : [],
-                volumeMounts: [
-                  {
-                    name: 'workspace',
-                    mountPath: '/workspace',
-                  },
-                ],
+                env,
+                command,
+                ports,
+                volumeMounts,
                 resources,
+                ...probes,
+                ...(args ? { args } : {}),
               },
             ],
             volumes: [
@@ -106,28 +213,48 @@ export class Gascity extends Deployment {
                 name: 'workspace',
                 persistentVolumeClaim: { claimName: `${id}-pvc` },
               },
+              ...(withSupervisor && withDashboard
+                ? [
+                    {
+                      name: 'config',
+                      configMap: { name: `${id}-config` },
+                    },
+                  ]
+                : []),
             ],
           },
         },
       },
     });
 
-    // Service (only if dashboard is enabled)
-    let dashboardService: Service | undefined;
+    const exports: Exports = { supervisorPort, dashboardPort };
+
     if (withDashboard) {
-      dashboardService = new Service(scope, `${id}-dashboard-service`, {
-        metadata: { name: `${id}-dashboard`, namespace },
+      new ApiObject(this, 'dashboard-service', {
+        apiVersion: 'v1',
+        kind: 'Service',
+        metadata: { name: `${id}-dashboard`, namespace: props.namespace },
         spec: {
           selector: { app: id },
           ports: [{ port: dashboardPort, targetPort: dashboardPort }],
         },
       });
+      exports.dashboardHost = `${id}-dashboard`;
     }
 
-    this.exports = {
-      supervisorPort,
-      dashboardPort,
-      ...(withDashboard ? { dashboardHost: `${id}-dashboard` } : {}),
-    };
+    if (withSupervisor) {
+      new ApiObject(this, 'supervisor-service', {
+        apiVersion: 'v1',
+        kind: 'Service',
+        metadata: { name: `${id}-supervisor`, namespace: props.namespace },
+        spec: {
+          selector: { app: id },
+          ports: [{ port: supervisorPort, targetPort: supervisorPort }],
+        },
+      });
+      exports.supervisorHost = `${id}-supervisor`;
+    }
+
+    this.exports = exports;
   }
 }

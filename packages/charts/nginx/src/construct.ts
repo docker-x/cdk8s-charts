@@ -1,139 +1,89 @@
+import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
+import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
-import { Deployment, Service, ConfigMap, Container } from 'cdk8s-plus-27';
-import type { NginxExports, NginxProps } from './types';
+import type { Exports, Props, ProxyConfig, ResourceValues, Values } from './types';
 
-export class Nginx extends Deployment {
-  public readonly exports: NginxExports;
+export class Nginx extends HelmConstruct<Values> {
+  public readonly exports: Exports;
 
-  constructor(scope: Construct, id: string, props: NginxProps) {
-    const {
-      namespace,
-      listenPort = 8080,
-      resources = {
+  constructor(scope: Construct, id: string, props: Props) {
+    super(scope, id);
+
+    const computed: Values = {
+      listenPort: props.listenPort ?? 8080,
+      resources: props.resources ?? {
         requests: { cpu: '100m', memory: '128Mi' },
         limits: { cpu: '200m', memory: '256Mi' },
       },
-      replicas = 1,
-      proxyConfigs,
-      targetDeployment,
-    } = props;
-
-    // Generate nginx config using static method
-    const nginxConfig = Nginx.generateNginxConfig(listenPort, proxyConfigs);
-
-    // ConfigMap
-    const configMap = new ConfigMap(scope, `${id}-config`, {
-      metadata: { name: `${id}-config`, namespace },
-      data: {
-        'nginx.conf': nginxConfig,
-      },
-    });
-
-    // Nginx container
-    const nginxContainer: Container = {
-      name: 'nginx-sidecar',
-      image: 'nginx:alpine',
-      ports: [{ containerPort: listenPort, name: 'nginx-proxy' }],
-      volumeMounts: [
-        {
-          name: 'nginx-config',
-          mountPath: '/etc/nginx/nginx.conf',
-          subPath: 'nginx.conf',
-        },
-        {
-          name: 'nginx-cache',
-          mountPath: '/var/cache/nginx',
-        },
-        {
-          name: 'nginx-run',
-          mountPath: '/var/run',
-        },
-      ],
-      resources,
+      replicas: props.replicas ?? 1,
+      proxyConfigs: props.proxyConfigs,
+      targetDeployment: props.targetDeployment,
     };
 
-    // If targetDeployment is specified, this is a sidecar pattern
-    // Otherwise, create standalone deployment
+    const values = props.values ? deepMerge(computed, props.values) : computed;
+
+    const listenPort = values.listenPort ?? 8080;
+    const resources = values.resources ?? {
+      requests: { cpu: '100m', memory: '128Mi' },
+      limits: { cpu: '200m', memory: '256Mi' },
+    };
+    const replicas = values.replicas ?? 1;
+    const proxyConfigs = values.proxyConfigs ?? [];
+    const targetDeployment = values.targetDeployment;
+
+    const configMapName = `${id}-config`;
+    const nginxConfig = Nginx.generateNginxConfig(listenPort, proxyConfigs);
+
+    new ApiObject(this, 'config', {
+      apiVersion: 'v1',
+      kind: 'ConfigMap',
+      metadata: { name: configMapName, namespace: props.namespace },
+      data: { 'nginx.conf': nginxConfig },
+    });
+
     if (!targetDeployment) {
-      super(scope, id, {
-        metadata: { name: id, namespace },
+      const container = Nginx.getSidecarContainer(listenPort, resources);
+
+      new ApiObject(this, 'deployment', {
+        apiVersion: 'apps/v1',
+        kind: 'Deployment',
+        metadata: { name: id, namespace: props.namespace },
         spec: {
           replicas,
           selector: { matchLabels: { app: id } },
           template: {
             metadata: { labels: { app: id } },
             spec: {
-              containers: [nginxContainer],
+              containers: [container],
               volumes: [
-                {
-                  name: 'nginx-config',
-                  configMap: { name: `${id}-config` },
-                },
-                {
-                  name: 'nginx-cache',
-                  emptyDir: {},
-                },
-                {
-                  name: 'nginx-run',
-                  emptyDir: {},
-                },
+                { name: 'nginx-config', configMap: { name: configMapName } },
+                { name: 'nginx-cache', emptyDir: {} },
+                { name: 'nginx-run', emptyDir: {} },
               ],
             },
           },
         },
       });
 
-      // Service
-      const service = new Service(scope, `${id}-service`, {
-        metadata: { name: id, namespace },
+      new ApiObject(this, 'service', {
+        apiVersion: 'v1',
+        kind: 'Service',
+        metadata: { name: id, namespace: props.namespace },
         spec: {
           selector: { app: id },
           ports: [{ port: listenPort, targetPort: listenPort }],
         },
       });
-
-      this.exports = {
-        host: id,
-        port: listenPort,
-      };
-    } else {
-      // Sidecar pattern - create minimal deployment for sidecar mode
-      super(scope, id, {
-        metadata: { name: id, namespace },
-        spec: {
-          replicas: 1,
-          selector: { matchLabels: { app: id } },
-          template: {
-            metadata: { labels: { app: id } },
-            spec: {
-              containers: [nginxContainer],
-              volumes: [
-                {
-                  name: 'nginx-config',
-                  configMap: { name: `${id}-config` },
-                },
-                {
-                  name: 'nginx-cache',
-                  emptyDir: {},
-                },
-                {
-                  name: 'nginx-run',
-                  emptyDir: {},
-                },
-              ],
-            },
-          },
-        },
-      });
-
-      this.exports = {
-        host: targetDeployment,
-        port: listenPort,
-      };
     }
+
+    this.exports = {
+      host: targetDeployment ?? id,
+      port: listenPort,
+      configMapName,
+    };
   }
 
-  private static generateNginxConfig(listenPort: number, proxyConfigs: any[]): string {
+  public static generateNginxConfig(listenPort: number, proxyConfigs: ProxyConfig[]): string {
     let config = `
 events {
     worker_connections 1024;
@@ -144,11 +94,11 @@ http {
         listen ${listenPort};
 `;
 
-    for (const proxy of proxyConfigs || []) {
+    for (const proxy of proxyConfigs) {
       config += `
         location ${proxy.path} {
             proxy_pass http://${proxy.targetHost}:${proxy.targetPort}/;
-            proxy_set_header Host localhost;
+            proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 `;
@@ -175,12 +125,10 @@ http {
     return config;
   }
 
-  // Helper method to get nginx container for sidecar pattern
   public static getSidecarContainer(
-    configMapName: string,
     listenPort: number,
-    resources?: { cpu?: string; memory?: string }
-  ): Container {
+    resources?: ResourceValues,
+  ): Record<string, unknown> {
     return {
       name: 'nginx-sidecar',
       image: 'nginx:alpine',
@@ -202,12 +150,12 @@ http {
       ],
       resources: {
         requests: {
-          cpu: resources?.cpu || '100m',
-          memory: resources?.memory || '128Mi',
+          cpu: resources?.requests?.cpu ?? '100m',
+          memory: resources?.requests?.memory ?? '128Mi',
         },
         limits: {
-          cpu: '200m',
-          memory: '256Mi',
+          cpu: resources?.limits?.cpu ?? '200m',
+          memory: resources?.limits?.memory ?? '256Mi',
         },
       },
     };

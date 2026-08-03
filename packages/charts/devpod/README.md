@@ -1,6 +1,6 @@
 # @cdk8s-charts/devpod
 
-Typed cdk8s construct for DevPod/VS Code workspace.
+Typed cdk8s construct for a DevPod/VS Code workspace backed by raw K8s ApiObjects.
 
 ## Usage
 
@@ -18,7 +18,7 @@ const devpod = new DevPod(this, 'devpod', {
 });
 
 // Access via exports
-const { host, port, password } = devpod.exports;
+const { host, port, secretName } = devpod.exports;
 ```
 
 ## Props
@@ -26,12 +26,16 @@ const { host, port, password } = devpod.exports;
 | Prop | Type | Required | Description |
 |------|------|----------|-------------|
 | `namespace` | `string` | yes | Kubernetes namespace |
-| `password` | `string` | yes | VS Code password |
+| `password` | `string` | yes* | VS Code password |
+| `passwordSecret` | `{ name: string; key: string }` | no | Existing Secret reference instead of inline `password` |
 | `storageSize` | `string` | no | PVC storage size (default: `10Gi`) |
 | `storageClass` | `string` | no | Storage class for PVC |
 | `resources` | `ResourceValues` | no | CPU/memory requests/limits |
 | `image` | `string` | no | Code-server image (default: `codercom/code-server:4.23.1`) |
 | `replicas` | `number` | no | Number of replicas (default: `1`) |
+| `values` | `DeepPartial<Values>` | no | Raw value overrides |
+
+*Either `password` or `passwordSecret` must be provided.
 
 ## Exports
 
@@ -39,14 +43,22 @@ const { host, port, password } = devpod.exports;
 |--------|------|-------------|
 | `host` | `string` | Service DNS name |
 | `port` | `number` | Service port (8080) |
-| `password` | `string` | VS Code password |
+| `secretName` | `string` | Secret containing the VS Code password |
+| `password` | `string` | VS Code password (same value written to the Secret) |
 
 ## Resources
 
+- Secret: `{id}-secret` (or `passwordSecret.name`)
 - ServiceAccount: `{id}-sa`
 - PVC: `{id}-pvc`
 - Deployment: `{id}`
 - Service: `{id}`
+
+## Security
+
+The construct stores the password in a Kubernetes Secret and injects
+`PASSWORD` and `SUDO_PASSWORD` via `valueFrom.secretKeyRef`. Plaintext
+passwords are never rendered into the Deployment spec.
 
 ## Access
 
