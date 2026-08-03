@@ -5,6 +5,7 @@ import type { PlaneCeExports, PlaneCeProps, PlaneCeValues } from './types';
 const CHART_NAME = 'plane-ce';
 const CHART_REPO = 'https://helm.plane.so/';
 const DEFAULT_CHART_VERSION = '1.6.1';
+const DEFAULT_APP_VERSION = 'v1.3.1';
 
 export class PlaneCe extends HelmConstruct<PlaneCeValues> {
   public readonly exports: PlaneCeExports;
@@ -19,7 +20,7 @@ export class PlaneCe extends HelmConstruct<PlaneCeValues> {
     const useExternalS3 = !!props.externalS3;
 
     const computed: PlaneCeValues = {
-      planeVersion: props.version ?? 'v1.2.3',
+      planeVersion: props.version ?? DEFAULT_APP_VERSION,
       ingress: {
         enabled: props.ingress?.enabled ?? false,
         appHost: props.ingress?.appHost ?? '',
@@ -56,7 +57,7 @@ export class PlaneCe extends HelmConstruct<PlaneCeValues> {
     };
 
     this.renderChart(CHART_NAME, id, props.namespace, computed, props.values, {
-      helmFlags: ['--repo', CHART_REPO],
+      repo: CHART_REPO,
       version: props.chartVersion ?? DEFAULT_CHART_VERSION,
     });
 

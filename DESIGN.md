@@ -240,14 +240,15 @@ Composes Litellm + Hindsight with automatic cross-wiring:
 ### 3.5 Plane CE Construct
 
 **Package**: `@cdk8s-charts/plane-ce`
-**Chart**: `plane-ce` from `https://helm.plane.so/` (non-OCI Helm repo, uses `helmFlags: ['--repo', ...]`)
+**Chart**: `plane-ce` from `https://helm.plane.so/` (non-OCI Helm repo, uses `repo`)
 
 **Props** (`PlaneCeProps`):
 
 | Prop | Type | Required | Purpose |
 |------|------|----------|---------|
 | `namespace` | `string` | yes | K8s namespace |
-| `version` | `string` | no | App version tag (default: `v1.2.3`) |
+| `version` | `string` | no | App version tag (default: `v1.3.1`) |
+| `chartVersion` | `string` | no | Helm chart version pin (default: `1.6.1`) |
 | `secretKey` | `string` | no | Django secret key |
 | `liveSecretKey` | `string` | no | Live collaboration secret key |
 | `externalPostgres` | `{ url }` | no | Use external PostgreSQL |
