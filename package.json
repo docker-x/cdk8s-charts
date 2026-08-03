@@ -28,7 +28,7 @@
     "@biomejs/biome": "^2.4.10",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
-    "nx": "^22",
+    "nx": "^22.7.2",
     "tsdown": "^0.21.7",
     "typescript": "^5"
   },
@@ -36,9 +36,15 @@
     "axios": {
       "form-data": "^4.0.6"
     },
+    "cdk8s-plus-33": {
+      "minimatch": {
+        "brace-expansion": "^2.1.4"
+      }
+    },
+    "fast-uri": "^3.1.5",
     "js-yaml": "^3.15.0",
     "nx": {
-      "minimatch": "^9.0.7",
+      "brace-expansion": "^5.0.9",
       "tmp": "^0.2.6"
     },
     "yaml": "^2.8.4"
