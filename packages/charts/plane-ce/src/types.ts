@@ -3,7 +3,7 @@
  *
  * Chart: plane-ce
  * Repo:  https://helm.plane.so/
- * Chart version: 1.5.0 / appVersion: 1.2.3
+ * Chart version: 1.6.1 / appVersion: 1.3.1
  *
  * Generated from `helm show values` output — every top-level key and its
  * nested structure is represented.  All fields are optional because the
@@ -216,7 +216,7 @@ export interface PlaneCeValues {
 
 export interface PlaneCeProps {
   namespace: string;
-  /** Plane application version tag (e.g. 'v1.2.3'). */
+  /** Plane application version tag (e.g. 'v1.3.1'). */
   version?: string;
   /** Plane CE Helm chart version (default: 1.6.1). */
   chartVersion?: string;

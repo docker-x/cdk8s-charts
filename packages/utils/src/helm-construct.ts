@@ -40,9 +40,10 @@ function getOciCacheDir(): string {
 }
 
 /**
- * Resolve an OCI chart reference to a local cached .tgz if available.
- * Falls back to pulling the OCI chart into a temporary local cache
- * when no cache hit, unless HELM_OCI_PULL=0.
+ * Resolve a chart reference to a local cached .tgz if available.
+ * OCI charts are pulled into a temporary local cache when no cache hit,
+ * unless HELM_OCI_PULL=0. Non-OCI repo charts are returned as-is so Helm
+ * fetches them from the repository configured via --repo.
  *
  * Set HELM_USE_CACHE=1 to force local cache usage (useful when OCI
  * registries are unreachable, e.g. WSL2 IPv6 issues).
@@ -89,6 +90,9 @@ function resolveChart(chart: string, version?: string): { chart: string; fromCac
 }
 
 function resolveOciChart(chart: string, version?: string): { chart: string; fromCache: boolean } {
+  if (!chart.startsWith('oci://')) {
+    return { chart, fromCache: false };
+  }
   if (process.env.HELM_OCI_PULL === '0') {
     return { chart, fromCache: false };
   }

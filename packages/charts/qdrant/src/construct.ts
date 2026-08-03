@@ -31,7 +31,7 @@ export class Qdrant extends HelmConstruct<QdrantValues> {
       computed,
       props.values,
       {
-        helmFlags: ['--repo', props.repo ?? CHART_REPO],
+        repo: props.repo ?? CHART_REPO,
         version: props.version ?? DEFAULT_VERSION,
       },
     );
