@@ -125,7 +125,7 @@ export class GascityStack extends Construct {
         env: {
           ...devinProps.env,
           DEVIN_LLM_BASE_URL: omnirouteExports.baseUrl,
-          DEVIN_LLM_API_KEY: 'omniroute',
+          DEVIN_LLM_API_KEY: props.omniroute?.secrets?.OMNIROUTE_API_KEY ?? 'omniroute',
           DEVIN_LLM_MODEL: model,
         },
       };
@@ -137,6 +137,7 @@ export class GascityStack extends Construct {
       storageSize: props.gascityStorageSize,
       resources: props.gascityResources,
       features: gascityFeatures,
+      serviceType: props.serviceType,
       values: props.gascityValues,
     });
 

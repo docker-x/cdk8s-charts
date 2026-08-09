@@ -6,7 +6,7 @@ import type { FeatureDefinition } from '../types';
  *
  * Config paths verified against official docs (Aug 2026).
  */
-export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
+export const FEATURE_REGISTRY = {
   // ───────────────────────────────────────────────────────────────────────
   // Devin CLI — https://cli.devin.ai
   // ───────────────────────────────────────────────────────────────────────
@@ -204,10 +204,13 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
     envVars: ['OPENCLAW_HOME', 'OPENCLAW_STATE_DIR', 'OPENCLAW_PROFILE'],
     acpCompatible: true,
   },
-};
+} as const satisfies Record<string, FeatureDefinition>;
+
+/** Union of all supported feature ids. */
+export type FeatureId = keyof typeof FEATURE_REGISTRY;
 
 /** Get a feature definition by id. Throws if not found. */
-export function getFeatureDefinition(id: string): FeatureDefinition {
+export function getFeatureDefinition(id: FeatureId): FeatureDefinition {
   const def = FEATURE_REGISTRY[id];
   if (!def) {
     throw new Error(
@@ -218,6 +221,6 @@ export function getFeatureDefinition(id: string): FeatureDefinition {
 }
 
 /** List all available feature ids. */
-export function listFeatureIds(): string[] {
-  return Object.keys(FEATURE_REGISTRY);
+export function listFeatureIds(): FeatureId[] {
+  return Object.keys(FEATURE_REGISTRY) as FeatureId[];
 }

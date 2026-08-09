@@ -13,6 +13,7 @@ export type {
   ConfigDir,
   DeepPartial,
   FeatureDefinition,
+  FeatureId,
   FeatureMap,
   FeatureProps,
   FeatureSetOptions,

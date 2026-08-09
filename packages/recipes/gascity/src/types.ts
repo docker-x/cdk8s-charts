@@ -14,7 +14,7 @@
 
 import type { FeatureMap } from '@cdk8s-charts/features';
 import type { ResourceValues } from '@cdk8s-charts/gascity';
-import type { HindsightValues } from '@cdk8s-charts/hindsight';
+import type { HindsightApiConfig, HindsightValues } from '@cdk8s-charts/hindsight';
 import type { OmnirouteValues } from '@cdk8s-charts/omniroute';
 import type { DeepPartial } from '@cdk8s-charts/utils';
 
@@ -26,13 +26,7 @@ export interface HindsightSubchart {
   /** Enable Hindsight memory service. Default: true. */
   enabled?: boolean;
   /** Hindsight API config. When enabled, llm.model defaults to the stack's default model if omitted. */
-  api?: {
-    llm?: {
-      model?: string;
-      [key: string]: unknown;
-    };
-    [key: string]: unknown;
-  };
+  api?: HindsightApiConfig;
   /** Hindsight value overrides. */
   values?: DeepPartial<HindsightValues>;
 }

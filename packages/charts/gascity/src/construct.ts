@@ -6,19 +6,32 @@ import type { Exports, Props, Values } from './types';
 
 const CONTAINER_HOME = '/workspace';
 
-function startupScript(featureInstalls: string[]): string {
+type GascityMode = 'full' | 'supervisor' | 'dashboard';
+
+function startupScript(featureInstalls: string[], mode: GascityMode): string {
   const installLines =
     featureInstalls.length > 0
-      ? `\n# Install CLI agent features\n${featureInstalls.join('\n')}`
+      ? `\n# Install CLI agent features\n${featureInstalls.join('\n')}\n`
       : '';
-  return `#!/bin/bash
+
+  const base = `#!/bin/bash
 set -euo pipefail
 export NPM_CONFIG_PREFIX=/workspace/.local
-export PATH="\${NPM_CONFIG_PREFIX}/bin:\${PATH}"
+export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
 cd /workspace
-rm -f /workspace/.gc/supervisor.pid /workspace/.gc/supervisor.lock${installLines}
+rm -f /workspace/.gc/supervisor.pid /workspace/.gc/supervisor.lock
+${installLines}`;
 
-gc supervisor run &
+  if (mode === 'supervisor') {
+    return `${base}exec gc supervisor run`;
+  }
+
+  if (mode === 'dashboard') {
+    return `${base}exec gc dashboard --api none --port "\${DASHBOARD_PORT}"`;
+  }
+
+  // full mode
+  return `${base}gc supervisor run &
 SUPERVISOR_PID=$!
 DASHBOARD_PID=""
 
@@ -54,7 +67,8 @@ export class Gascity extends HelmConstruct<Values> {
   constructor(scope: Construct, id: string, props: Props) {
     super(scope, id);
 
-    const features: FeatureMap = props.features ?? {};
+    // Merge raw value overrides (e.g. values.features) before resolving features
+    const features: FeatureMap = deepMerge(props.features ?? {}, props.values?.features ?? {});
 
     // Resolve features into install commands, volumes, mounts, env
     const featureOutput = resolveFeatures({
@@ -79,6 +93,7 @@ export class Gascity extends HelmConstruct<Values> {
         props.supervisorUrl ?? `http://${id}-supervisor:${props.supervisorPort ?? 8372}`,
       features,
       env: props.env ?? {},
+      serviceType: props.serviceType ?? 'ClusterIP',
     };
 
     const values = props.values ? deepMerge(computed, props.values) : computed;
@@ -96,8 +111,9 @@ export class Gascity extends HelmConstruct<Values> {
       replicas = 1,
       withDashboard = true,
       withSupervisor = true,
-      supervisorUrl = '/supervisor',
+      supervisorUrl = `http://${id}-supervisor:${supervisorPort}`,
       env = {},
+      serviceType = 'ClusterIP',
     } = values;
 
     if (!imageUrl) {
@@ -108,6 +124,11 @@ export class Gascity extends HelmConstruct<Values> {
       throw new Error('At least one of withDashboard or withSupervisor must be true');
     }
 
+    const mode: GascityMode =
+      withSupervisor && withDashboard ? 'full' : withSupervisor ? 'supervisor' : 'dashboard';
+    const hasFeatureInstalls = featureOutput.installCommands.length > 0;
+    const useStartupScript = mode === 'full' || hasFeatureInstalls;
+
     const configData: Record<string, string> = {
       'dashboard-supervisor-url': supervisorUrl,
     };
@@ -115,8 +136,8 @@ export class Gascity extends HelmConstruct<Values> {
     let args: string[] | undefined;
     let volumeMounts: Array<Record<string, unknown>>;
 
-    if (withSupervisor && withDashboard) {
-      configData['start.sh'] = startupScript(featureOutput.installCommands);
+    if (useStartupScript) {
+      configData['start.sh'] = startupScript(featureOutput.installCommands, mode);
       command = ['/bin/bash', '/scripts/start.sh'];
       args = undefined;
       volumeMounts = [
@@ -171,12 +192,14 @@ export class Gascity extends HelmConstruct<Values> {
       },
     ];
 
+    if (withSupervisor) {
+      envList.push({ name: 'SUPERVISOR_PORT', value: String(supervisorPort) });
+    }
+    if (withDashboard) {
+      envList.push({ name: 'DASHBOARD_PORT', value: String(dashboardPort) });
+    }
     if (withSupervisor && withDashboard) {
-      envList.push(
-        { name: 'SUPERVISOR_PORT', value: String(supervisorPort) },
-        { name: 'DASHBOARD_PORT', value: String(dashboardPort) },
-        { name: 'SUPERVISOR_URL', value: supervisorUrl },
-      );
+      envList.push({ name: 'SUPERVISOR_URL', value: supervisorUrl });
     }
 
     // Extra env vars
@@ -196,6 +219,23 @@ export class Gascity extends HelmConstruct<Values> {
       ports.push({ containerPort: supervisorPort, name: 'supervisor' });
     }
 
+    const startupProbePort = withDashboard
+      ? dashboardPort
+      : withSupervisor
+        ? supervisorPort
+        : undefined;
+    const startupProbe = startupProbePort
+      ? {
+          startupProbe: {
+            httpGet: { path: '/', port: startupProbePort },
+            initialDelaySeconds: 10,
+            periodSeconds: 10,
+            timeoutSeconds: 5,
+            failureThreshold: 30,
+          },
+        }
+      : {};
+
     const probes = withDashboard
       ? {
           readinessProbe: {
@@ -212,8 +252,9 @@ export class Gascity extends HelmConstruct<Values> {
             timeoutSeconds: 5,
             failureThreshold: 3,
           },
+          ...startupProbe,
         }
-      : {};
+      : startupProbe;
 
     new ApiObject(this, 'deployment', {
       apiVersion: 'apps/v1',
@@ -248,7 +289,7 @@ export class Gascity extends HelmConstruct<Values> {
                 name: 'workspace',
                 persistentVolumeClaim: { claimName: `${id}-pvc` },
               },
-              ...(withSupervisor && withDashboard
+              ...(useStartupScript
                 ? [
                     {
                       name: 'config',
@@ -275,6 +316,7 @@ export class Gascity extends HelmConstruct<Values> {
         kind: 'Service',
         metadata: { name: `${id}-dashboard`, namespace: props.namespace },
         spec: {
+          type: serviceType,
           selector: { app: id },
           ports: [{ port: dashboardPort, targetPort: dashboardPort }],
         },
@@ -288,6 +330,7 @@ export class Gascity extends HelmConstruct<Values> {
         kind: 'Service',
         metadata: { name: `${id}-supervisor`, namespace: props.namespace },
         spec: {
+          type: serviceType,
           selector: { app: id },
           ports: [{ port: supervisorPort, targetPort: supervisorPort }],
         },

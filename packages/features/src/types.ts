@@ -12,6 +12,10 @@
 
 export type { DeepPartial } from '@cdk8s-charts/utils';
 
+export type { FeatureId } from './agents/registry';
+
+import type { FeatureId } from './agents/registry';
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Feature definitions (static metadata per agent)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -76,7 +80,7 @@ export interface FeatureProps {
 }
 
 /** Map of feature id -> props. `true` means defaults (mountConfig: true). */
-export type FeatureMap = Record<string, FeatureProps | true>;
+export type FeatureMap = Partial<Record<FeatureId, FeatureProps | true>>;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Feature output (what a feature contributes to a container)

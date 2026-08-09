@@ -162,6 +162,8 @@ const output = resolveFeatures({ homeDir: '/workspace', features });
 // output.env           → [{ name: 'GEMINI_API_KEY', value: '...' }]
 ```
 
+`FeatureMap` keys are constrained to the registered `FeatureId` union, so typos (e.g. `devinn: true`) are caught at compile time.
+
 **FeatureProps:**
 
 | Field | Type | Default | Purpose |
@@ -329,15 +331,15 @@ Composes OmniRoute + Hindsight with automatic cross-wiring:
 | Prop | Type | Required | Purpose |
 |------|------|----------|---------|
 | `namespace` | `string` | yes | K8s namespace |
-| `omnirouteFeatures` | `FeatureMap` | no | CLI agent features for OmniRoute (e.g. `{ devin: true }`) |
+| `omnirouteFeatures` | `FeatureMap` | no | CLI agent features for OmniRoute (e.g. `{ devin: true }`); only ACP-compatible agents are accepted |
 | `omniroutePort` | `number` | no | OmniRoute port (default: 20128) |
 | `omnirouteVersion` | `string` | no | OmniRoute npm version (default: `3.8.49` via Omniroute; override with `latest` to track releases) |
 | `omnirouteEnv` | `Record<string, string>` | no | Extra OmniRoute env vars |
 | `omnirouteSecrets` | `Record<string, string>` | no | Secret env vars |
 | `omnirouteValues` | `DeepPartial<OmnirouteValues>` | no | OmniRoute value overrides |
-| `hindsightApi` | `HindsightApiConfig` (minus llm wiring) | yes | Hindsight config (`llm.model` required) |
+| `hindsightApi` | `HindsightApiConfig` | yes | Hindsight config (`llm.model` required; recipe auto-wires `llm.base_url` and `llm.api_key` when OmniRoute is enabled) |
 | `hindsightValues` | `DeepPartial<HindsightValues>` | no | Hindsight value overrides |
-| `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
+| `serviceType` | `ServiceType` | no | K8s Service type for both services (default: `ClusterIP`) |
 
 **Exports (`HindsightWithOmnirouteExports`):**
 
@@ -381,9 +383,9 @@ Key design points:
 | `gascityResources` | `ResourceValues` | no | Resource requests/limits |
 | `gascityValues` | `DeepPartial<GascityValues>` | no | Gascity raw value overrides |
 | `features` | `FeatureMap` | no | CLI agent features (devin, claude, codex, ...) |
-| `hindsight` | `HindsightSubchart` | no | Hindsight config (enabled: true by default; `hindsight.api.llm.model` defaults to `devin-cli-agentic/swe-1-7` if omitted; `hindsight.values` for raw overrides) |
+| `hindsight` | `HindsightSubchart` | no | Hindsight config (enabled: true by default; `hindsight.api` accepts `HindsightApiConfig`; `llm.model` defaults to `devin-cli-agentic/swe-1-7` if omitted; `hindsight.values` for raw overrides) |
 | `omniroute` | `OmnirouteSubchart` | no | OmniRoute config (enabled: true by default; `omniroute.values` for raw overrides) |
-| `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
+| `serviceType` | `ServiceType` | no | K8s Service type for all created services (default: `ClusterIP`) |
 
 **Exports (`GascityHindsightOmnirouteExports`):**
 
@@ -445,9 +447,9 @@ features: {
 | `gascityResources` | `ResourceValues` | no | Resource requests/limits |
 | `gascityValues` | `DeepPartial<GascityValues>` | no | Gascity raw value overrides |
 | `features` | `FeatureMap` | no | CLI agent features (devin, claude, codex, ...) |
-| `hindsight` | `HindsightSubchart` | no | Hindsight config (enabled: true by default; `hindsight.api.llm.model` defaults to `devin-cli-agentic/swe-1-7` if omitted; `hindsight.values` for raw overrides) |
+| `hindsight` | `HindsightSubchart` | no | Hindsight config (enabled: true by default; `hindsight.api` accepts `HindsightApiConfig`; `llm.model` defaults to `devin-cli-agentic/swe-1-7` if omitted; `hindsight.values` for raw overrides) |
 | `omniroute` | `OmnirouteSubchart` | no | OmniRoute config (enabled: true by default; `omniroute.values` for raw overrides) |
-| `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
+| `serviceType` | `ServiceType` | no | K8s Service type for all created services (default: `ClusterIP`) |
 
 **Auto cross-wiring (when subcharts enabled):**
 1. OmniRoute gets a bare Devin feature (no plugins, API gateway only)
@@ -629,6 +631,7 @@ Deploys the Gascity AI agent framework as raw K8s ApiObjects.
 | `supervisorUrl` | `string` | no | Supervisor URL for dashboard (default: `http://{id}-supervisor:{supervisorPort}`) |
 | `features` | `FeatureMap` | no | CLI agent features (devin, claude, codex, etc.) from `@cdk8s-charts/features` |
 | `env` | `Record<string, string>` | no | Extra env vars |
+| `serviceType` | `ServiceType` | no | K8s Service type for dashboard/supervisor services (default: `ClusterIP`) |
 | `values` | `DeepPartial<Values>` | no | Raw value overrides |
 
 **Exports (`Exports`):**
@@ -642,11 +645,11 @@ Deploys the Gascity AI agent framework as raw K8s ApiObjects.
 
 **Process lifecycle:**
 
-- A startup script (`start.sh` mounted from a ConfigMap) starts `gc supervisor run` in the background.
-- It polls `http://127.0.0.1:${SUPERVISOR_PORT}/` with `curl` or `wget` for up to 60 seconds.
-- Once the supervisor is reachable, it starts `gc dashboard` and `wait`s for both processes.
+- The construct builds a startup script (`start.sh` mounted from a ConfigMap) when at least one CLI agent feature needs installation or when both supervisor and dashboard are enabled.
+- Full mode: `start.sh` runs `gc supervisor run` in the background, polls `http://127.0.0.1:${SUPERVISOR_PORT}/` with `curl` or `wget` for up to 60 seconds, then starts `gc dashboard` and `wait`s for both processes.
+- Single-mode (supervisor-only or dashboard-only): `start.sh` installs enabled features and then `exec`s the single process.
 - A `trap` cleans up the supervisor/dashboard processes on container exit.
-- Dashboard mode adds Kubernetes `readinessProbe` and `livenessProbe` HTTP checks on `/`.
+- Kubernetes `startupProbe`, `readinessProbe`, and `livenessProbe` HTTP checks are added when the dashboard is enabled; `startupProbe` is also added in supervisor-only mode to cover long feature installs.
 
 **CLI agent features (`features`):**
 

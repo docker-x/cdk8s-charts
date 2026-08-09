@@ -42,6 +42,8 @@ export interface Values {
   features?: FeatureMap;
   /** Extra env vars injected into the Gascity container. */
   env?: Record<string, string>;
+  /** K8s Service type for dashboard/supervisor services. Default: ClusterIP. */
+  serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
 }
 
 // ---------------------------------------------------------------------------
@@ -74,6 +76,8 @@ export interface Props {
   features?: FeatureMap;
   /** Extra env vars. */
   env?: Record<string, string>;
+  /** K8s Service type for dashboard/supervisor services. Default: ClusterIP. */
+  serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
   /** Raw value overrides (deep-merged into computed defaults). */
   values?: DeepPartial<Values>;
 }

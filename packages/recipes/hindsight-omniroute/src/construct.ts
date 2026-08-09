@@ -1,4 +1,4 @@
-import type { FeatureMap } from '@cdk8s-charts/features';
+import { type FeatureId, type FeatureMap, isAcpCompatible } from '@cdk8s-charts/features';
 import { Hindsight, type HindsightApiConfig, type HindsightValues } from '@cdk8s-charts/hindsight';
 import { Omniroute, type OmnirouteValues } from '@cdk8s-charts/omniroute';
 import { type DeepPartial, deepMerge } from '@cdk8s-charts/utils';
@@ -86,6 +86,18 @@ export class HindsightWithOmniroute extends Construct {
     const svcType = props.serviceType ?? 'ClusterIP';
     const omnirouteId = `${id}-omniroute`;
     const hindsightId = `${id}-hindsight`;
+
+    // Validate OmniRoute features are ACP-compatible
+    if (props.omnirouteFeatures) {
+      for (const featureId of Object.keys(props.omnirouteFeatures) as FeatureId[]) {
+        if (!isAcpCompatible(featureId)) {
+          throw new Error(
+            `Feature '${featureId}' is not ACP-compatible and cannot be used with OmniRoute. ` +
+              `Use one of the ACP-compatible agents.`,
+          );
+        }
+      }
+    }
 
     // Deploy OmniRoute — LLM proxy with ACP agents
     const omnirouteBaseValues: DeepPartial<OmnirouteValues> = {};

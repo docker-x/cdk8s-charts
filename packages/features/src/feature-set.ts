@@ -1,5 +1,6 @@
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
+import type { FeatureId } from './agents/registry';
 import { getFeatureDefinition } from './agents/registry';
 import type {
   FeatureDefinition,
@@ -34,7 +35,7 @@ export function resolveFeatures(options: FeatureSetOptions): FeatureSetOutput {
   };
 
   for (const [featureId, rawProps] of Object.entries(features)) {
-    const def = getFeatureDefinition(featureId);
+    const def = getFeatureDefinition(featureId as FeatureId);
     const props = normalizeProps(rawProps);
 
     result.featureIds.push(featureId);
@@ -88,7 +89,7 @@ function resolveFeatureMounts(
     for (let i = 0; i < def.configDirs.length; i++) {
       const cfg = def.configDirs[i];
       const hostPath = resolveHostPath(cfg.hostPath, hostHome, mountConfig);
-      const containerPath = cfg.containerPath ?? join(homeDir, cfg.hostPath);
+      const containerPath = cfg.containerPath ?? posix.join(homeDir, cfg.hostPath);
       const volName = `${featureId}-cfg-${i}`;
 
       volumes.push({ name: volName, hostPath, mountPath: containerPath });
@@ -127,12 +128,12 @@ function resolveFeatureEnv(props: FeatureProps): Array<{ name: string; value: st
 }
 
 /** Get feature definitions for a set of feature ids. */
-export function getFeatureDefs(featureIds: string[]): FeatureDefinition[] {
+export function getFeatureDefs(featureIds: FeatureId[]): FeatureDefinition[] {
   return featureIds.map((id) => getFeatureDefinition(id));
 }
 
 /** Check if a feature is ACP-compatible (can be used as Omniroute ACP agent). */
-export function isAcpCompatible(featureId: string): boolean {
+export function isAcpCompatible(featureId: FeatureId): boolean {
   return getFeatureDefinition(featureId).acpCompatible ?? false;
 }
 
@@ -151,7 +152,7 @@ export function buildStartupScript(
   const lines = ['set -euo pipefail'];
   if (homeDir) {
     lines.push(`export NPM_CONFIG_PREFIX="${homeDir}/.local"`);
-    lines.push('export PATH="${NPM_CONFIG_PREFIX}/bin:${PATH}"');
+    lines.push('export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"');
   }
   for (const cmd of installCommands) {
     lines.push(cmd);
