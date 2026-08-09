@@ -11,6 +11,8 @@ export type {
   IngressTls,
   PodDisruptionBudgetConfig,
   ResourceRequirements,
+  SecretEnvRef,
+  SecretRefs,
   ServiceAccountConfig,
   ServiceConfig,
   TcpProbeConfig,

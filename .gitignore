@@ -32,6 +32,9 @@ imports/
 .DS_Store
 Thumbs.db
 
+# Temporary local scratch files
+/tmp/
+
 # NX
 .nx/
 bun.lock

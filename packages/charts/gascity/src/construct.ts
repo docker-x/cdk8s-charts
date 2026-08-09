@@ -1,15 +1,42 @@
+import { homedir } from 'node:os';
+import {
+  buildChownWritableMountsInitContainer,
+  normalizeDevinInstall,
+  resolveFeatures,
+} from '@cdk8s-charts/features';
 import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { Exports, Props, Values } from './types';
 
-function startupScript(): string {
-  return `#!/bin/sh
-set -eu
+const CONTAINER_HOME = '/workspace';
+
+type GascityMode = 'full' | 'supervisor' | 'dashboard';
+
+function startupScript(featureInstalls: string[], mode: GascityMode): string {
+  const installLines =
+    featureInstalls.length > 0
+      ? `\n# Install CLI agent features\n${featureInstalls.join('\n')}\n`
+      : '';
+
+  const base = `#!/bin/bash
+set -euo pipefail
+export NPM_CONFIG_PREFIX=/workspace/.local
+export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
 cd /workspace
 rm -f /workspace/.gc/supervisor.pid /workspace/.gc/supervisor.lock
+${installLines}`;
 
-gc supervisor run &
+  if (mode === 'supervisor') {
+    return `${base}exec gc supervisor run`;
+  }
+
+  if (mode === 'dashboard') {
+    return `${base}exec gc dashboard --api none --port "\${DASHBOARD_PORT}"`;
+  }
+
+  // full mode
+  return `${base}gc supervisor run &
 SUPERVISOR_PID=$!
 DASHBOARD_PID=""
 
@@ -45,6 +72,11 @@ export class Gascity extends HelmConstruct<Values> {
   constructor(scope: Construct, id: string, props: Props) {
     super(scope, id);
 
+    const hostHome = props.values?.hostHome ?? props.hostHome ?? homedir();
+    if (!hostHome.startsWith('/')) {
+      throw new Error('hostHome must be an absolute path');
+    }
+
     const computed: Values = {
       imageUrl: props.imageUrl,
       storageSize: props.storageSize ?? '20Gi',
@@ -58,10 +90,29 @@ export class Gascity extends HelmConstruct<Values> {
       replicas: props.replicas ?? 1,
       withDashboard: props.withDashboard ?? true,
       withSupervisor: props.withSupervisor ?? true,
-      supervisorUrl: props.supervisorUrl ?? '/supervisor',
+      supervisorUrl: props.supervisorUrl,
+      hostHome,
+      features: props.features ?? {},
+      env: props.env ?? {},
+      secretRefs: props.secretRefs ?? {},
+      serviceType: props.serviceType ?? 'ClusterIP',
+      runAsUser: props.runAsUser ?? 1002730000,
+      runAsGroup: props.runAsGroup ?? 1002730000,
+      chownWritableFeatureMounts: props.chownWritableFeatureMounts ?? false,
     };
 
+    // Apply raw value overrides, then normalize features so value overrides cannot
+    // bypass the pinned Devin installer (the generic resolver no longer applies
+    // chart-level normalization).
     const values = props.values ? deepMerge(computed, props.values) : computed;
+    values.features = normalizeDevinInstall(values.features ?? {});
+
+    // Resolve features into install commands, volumes, mounts, env
+    const featureOutput = resolveFeatures({
+      homeDir: CONTAINER_HOME,
+      hostHome,
+      features: values.features,
+    });
 
     const {
       imageUrl,
@@ -76,7 +127,12 @@ export class Gascity extends HelmConstruct<Values> {
       replicas = 1,
       withDashboard = true,
       withSupervisor = true,
-      supervisorUrl = '/supervisor',
+      supervisorUrl = `http://${id}-supervisor:${supervisorPort}`,
+      env = {},
+      secretRefs = {},
+      serviceType = 'ClusterIP',
+      runAsUser = 1002730000,
+      runAsGroup = 1002730000,
     } = values;
 
     if (!imageUrl) {
@@ -87,6 +143,11 @@ export class Gascity extends HelmConstruct<Values> {
       throw new Error('At least one of withDashboard or withSupervisor must be true');
     }
 
+    const mode: GascityMode =
+      withSupervisor && withDashboard ? 'full' : withSupervisor ? 'supervisor' : 'dashboard';
+    const hasFeatureInstalls = featureOutput.installCommands.length > 0;
+    const useStartupScript = mode === 'full' || hasFeatureInstalls;
+
     const configData: Record<string, string> = {
       'dashboard-supervisor-url': supervisorUrl,
     };
@@ -94,9 +155,9 @@ export class Gascity extends HelmConstruct<Values> {
     let args: string[] | undefined;
     let volumeMounts: Array<Record<string, unknown>>;
 
-    if (withSupervisor && withDashboard) {
-      configData['start.sh'] = startupScript();
-      command = ['/bin/sh', '/scripts/start.sh'];
+    if (useStartupScript) {
+      configData['start.sh'] = startupScript(featureOutput.installCommands, mode);
+      command = ['/bin/bash', '/scripts/start.sh'];
       args = undefined;
       volumeMounts = [
         { name: 'workspace', mountPath: '/workspace' },
@@ -110,6 +171,11 @@ export class Gascity extends HelmConstruct<Values> {
       command = ['/bin/bash'];
       args = ['-c', `gc dashboard --api none --port ${dashboardPort}`];
       volumeMounts = [{ name: 'workspace', mountPath: '/workspace' }];
+    }
+
+    // Feature volume mounts (hostPath for OS config sharing)
+    for (const m of featureOutput.volumeMounts) {
+      volumeMounts.push({ name: m.name, mountPath: m.mountPath, readOnly: m.readOnly ?? true });
     }
 
     new ApiObject(this, 'config', {
@@ -132,7 +198,7 @@ export class Gascity extends HelmConstruct<Values> {
       },
     });
 
-    const env: Array<Record<string, unknown>> = [
+    const envList: Array<Record<string, unknown>> = [
       { name: 'HOME', value: '/workspace' },
       {
         name: 'GC_DASHBOARD_SUPERVISOR_URL',
@@ -145,12 +211,66 @@ export class Gascity extends HelmConstruct<Values> {
       },
     ];
 
+    if (withSupervisor) {
+      envList.push({ name: 'SUPERVISOR_PORT', value: String(supervisorPort) });
+    }
+    if (withDashboard) {
+      envList.push({ name: 'DASHBOARD_PORT', value: String(dashboardPort) });
+    }
     if (withSupervisor && withDashboard) {
-      env.push(
-        { name: 'SUPERVISOR_PORT', value: String(supervisorPort) },
-        { name: 'DASHBOARD_PORT', value: String(dashboardPort) },
-        { name: 'SUPERVISOR_URL', value: supervisorUrl },
-      );
+      envList.push({ name: 'SUPERVISOR_URL', value: supervisorUrl });
+    }
+
+    // Reserved env names control runtime wiring and must not be overridden.
+    const reservedEnv = new Set([
+      'PATH',
+      'HOME',
+      'SUPERVISOR_PORT',
+      'DASHBOARD_PORT',
+      'SUPERVISOR_URL',
+      'GC_DASHBOARD_SUPERVISOR_URL',
+    ]);
+
+    // Track env names to prevent duplicate entries across all sources.
+    const envNames = new Set(envList.map((e) => e.name as string));
+
+    function pushEnv(name: string, entry: Record<string, unknown>): void {
+      if (envNames.has(name)) {
+        throw new Error(`Duplicate environment variable name: ${name}`);
+      }
+      envNames.add(name);
+      envList.push(entry);
+    }
+
+    // Extra env vars
+    for (const [k, v] of Object.entries(env)) {
+      if (reservedEnv.has(k)) {
+        throw new Error(`env.${k} is a reserved environment name and cannot be overridden`);
+      }
+      pushEnv(k, { name: k, value: v });
+    }
+    // Feature env vars
+    for (const e of featureOutput.env) {
+      if (reservedEnv.has(e.name)) {
+        throw new Error(
+          `Feature env ${e.name} is a reserved environment name and cannot be overridden`,
+        );
+      }
+      pushEnv(e.name, { name: e.name, value: e.value });
+    }
+
+    // Secret references
+    for (const [k, v] of Object.entries(secretRefs)) {
+      if (reservedEnv.has(k)) {
+        throw new Error(`secretRefs.${k} is a reserved environment name`);
+      }
+      if (!v.name || !v.key) {
+        throw new Error(`secretRefs.${k} requires both name and key`);
+      }
+      pushEnv(k, {
+        name: k,
+        valueFrom: { secretKeyRef: { name: v.name, key: v.key } },
+      });
     }
 
     const ports: Array<{ containerPort: number; name?: string }> = [];
@@ -160,6 +280,23 @@ export class Gascity extends HelmConstruct<Values> {
     if (withSupervisor) {
       ports.push({ containerPort: supervisorPort, name: 'supervisor' });
     }
+
+    const startupProbePort = withSupervisor
+      ? supervisorPort
+      : withDashboard
+        ? dashboardPort
+        : undefined;
+    const startupProbe = startupProbePort
+      ? {
+          startupProbe: {
+            httpGet: { path: '/', port: startupProbePort },
+            initialDelaySeconds: 30,
+            periodSeconds: 10,
+            timeoutSeconds: 5,
+            failureThreshold: 60,
+          },
+        }
+      : {};
 
     const probes = withDashboard
       ? {
@@ -177,8 +314,20 @@ export class Gascity extends HelmConstruct<Values> {
             timeoutSeconds: 5,
             failureThreshold: 3,
           },
+          ...startupProbe,
         }
-      : {};
+      : startupProbe;
+
+    // Writable state hostPaths are created root-owned by DirectoryOrCreate. If the
+    // cluster policy allows root init containers, repair ownership via the shared
+    // helper that uses a fixed script and passes mount paths as positional arguments.
+    const writableFeatureMounts = featureOutput.volumeMounts.filter((m) => m.readOnly === false);
+    const initContainers = buildChownWritableMountsInitContainer({
+      image: imageUrl,
+      runAsGroup,
+      enabled: values.chownWritableFeatureMounts ?? false,
+      writableFeatureMounts,
+    });
 
     new ApiObject(this, 'deployment', {
       apiVersion: 'apps/v1',
@@ -191,15 +340,16 @@ export class Gascity extends HelmConstruct<Values> {
           metadata: { labels: { app: id } },
           spec: {
             securityContext: {
-              runAsUser: 1002730000,
-              fsGroup: 1002730000,
-              hostUsers: false,
+              runAsUser,
+              runAsGroup,
+              fsGroup: runAsGroup,
             },
+            initContainers,
             containers: [
               {
                 name: 'gascity',
                 image: imageUrl,
-                env,
+                env: envList,
                 command,
                 ports,
                 volumeMounts,
@@ -213,7 +363,7 @@ export class Gascity extends HelmConstruct<Values> {
                 name: 'workspace',
                 persistentVolumeClaim: { claimName: `${id}-pvc` },
               },
-              ...(withSupervisor && withDashboard
+              ...(useStartupScript
                 ? [
                     {
                       name: 'config',
@@ -221,6 +371,12 @@ export class Gascity extends HelmConstruct<Values> {
                     },
                   ]
                 : []),
+              // Feature hostPath volumes (OS config sharing)
+              ...featureOutput.volumes.map((v) => {
+                const hostPath: Record<string, unknown> = { path: v.hostPath };
+                if (v.type) hostPath.type = v.type;
+                return { name: v.name, hostPath };
+              }),
             ],
           },
         },
@@ -235,6 +391,7 @@ export class Gascity extends HelmConstruct<Values> {
         kind: 'Service',
         metadata: { name: `${id}-dashboard`, namespace: props.namespace },
         spec: {
+          type: serviceType,
           selector: { app: id },
           ports: [{ port: dashboardPort, targetPort: dashboardPort }],
         },
@@ -248,6 +405,7 @@ export class Gascity extends HelmConstruct<Values> {
         kind: 'Service',
         metadata: { name: `${id}-supervisor`, namespace: props.namespace },
         spec: {
+          type: serviceType,
           selector: { app: id },
           ports: [{ port: supervisorPort, targetPort: supervisorPort }],
         },

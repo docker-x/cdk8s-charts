@@ -176,3 +176,12 @@ export interface VolumeMount {
   readOnly?: boolean;
   subPath?: string;
 }
+
+/** Reference to a key in an existing Kubernetes Secret, used for env var injection. */
+export interface SecretEnvRef {
+  name: string;
+  key: string;
+}
+
+/** Map of environment variable name to a Secret key reference. */
+export type SecretRefs = Record<string, SecretEnvRef>;
