@@ -6,7 +6,7 @@ import type { FeatureDefinition, FeatureId } from '../types';
  *
  * Config paths verified against official docs (Aug 2026).
  */
-export const FEATURE_REGISTRY = {
+const FEATURE_REGISTRY_RAW = {
   // ───────────────────────────────────────────────────────────────────────
   // Devin CLI — https://cli.devin.ai
   // ───────────────────────────────────────────────────────────────────────
@@ -15,10 +15,11 @@ export const FEATURE_REGISTRY = {
     name: 'Devin CLI',
     binary: 'devin',
     // The Devin CLI installer is remote and mutable, so there is no default install command.
-    // Consumers must either supply a pinned installCommand, set skipInstall for a pre-baked
-    // image, or install Devin in the container image at build time.
+    // Consumers must either supply a pinned installCommand on the feature, set
+    // features.devin.skipInstall = true for a pre-baked image, or install Devin in the
+    // container image at build time.
     installCommand:
-      'echo "Devin CLI requires an explicit installCommand or skipInstall=true (pre-baked image)" >&2; exit 1',
+      'echo "Devin CLI requires an explicit installCommand on the feature (or set features.devin.skipInstall: true for a pre-baked image)" >&2; exit 1',
     versionCommand: 'devin --version',
     configDirs: [
       { hostPath: '.config/devin', readOnly: true },
@@ -215,6 +216,21 @@ export const FEATURE_REGISTRY = {
     acpCompatible: true,
   },
 } as const satisfies Record<FeatureId, FeatureDefinition>;
+
+function deepFreeze<T>(obj: T): T {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    for (const item of obj) deepFreeze(item);
+  } else if (obj instanceof Object) {
+    for (const key of Object.getOwnPropertyNames(obj)) {
+      deepFreeze((obj as Record<string, unknown>)[key]);
+    }
+  }
+  return Object.freeze(obj);
+}
+
+/** Immutable registry of all supported CLI agent features. */
+export const FEATURE_REGISTRY = deepFreeze(FEATURE_REGISTRY_RAW);
 
 /** Get a feature definition by id. Throws if not found. */
 export function getFeatureDefinition(id: FeatureId): Readonly<FeatureDefinition> {

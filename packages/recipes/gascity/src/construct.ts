@@ -1,4 +1,4 @@
-import type { FeatureMap } from '@cdk8s-charts/features';
+import type { FeatureMap, FeatureProps } from '@cdk8s-charts/features';
 import { Gascity } from '@cdk8s-charts/gascity';
 import { Hindsight, type HindsightApiConfig, type HindsightValues } from '@cdk8s-charts/hindsight';
 import { Omniroute } from '@cdk8s-charts/omniroute';
@@ -59,13 +59,20 @@ export class GascityStack extends Construct {
     const omnirouteApiKey =
       props.omniroute?.values?.secrets?.OMNIROUTE_API_KEY ??
       props.omniroute?.secrets?.OMNIROUTE_API_KEY;
+    // Effective OMNIROUTE_API_KEY Secret ref: values.secretRefs takes precedence, matching secrets.
     const omnirouteApiKeySecretRef: SecretEnvRef | undefined =
-      (props.omniroute?.secretRefs?.OMNIROUTE_API_KEY as SecretEnvRef | undefined) ??
-      (props.omniroute?.values?.secretRefs?.OMNIROUTE_API_KEY as SecretEnvRef | undefined);
+      (props.omniroute?.values?.secretRefs?.OMNIROUTE_API_KEY as SecretEnvRef | undefined) ??
+      (props.omniroute?.secretRefs?.OMNIROUTE_API_KEY as SecretEnvRef | undefined);
 
     if (omnirouteEnabled) {
-      // OmniRoute gets a bare Devin feature (no plugins, API gateway only)
-      const omnirouteFeatures: FeatureMap = { devin: true };
+      // OmniRoute gets a bare Devin feature (no plugins, API gateway only).
+      // The default Devin install command is intentionally unconfigured; pin a
+      // versioned installer so ACP deployment does not crash-loop.
+      const omnirouteFeatures: FeatureMap = {
+        devin: {
+          installCommand: 'curl -fsSL https://static.devin.ai/cli/3000.3.27/setup.sh | bash',
+        },
+      };
 
       const omniroute = new Omniroute(this, omnirouteId, {
         namespace: props.namespace,
@@ -143,10 +150,26 @@ export class GascityStack extends Construct {
     // ─────────────────────────────────────────────────────────────────────
     const gascityFeatures: FeatureMap = { ...props.features };
 
+    // The Devin registry no longer ships a default mutable installer. Ensure the
+    // devin feature has an explicit pinned installer unless the image is pre-baked.
+    const PINNED_DEVIN_INSTALL = 'curl -fsSL https://static.devin.ai/cli/3000.3.27/setup.sh | bash';
+    if (gascityFeatures.devin === true) {
+      gascityFeatures.devin = { installCommand: PINNED_DEVIN_INSTALL };
+    } else if (
+      gascityFeatures.devin &&
+      !gascityFeatures.devin.installCommand &&
+      !gascityFeatures.devin.skipInstall
+    ) {
+      gascityFeatures.devin = {
+        ...gascityFeatures.devin,
+        installCommand: PINNED_DEVIN_INSTALL,
+      };
+    }
+
     // Auto-wire Devin MCP to Hindsight if both Devin and Hindsight are enabled
     if (hindsightExports && gascityFeatures.devin) {
       // Ensure devin feature is enabled with MCP config
-      const devinProps = gascityFeatures.devin === true ? {} : gascityFeatures.devin;
+      const devinProps = gascityFeatures.devin as FeatureProps;
       gascityFeatures.devin = {
         ...devinProps,
         env: {
@@ -160,7 +183,7 @@ export class GascityStack extends Construct {
     // Auto-wire Devin LLM to OmniRoute if both Devin and OmniRoute are enabled
     const gascitySecretRefs: SecretRefs = {};
     if (omnirouteExports && gascityFeatures.devin) {
-      const devinProps = gascityFeatures.devin === true ? {} : gascityFeatures.devin;
+      const devinProps = gascityFeatures.devin as FeatureProps;
       const devinEnv: Record<string, string> = {
         ...devinProps.env,
         DEVIN_LLM_BASE_URL: omnirouteExports.baseUrl,

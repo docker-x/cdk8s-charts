@@ -39,7 +39,7 @@ class GascityHindsightOmnirouteStack extends Chart {
       // The default mutable Devin installer is disabled; pin or pre-bake in production.
       features: {
         devin: {
-          installCommand: 'curl -fsSL https://cli.devin.ai/install.sh | bash',
+          installCommand: 'curl -fsSL https://static.devin.ai/cli/3000.3.27/setup.sh | bash',
         },
       },
       // Hindsight — shared memory service

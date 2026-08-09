@@ -29,7 +29,7 @@ class HindsightOmnirouteStack extends Chart {
       // The default mutable installer is disabled; supply a pinned installCommand or use a pre-baked image.
       omnirouteFeatures: {
         devin: {
-          installCommand: 'curl -fsSL https://cli.devin.ai/install.sh | bash',
+          installCommand: 'curl -fsSL https://static.devin.ai/cli/3000.3.27/setup.sh | bash',
         },
       },
       // Hindsight config — model is served by OmniRoute via Devin CLI

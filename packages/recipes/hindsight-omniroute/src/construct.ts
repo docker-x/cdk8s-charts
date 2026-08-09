@@ -94,6 +94,23 @@ export class HindsightWithOmniroute extends Construct {
       props.omnirouteFeatures ?? {},
       props.omnirouteValues?.features ?? {},
     );
+
+    // The Devin registry no longer ships a default mutable installer. If the user
+    // enabled devin without an install command or skipInstall, pin a versioned installer.
+    const PINNED_DEVIN_INSTALL = 'curl -fsSL https://static.devin.ai/cli/3000.3.27/setup.sh | bash';
+    if (effectiveFeatures.devin === true) {
+      effectiveFeatures.devin = { installCommand: PINNED_DEVIN_INSTALL };
+    } else if (
+      effectiveFeatures.devin &&
+      !effectiveFeatures.devin.installCommand &&
+      !effectiveFeatures.devin.skipInstall
+    ) {
+      effectiveFeatures.devin = {
+        ...effectiveFeatures.devin,
+        installCommand: PINNED_DEVIN_INSTALL,
+      };
+    }
+
     for (const featureId of Object.keys(effectiveFeatures) as FeatureId[]) {
       if (!isAcpCompatible(featureId)) {
         throw new Error(
@@ -117,6 +134,26 @@ export class HindsightWithOmniroute extends Construct {
       throw new Error(
         'OMNIROUTE_API_KEY supplied via omnirouteValues.secretRefs cannot be auto-wired to Hindsight. ' +
           'Provide the key via omnirouteSecrets/omnirouteValues.secrets or set an explicit hindsightApi.llm.api_key.',
+      );
+    }
+
+    // Validate explicit Hindsight LLM api_key at runtime to avoid wiring non-string values.
+    if (
+      props.hindsightApi.llm.api_key !== undefined &&
+      typeof props.hindsightApi.llm.api_key !== 'string'
+    ) {
+      throw new Error('hindsightApi.llm.api_key must be a string');
+    }
+
+    // Avoid a mismatch where Hindsight and OmniRoute would use different keys.
+    if (
+      omnirouteApiKey !== undefined &&
+      props.hindsightApi.llm.api_key !== undefined &&
+      omnirouteApiKey !== props.hindsightApi.llm.api_key
+    ) {
+      throw new Error(
+        'hindsightApi.llm.api_key conflicts with the auto-wired OMNIROUTE_API_KEY. ' +
+          'Omit one or set them to the same value, or use a secretRefs-based key for OmniRoute.',
       );
     }
 
@@ -146,9 +183,10 @@ export class HindsightWithOmniroute extends Construct {
           provider: props.hindsightApi.llm.provider ?? 'openai',
           base_url: omniroute.exports.baseUrl,
           api_key:
-            (props.hindsightApi.llm.api_key as string | undefined) ??
             omnirouteApiKey ??
-            'omniroute',
+            (omnirouteApiKeySecretRef
+              ? (props.hindsightApi.llm.api_key as string | undefined)
+              : 'omniroute'),
         },
       },
       values: props.hindsightValues

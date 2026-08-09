@@ -225,12 +225,23 @@ export class Gascity extends HelmConstruct<Values> {
       'GC_DASHBOARD_SUPERVISOR_URL',
     ]);
 
+    // Track env names to prevent duplicate entries across all sources.
+    const envNames = new Set(envList.map((e) => e.name as string));
+
+    function pushEnv(name: string, entry: Record<string, unknown>): void {
+      if (envNames.has(name)) {
+        throw new Error(`Duplicate environment variable name: ${name}`);
+      }
+      envNames.add(name);
+      envList.push(entry);
+    }
+
     // Extra env vars
     for (const [k, v] of Object.entries(env)) {
       if (reservedEnv.has(k)) {
         throw new Error(`env.${k} is a reserved environment name and cannot be overridden`);
       }
-      envList.push({ name: k, value: v });
+      pushEnv(k, { name: k, value: v });
     }
     // Feature env vars
     for (const e of featureOutput.env) {
@@ -239,7 +250,7 @@ export class Gascity extends HelmConstruct<Values> {
           `Feature env ${e.name} is a reserved environment name and cannot be overridden`,
         );
       }
-      envList.push({ name: e.name, value: e.value });
+      pushEnv(e.name, { name: e.name, value: e.value });
     }
 
     // Secret references
@@ -250,7 +261,7 @@ export class Gascity extends HelmConstruct<Values> {
       if (!v.name || !v.key) {
         throw new Error(`secretRefs.${k} requires both name and key`);
       }
-      envList.push({
+      pushEnv(k, {
         name: k,
         valueFrom: { secretKeyRef: { name: v.name, key: v.key } },
       });
@@ -301,6 +312,34 @@ export class Gascity extends HelmConstruct<Values> {
         }
       : startupProbe;
 
+    // Writable state hostPaths are created root-owned by DirectoryOrCreate; chown
+    // them to the runtime UID/GID before the main container starts.
+    const writableFeatureMounts = featureOutput.volumeMounts.filter((m) => m.readOnly === false);
+    const initContainers =
+      writableFeatureMounts.length > 0
+        ? [
+            {
+              name: 'chown-writable-hostpaths',
+              image: imageUrl,
+              command: [
+                '/bin/bash',
+                '-c',
+                writableFeatureMounts
+                  .map(
+                    (m) =>
+                      `if [ -d "${m.mountPath}" ]; then chown -R ${runAsUser}:${runAsGroup} "${m.mountPath}" && chmod u+rwx "${m.mountPath}"; else mkdir -p "${m.mountPath}" && chown -R ${runAsUser}:${runAsGroup} "${m.mountPath}"; fi`,
+                  )
+                  .join('\n'),
+              ],
+              securityContext: { runAsUser: 0, runAsGroup: 0 },
+              volumeMounts: writableFeatureMounts.map((m) => ({
+                name: m.name,
+                mountPath: m.mountPath,
+              })),
+            },
+          ]
+        : [];
+
     new ApiObject(this, 'deployment', {
       apiVersion: 'apps/v1',
       kind: 'Deployment',
@@ -315,8 +354,8 @@ export class Gascity extends HelmConstruct<Values> {
               runAsUser,
               runAsGroup,
               fsGroup: runAsGroup,
-              hostUsers: false,
             },
+            initContainers,
             containers: [
               {
                 name: 'gascity',

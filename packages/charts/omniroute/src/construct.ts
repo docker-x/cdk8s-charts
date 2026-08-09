@@ -20,6 +20,9 @@ const DEFAULT_DATA_MOUNT_PATH = '/home/node/.omniroute';
 const DEFAULT_RUN_AS = 1000;
 const CONTAINER_HOME = '/home/node';
 
+// Reserved environment names that control OmniRoute runtime wiring.
+const RESERVED_ENV_NAMES = new Set(['OMNIROUTE_PORT', 'OMNIROUTE_HOME', 'PATH']);
+
 function buildOmnirouteInstall(omnirouteVersion: string): string {
   const installArg = omnirouteVersion === 'latest' ? 'omniroute' : `omniroute@${omnirouteVersion}`;
   return `npm install -g ${installArg}`;
@@ -50,7 +53,7 @@ function buildEnvMap(values: Values, featureOutput: FeatureSetOutput): Record<st
     PATH: '/home/node/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
   };
   // Reserved names control server/runtime wiring and must not be overridden.
-  const reserved = new Set(['OMNIROUTE_PORT', 'OMNIROUTE_HOME', 'PATH']);
+  const reserved = RESERVED_ENV_NAMES;
   for (const [k, v] of Object.entries(values.env)) {
     if (reserved.has(k)) {
       throw new Error(`env.${k} is a reserved environment name and cannot be overridden`);
@@ -243,7 +246,7 @@ export class Omniroute extends HelmConstruct<Values> {
       value,
     }));
 
-    const reserved = new Set(['OMNIROUTE_PORT', 'OMNIROUTE_HOME', 'PATH']);
+    const reserved = RESERVED_ENV_NAMES;
     for (const [k, v] of Object.entries(values.secretRefs)) {
       if (reserved.has(k)) {
         throw new Error(`secretRefs.${k} is a reserved environment name and cannot be overridden`);
@@ -271,6 +274,34 @@ export class Omniroute extends HelmConstruct<Values> {
         readOnly: m.readOnly ?? true,
       })),
     ];
+
+    // Writable state hostPaths are created root-owned by DirectoryOrCreate; chown
+    // them to the runtime UID/GID before the main container starts.
+    const writableFeatureMounts = featureOutput.volumeMounts.filter((m) => m.readOnly === false);
+    const initContainers =
+      writableFeatureMounts.length > 0
+        ? [
+            {
+              name: 'chown-writable-hostpaths',
+              image: values.image,
+              command: [
+                '/bin/bash',
+                '-c',
+                writableFeatureMounts
+                  .map(
+                    (m) =>
+                      `if [ -d "${m.mountPath}" ]; then chown -R ${values.runAsUser}:${values.runAsGroup} "${m.mountPath}" && chmod u+rwx "${m.mountPath}"; else mkdir -p "${m.mountPath}" && chown -R ${values.runAsUser}:${values.runAsGroup} "${m.mountPath}"; fi`,
+                  )
+                  .join('\n'),
+              ],
+              securityContext: { runAsUser: 0, runAsGroup: 0 },
+              volumeMounts: writableFeatureMounts.map((m) => ({
+                name: m.name,
+                mountPath: m.mountPath,
+              })),
+            },
+          ]
+        : [];
 
     const hasSecrets = Object.keys(values.secrets).length > 0;
 
@@ -315,6 +346,7 @@ export class Omniroute extends HelmConstruct<Values> {
               runAsGroup: values.runAsGroup,
               fsGroup: values.runAsGroup,
             },
+            initContainers,
             containers: [container],
             volumes,
           },
