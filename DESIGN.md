@@ -61,9 +61,14 @@ cdk8s-charts/
       otel-lgtm/                    @cdk8s-charts/otel-lgtm
         src/types.ts                Grafana OTEL-LGTM container values + Props/Exports
         src/construct.ts            OtelLgtm construct (Deployment + Service + PVC)
+      omniroute/                    @cdk8s-charts/omniroute
+        src/types.ts                OmniRoute values + AcpAgent + Props/Exports
+        src/construct.ts            Omniroute construct (Deployment + Service + PVC)
     recipes/
       hindsight-litellm/            @cdk8s-charts/hindsight-litellm
         src/construct.ts            Composed stack with auto cross-wiring
+      hindsight-omniroute/          @cdk8s-charts/hindsight-omniroute
+        src/construct.ts            Hindsight + OmniRoute (ACP agents) with auto cross-wiring
       litellm-plane/                @cdk8s-charts/litellm-plane
         src/construct.ts            LiteLLM + Plane CE with shared Redis & A2A gateway
   examples/
@@ -86,7 +91,9 @@ utils  <--  nginx
 utils  <--  kodus
 utils  <--  mastra-studio
 utils  <--  otel-lgtm
+utils  <--  omniroute
 utils + litellm + hindsight  <--  hindsight-litellm
+utils + omniroute + hindsight  <--  hindsight-omniroute
 utils + litellm + plane-ce   <--  litellm-plane
 devpod + gascity + nginx  <--  devspace
 hindsight-litellm  <--  examples/coding-agent-memory
@@ -235,6 +242,31 @@ Composes Litellm + Hindsight with automatic cross-wiring:
 | `litellmEnv` | `Record<string, string>` | no | Extra LiteLLM env vars |
 | `hindsightApi` | `HindsightApiConfig` (minus llm wiring) | yes | Hindsight config (llm.model required) |
 | `hindsightLlmKey` | `string` | yes | Virtual key for Hindsight |
+| `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
+
+### 3.4.1 HindsightWithOmniroute Recipe
+
+**Package**: `@cdk8s-charts/hindsight-omniroute`
+
+Composes OmniRoute + Hindsight with automatic cross-wiring:
+
+1. Deploys OmniRoute with ACP agents (e.g. Devin CLI with shared OS config)
+2. Wires Hindsight's LLM backend to OmniRoute's OpenAI-compatible endpoint
+3. No API keys needed — ACP agents use existing CLI authentication from host OS configs
+
+**Props** (`HindsightWithOmnirouteProps`):
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `omnirouteAgents` | `AcpAgent[]` | no | ACP agents with optional OS config sharing |
+| `omniroutePort` | `number` | no | OmniRoute port (default: 20128) |
+| `omnirouteVersion` | `string` | no | OmniRoute npm version |
+| `omnirouteEnv` | `Record<string, string>` | no | Extra OmniRoute env vars |
+| `omnirouteSecrets` | `Record<string, string>` | no | Secret env vars |
+| `omnirouteValues` | `DeepPartial<OmnirouteValues>` | no | OmniRoute value overrides |
+| `hindsightApi` | `HindsightApiConfig` (minus llm wiring) | yes | Hindsight config (llm.model required) |
+| `hindsightValues` | `DeepPartial<HindsightValues>` | no | Hindsight value overrides |
 | `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
 
 ### 3.5 Plane CE Construct
@@ -576,6 +608,74 @@ chart.
 The construct creates one Deployment, one Service, one PVC, and an optional
 ConfigMap. It is suitable for local development and demos; production
 deployments should use the individual Grafana component charts.
+
+### 3.13 Omniroute Construct
+
+**Package**: `@cdk8s-charts/omniroute`
+
+Deploys [OmniRoute](https://github.com/diegosouzapw/OmniRoute) — a unified AI
+proxy/router (one endpoint, 290+ providers, auto-fallback). OmniRoute is
+published as an npm package, not a Helm chart, so this construct renders
+Kubernetes resources directly via ApiObjects (Deployment + Service + PVC),
+following the same pattern as `@cdk8s-charts/otel-lgtm`.
+
+**ACP (Agent Client Protocol)**: OmniRoute can spawn CLI agents (Devin, Claude
+Code, Codex, etc.) as child processes instead of using HTTP APIs. Each agent
+needs its binary on PATH and its OS config/credentials mounted into the
+container. The `agents` prop declares which ACP agents to enable and whether to
+share host OS configs.
+
+**Props** (`Props`):
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `agents` | `AcpAgent[]` | no | ACP agents to enable with optional OS config sharing |
+| `port` | `number` | no | OmniRoute server port (default: 20128) |
+| `serviceType` | `ServiceType` | no | K8s Service type (default: ClusterIP) |
+| `image` | `string` | no | Node base image (default: node:22-bookworm-slim) |
+| `omnirouteVersion` | `string` | no | OmniRoute npm version (default: latest) |
+| `dataSize` | `string` | no | PVC size (default: 1Gi) |
+| `dataMountPath` | `string` | no | Container data path (default: /home/node/.omniroute) |
+| `env` | `Record<string, string>` | no | Extra env vars |
+| `secrets` | `Record<string, string>` | no | Secret env vars (API keys, JWT secrets) |
+| `command` | `string[]` | no | Container command override |
+| `args` | `string[]` | no | Container args override |
+| `resources` | `ResourceRequirements` | no | Container resources |
+| `values` | `DeepPartial<Values>` | no | Raw value overrides |
+
+**AcpAgent**:
+
+| Field | Type | Required | Purpose |
+|-------|------|----------|---------|
+| `id` | `string` | yes | Agent id (e.g. "devin", "claude", "codex") |
+| `binary` | `string` | no | Binary name to detect |
+| `installCommand` | `string` | no | Install command run at startup |
+| `shareOsConfig` | `ShareOsConfig` | no | Share host OS config/credentials |
+| `env` | `Record<string, string>` | no | Extra env vars for spawned processes |
+
+**ShareOsConfig**: `true` mounts `~/.config/<id>` and `~/.local/share/<id>`; an
+object allows overriding host source paths and adding extra mounts.
+
+**Exports** (`Exports`):
+
+| Export | Type | Value |
+|--------|------|-------|
+| `host` | `string` | Service DNS name |
+| `port` | `number` | 20128 |
+| `baseUrl` | `string` | `http://{id}:{port}/v1` (OpenAI-compatible) |
+| `dashboardUrl` | `string` | `http://{id}:{port}` |
+
+**Resources created:**
+
+1. `PersistentVolumeClaim` (`{id}-data`) — SQLite DB, logs, server state
+2. `Secret` (`{id}-secret`) — secret env vars (when `secrets` is non-empty)
+3. `Deployment` (`{id}`) — installs omniroute + agents at startup, runs `omniroute serve`
+4. `Service` (`{id}`) — exposes the server port
+
+**Agent OS config sharing**: when `shareOsConfig` is enabled, host config
+directories are mounted as `hostPath` volumes into the container so ACP-spawned
+CLI agents can authenticate using existing host credentials.
 
 ## 4. Memory bank configuration
 
