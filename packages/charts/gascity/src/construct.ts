@@ -93,6 +93,7 @@ export class Gascity extends HelmConstruct<Values> {
         props.supervisorUrl ?? `http://${id}-supervisor:${props.supervisorPort ?? 8372}`,
       features,
       env: props.env ?? {},
+      secretRefs: props.secretRefs ?? {},
       serviceType: props.serviceType ?? 'ClusterIP',
     };
 
@@ -113,6 +114,7 @@ export class Gascity extends HelmConstruct<Values> {
       withSupervisor = true,
       supervisorUrl = `http://${id}-supervisor:${supervisorPort}`,
       env = {},
+      secretRefs = {},
       serviceType = 'ClusterIP',
     } = values;
 
@@ -209,6 +211,14 @@ export class Gascity extends HelmConstruct<Values> {
     // Feature env vars
     for (const e of featureOutput.env) {
       envList.push({ name: e.name, value: e.value });
+    }
+
+    // Secret references
+    for (const [k, v] of Object.entries(secretRefs)) {
+      envList.push({
+        name: k,
+        valueFrom: { secretKeyRef: { name: v.name, key: v.key } },
+      });
     }
 
     const ports: Array<{ containerPort: number; name?: string }> = [];

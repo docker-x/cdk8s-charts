@@ -157,8 +157,10 @@ export function buildStartupScript(
 ): string {
   const lines = ['set -euo pipefail'];
   if (homeDir) {
+    lines.push(`export HOME="${homeDir}"`);
     lines.push(`export NPM_CONFIG_PREFIX="${homeDir}/.local"`);
-    lines.push('export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"');
+    // Include common installer bin directories (npm prefix, opencode, pipx/local).
+    lines.push('export PATH="$NPM_CONFIG_PREFIX/bin:$HOME/.opencode/bin:$HOME/.local/bin:$PATH"');
   }
   for (const cmd of installCommands) {
     lines.push(cmd);

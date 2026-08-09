@@ -47,11 +47,14 @@ export class GascityStack extends Construct {
       | { host: string; port: number; baseUrl: string; dashboardUrl: string }
       | undefined;
 
+    const omnirouteId = `${id}-omniroute`;
+    const omnirouteApiKey = props.omniroute?.secrets?.OMNIROUTE_API_KEY;
+
     if (omnirouteEnabled) {
       // OmniRoute gets a bare Devin feature (no plugins, API gateway only)
       const omnirouteFeatures: FeatureMap = { devin: true };
 
-      const omniroute = new Omniroute(this, `${id}-omniroute`, {
+      const omniroute = new Omniroute(this, omnirouteId, {
         namespace: props.namespace,
         port: omniroutePort,
         omnirouteVersion: props.omniroute?.version,
@@ -118,16 +121,29 @@ export class GascityStack extends Construct {
     }
 
     // Auto-wire Devin LLM to OmniRoute if both Devin and OmniRoute are enabled
+    const gascitySecretRefs: Record<string, { name: string; key: string }> = {};
     if (omnirouteExports && gascityFeatures.devin) {
       const devinProps = gascityFeatures.devin === true ? {} : gascityFeatures.devin;
+      const devinEnv: Record<string, string> = {
+        ...devinProps.env,
+        DEVIN_LLM_BASE_URL: omnirouteExports.baseUrl,
+        DEVIN_LLM_MODEL: model,
+      };
+
+      // Reference the OmniRoute Secret for the API key when one is configured;
+      // otherwise fall back to the default OmniRoute key.
+      if (omnirouteApiKey !== undefined) {
+        gascitySecretRefs.DEVIN_LLM_API_KEY = {
+          name: `${omnirouteId}-secret`,
+          key: 'OMNIROUTE_API_KEY',
+        };
+      } else {
+        devinEnv.DEVIN_LLM_API_KEY = 'omniroute';
+      }
+
       gascityFeatures.devin = {
         ...devinProps,
-        env: {
-          ...devinProps.env,
-          DEVIN_LLM_BASE_URL: omnirouteExports.baseUrl,
-          DEVIN_LLM_API_KEY: props.omniroute?.secrets?.OMNIROUTE_API_KEY ?? 'omniroute',
-          DEVIN_LLM_MODEL: model,
-        },
+        env: devinEnv,
       };
     }
 
@@ -138,6 +154,7 @@ export class GascityStack extends Construct {
       resources: props.gascityResources,
       features: gascityFeatures,
       serviceType: props.serviceType,
+      secretRefs: Object.keys(gascitySecretRefs).length > 0 ? gascitySecretRefs : undefined,
       values: props.gascityValues,
     });
 

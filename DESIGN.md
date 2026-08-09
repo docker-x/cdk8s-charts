@@ -631,6 +631,7 @@ Deploys the Gascity AI agent framework as raw K8s ApiObjects.
 | `supervisorUrl` | `string` | no | Supervisor URL for dashboard (default: `http://{id}-supervisor:{supervisorPort}`) |
 | `features` | `FeatureMap` | no | CLI agent features (devin, claude, codex, etc.) from `@cdk8s-charts/features` |
 | `env` | `Record<string, string>` | no | Extra env vars |
+| `secretRefs` | `Record<string, { name: string; key: string }>` | no | Kubernetes Secret references for env vars |
 | `serviceType` | `ServiceType` | no | K8s Service type for dashboard/supervisor services (default: `ClusterIP`) |
 | `values` | `DeepPartial<Values>` | no | Raw value overrides |
 
@@ -838,6 +839,7 @@ container. Agents are declared via the composable `features` system from
 | `dataSize` | `string` | no | PVC size (default: 1Gi) |
 | `dataMountPath` | `string` | no | Container data path (default: /home/node/.omniroute) |
 | `env` | `Record<string, string>` | no | Extra env vars |
+| `secretRefs` | `Record<string, { name: string; key: string }>` | no | Kubernetes Secret references for env vars |
 | `secrets` | `Record<string, string>` | no | Secret env vars (API keys, JWT secrets) |
 | `command` | `string[]` | no | Container command override |
 | `args` | `string[]` | no | Container args override |

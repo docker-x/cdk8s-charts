@@ -9,14 +9,20 @@
  * explicitly (e.g. ingress/LoadBalancer) if you want host access.
  *
  * Prerequisites:
+ *   - A pullable Gascity image set via GASCITY_IMAGE_URL
  *   - npx cdk8s synth   (generates K8s manifests in dist/)
- *   - composed add ./dist  (or use composed.yaml with x-k8s)
+ *   - composed add ./dist
  *   - composed up
  */
 
 import { GascityHindsightOmniroute } from '@cdk8s-charts/gascity-hindsight-omniroute';
 import { App, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
+
+const gascityImageUrl = process.env.GASCITY_IMAGE_URL ?? '';
+if (!gascityImageUrl) {
+  throw new Error('Set GASCITY_IMAGE_URL to a pullable Gascity image before synthesizing.');
+}
 
 class GascityHindsightOmnirouteStack extends Chart {
   public readonly stack: GascityHindsightOmniroute;
@@ -27,7 +33,7 @@ class GascityHindsightOmnirouteStack extends Chart {
     this.stack = new GascityHindsightOmniroute(this, 'stack', {
       namespace: 'default',
       // Gascity — dev environment (set GASCITY_IMAGE_URL to a pullable image)
-      gascityImageUrl: process.env.GASCITY_IMAGE_URL ?? 'ghcr.io/gascity/gascity:latest',
+      gascityImageUrl,
       // CLI agent features — composable
       features: {
         devin: true,
