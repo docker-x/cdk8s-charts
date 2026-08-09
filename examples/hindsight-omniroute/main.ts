@@ -22,14 +22,10 @@ class HindsightOmnirouteStack extends Chart {
 
     new HindsightWithOmniroute(this, 'memory', {
       namespace: 'default',
-      // OmniRoute with Devin CLI ACP agent — shares host OS config
-      omnirouteAgents: [
-        {
-          id: 'devin',
-          installCommand: 'curl -fsSL https://cli.devin.ai/install.sh | bash',
-          shareOsConfig: true,
-        },
-      ],
+      // OmniRoute with Devin CLI feature — shares host OS config
+      omnirouteFeatures: {
+        devin: true,
+      },
       // Hindsight config — model is served by OmniRoute via Devin CLI
       hindsightApi: {
         llm: {

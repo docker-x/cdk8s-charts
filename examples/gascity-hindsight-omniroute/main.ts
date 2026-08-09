@@ -24,20 +24,24 @@ class GascityHindsightOmnirouteStack extends Chart {
 
     new GascityHindsightOmniroute(this, 'stack', {
       namespace: 'default',
-      // Gascity — dev environment with Devin
+      // Gascity — dev environment
       gascityImageUrl: 'ghcr.io/gascity/gascity:latest',
-      gascityDevinShareOsConfig: true,
+      // CLI agent features — composable
+      features: {
+        devin: true,
+      },
       // Hindsight — shared memory service
-      hindsightApi: {
-        llm: {
-          model: 'devin-cli-agentic/swe-1-7',
+      hindsight: {
+        enabled: true,
+        api: {
+          llm: {
+            model: 'devin-cli-agentic/swe-1-7',
+          },
         },
-        retain: {
-          max_completion_tokens: 16384,
-        },
-        reranker: {
-          local_bucket_batching: true,
-        },
+      },
+      // OmniRoute — LLM gateway
+      omniroute: {
+        enabled: true,
       },
     });
   }

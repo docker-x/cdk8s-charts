@@ -77,10 +77,9 @@ cdk8s-charts/
         src/construct.ts            Gascity + Hindsight + OmniRoute multi-client stack
       litellm-plane/                @cdk8s-charts/litellm-plane
         src/construct.ts            LiteLLM + Plane CE with shared Redis & A2A gateway
-  stacks/                           Deployable, parameterized stacks
-    gascity/                        @cdk8s-charts/stack-gascity
-      src/types.ts                  GascityStackProps (hindsight/omniroute toggles, features)
-      src/construct.ts              GascityStack — Gascity + optional Hindsight + optional OmniRoute
+      gascity/                      @cdk8s-charts/gascity-stack
+        src/types.ts                GascityStackProps (hindsight/omniroute toggles, features)
+        src/construct.ts            GascityStack — Gascity + optional Hindsight + optional OmniRoute
   examples/
     coding-agent-memory/            Full working example
     gascity-stack/                  Gascity stack example (all subcharts + features)
@@ -110,9 +109,9 @@ utils + omniroute + hindsight  <--  hindsight-omniroute
 utils + gascity + omniroute + hindsight  <--  gascity-hindsight-omniroute
 utils + litellm + plane-ce   <--  litellm-plane
 devpod + gascity + nginx  <--  devspace
-features + gascity + omniroute + hindsight  <--  stack-gascity
+features + gascity + omniroute + hindsight  <--  gascity-stack
 hindsight-litellm  <--  examples/coding-agent-memory
-stack-gascity  <--  examples/gascity-stack
+gascity-stack  <--  examples/gascity-stack
 ```
 
 ## 3. Construct design
@@ -382,9 +381,9 @@ Key design points:
 
 ### 3.4.3 GascityStack (Deployable Stack)
 
-**Package**: `@cdk8s-charts/stack-gascity`
+**Package**: `@cdk8s-charts/gascity-stack`
 
-A deployable, parameterized AI dev environment. Lives in `stacks/` (not `packages/recipes/`) because it's a full deployment target, not just a composition recipe.
+A deployable, parameterized AI dev environment. Lives in `packages/recipes/gascity/` alongside other recipes — recipes and stacks are the same concept, just more organized.
 
 **Architecture (when all subcharts enabled):**
 ```

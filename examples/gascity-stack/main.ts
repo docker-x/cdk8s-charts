@@ -19,7 +19,7 @@
  *   composed build    (generates docker-compose.yaml)
  */
 
-import { GascityStack } from '@cdk8s-charts/stack-gascity';
+import { GascityStack } from '@cdk8s-charts/gascity-stack';
 import { App, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
 
