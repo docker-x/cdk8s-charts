@@ -1,5 +1,9 @@
 import { homedir } from 'node:os';
-import { normalizeDevinInstall, resolveFeatures } from '@cdk8s-charts/features';
+import {
+  buildChownWritableMountsInitContainer,
+  normalizeDevinInstall,
+  resolveFeatures,
+} from '@cdk8s-charts/features';
 import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
@@ -97,8 +101,9 @@ export class Gascity extends HelmConstruct<Values> {
       chownWritableFeatureMounts: props.chownWritableFeatureMounts ?? false,
     };
 
-    // Apply raw value overrides, then re-normalize features so value overrides
-    // cannot bypass the pinned Devin installer.
+    // Apply raw value overrides, then normalize features so value overrides cannot
+    // bypass the pinned Devin installer (the generic resolver no longer applies
+    // chart-level normalization).
     const values = props.values ? deepMerge(computed, props.values) : computed;
     values.features = normalizeDevinInstall(values.features ?? {});
 
@@ -314,43 +319,16 @@ export class Gascity extends HelmConstruct<Values> {
       : startupProbe;
 
     // Writable state hostPaths are created root-owned by DirectoryOrCreate. If the
-    // cluster policy allows root init containers, chown existing paths to the pod
-    // group while preserving the host owner, and chown newly created paths fully.
+    // cluster policy allows root init containers, repair ownership via the shared
+    // helper that uses a fixed script and passes mount paths as positional arguments.
     const writableFeatureMounts = featureOutput.volumeMounts.filter((m) => m.readOnly === false);
-    const initContainers =
-      values.chownWritableFeatureMounts && writableFeatureMounts.length > 0
-        ? [
-            {
-              name: 'chown-writable-hostpaths',
-              image: imageUrl,
-              command: [
-                '/bin/sh',
-                '-eu',
-                `uid="$1"
-gid="$2"
-shift 2
-for path; do
-  if [ -d "$path" ]; then
-    chown -R :"$gid" "$path"
-    chmod -R g+rwx "$path"
-  else
-    mkdir -p "$path"
-    chown -R "$uid:$gid" "$path"
-  fi
-done`,
-                '--',
-                String(runAsUser),
-                String(runAsGroup),
-                ...writableFeatureMounts.map((m) => m.mountPath),
-              ],
-              securityContext: { runAsUser: 0, runAsGroup: 0 },
-              volumeMounts: writableFeatureMounts.map((m) => ({
-                name: m.name,
-                mountPath: m.mountPath,
-              })),
-            },
-          ]
-        : [];
+    const initContainers = buildChownWritableMountsInitContainer({
+      image: imageUrl,
+      runAsUser,
+      runAsGroup,
+      enabled: values.chownWritableFeatureMounts ?? false,
+      writableFeatureMounts,
+    });
 
     new ApiObject(this, 'deployment', {
       apiVersion: 'apps/v1',

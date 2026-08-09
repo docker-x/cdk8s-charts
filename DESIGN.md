@@ -67,7 +67,7 @@ cdk8s-charts/
     features/                       @cdk8s-charts/features
       src/types.ts                  FeatureDefinition, FeatureMap, FeatureProps, FeatureSetOutput
       src/agents/registry.ts        Registry of all CLI agent features (14 agents)
-      src/feature-set.ts            resolveFeatures() — turns FeatureMap into volumes/env/installs
+      src/feature-set.ts            resolveFeatures() / normalizeDevinInstall() / buildChownWritableMountsInitContainer()
     recipes/
       hindsight-litellm/            @cdk8s-charts/hindsight-litellm
         src/construct.ts            Composed stack with auto cross-wiring
@@ -146,14 +146,18 @@ Composable CLI agent features — like devcontainer features but without devcont
 **API:**
 
 ```typescript
-import { resolveFeatures, type FeatureMap } from '@cdk8s-charts/features';
+import {
+  normalizeDevinInstall,
+  resolveFeatures,
+  type FeatureMap,
+} from '@cdk8s-charts/features';
 
-const features: FeatureMap = {
-  devin: true,                              // defaults: mountConfig=true
+const features: FeatureMap = normalizeDevinInstall({
+  devin: true,                              // defaults: mountConfig=true; pinned installer supplied
   claude: { mountConfig: true },             // explicit
   codex: { mountConfig: false, skipInstall: true }, // binary already in image
   gemini: { mountConfig: false },            // disable OS config sharing
-};
+});
 
 const output = resolveFeatures({
   homeDir: '/workspace',
@@ -655,7 +659,7 @@ Deploys the Gascity AI agent framework as raw K8s ApiObjects.
 | `serviceType` | `ServiceType` | no | K8s Service type for dashboard/supervisor services (default: `ClusterIP`) |
 | `runAsUser` | `number` | no | Pod UID; set to host UID that owns mounted credentials (default: `1002730000`) |
 | `runAsGroup` | `number` | no | Pod GID used for `fsGroup`/`runAsGroup` (default: `1002730000`) |
-| `chownWritableFeatureMounts` | `boolean` | no | Run a root init container to chown writable feature hostPaths to the pod GID (default: `false`) |
+| `chownWritableFeatureMounts` | `boolean` | no | Run a root init container to chown writable feature hostPaths to the pod GID (default: `false`; enable in clusters that permit root init containers) |
 | `values` | `DeepPartial<Values>` | no | Raw value overrides |
 
 **Exports (`Exports`):**
@@ -869,7 +873,7 @@ container. Agents are declared via the composable `features` system from
 | `podAnnotations` | `Record<string, string>` | no | Pod annotations (default: `{}`) |
 | `podLabels` | `Record<string, string>` | no | Pod labels (default: `{}`) |
 | `resources` | `ResourceRequirements` | no | Container resources |
-| `chownWritableFeatureMounts` | `boolean` | no | Run a root init container to chown writable feature hostPaths to the pod GID (default: `false`) |
+| `chownWritableFeatureMounts` | `boolean` | no | Run a root init container to chown writable feature hostPaths to the pod GID (default: `true`; disable in clusters that forbid root init containers) |
 | `values` | `DeepPartial<Values>` | no | Raw value overrides |
 
 **Features**: The `features` prop accepts a `FeatureMap` from

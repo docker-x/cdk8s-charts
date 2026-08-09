@@ -100,9 +100,10 @@ export class HindsightWithOmniroute extends Construct {
     const hindsightId = `${id}-hindsight`;
 
     // Apply recipe-level hostHome override to OmniRoute value overrides.
-    const omnirouteValues: DeepPartial<OmnirouteValues> = props.hostHome
-      ? deepMerge(props.omnirouteValues ?? {}, { hostHome: props.hostHome })
-      : (props.omnirouteValues ?? {});
+    const omnirouteValues: DeepPartial<OmnirouteValues> =
+      props.hostHome !== undefined
+        ? deepMerge(props.omnirouteValues ?? {}, { hostHome: props.hostHome })
+        : (props.omnirouteValues ?? {});
 
     // Validate the merged OmniRoute features are ACP-compatible. The chart re-normalizes
     // the final feature map, so normalize here to keep the auto-wired map consistent.
@@ -161,6 +162,19 @@ export class HindsightWithOmniroute extends Construct {
       );
     }
 
+    // An explicit Hindsight api_key is only meaningful when OmniRoute uses a Secret ref
+    // (because Hindsight cannot consume K8s Secret refs). Reject it otherwise.
+    if (
+      props.hindsightApi.llm.api_key !== undefined &&
+      omnirouteApiKey === undefined &&
+      omnirouteApiKeySecretRef === undefined
+    ) {
+      throw new Error(
+        'hindsightApi.llm.api_key is only supported when OMNIROUTE_API_KEY is supplied via omnirouteValues.secretRefs. ' +
+          'Omit the key or provide an OmniRoute Secret reference.',
+      );
+    }
+
     // Deploy OmniRoute — LLM proxy with ACP agents
     const omniroute = new Omniroute(this, omnirouteId, {
       namespace: props.namespace,
@@ -171,7 +185,7 @@ export class HindsightWithOmniroute extends Construct {
       secrets: props.omnirouteSecrets,
       serviceType: svcType,
       chownWritableFeatureMounts: true,
-      values: { ...omnirouteValues, features: effectiveFeatures },
+      values: { ...omnirouteValues, features: effectiveFeatures, chownWritableFeatureMounts: true },
     });
 
     // Deploy Hindsight, wired to OmniRoute's OpenAI-compatible endpoint

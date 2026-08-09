@@ -64,6 +64,17 @@ export class GascityStack extends Construct {
       (props.omniroute?.values?.secretRefs?.OMNIROUTE_API_KEY as SecretEnvRef | undefined) ??
       (props.omniroute?.secretRefs?.OMNIROUTE_API_KEY as SecretEnvRef | undefined);
 
+    if (
+      omnirouteEnabled &&
+      omnirouteApiKey !== undefined &&
+      omnirouteApiKeySecretRef !== undefined
+    ) {
+      throw new Error(
+        'OMNIROUTE_API_KEY cannot be supplied both as a plaintext secret and as a Secret reference. ' +
+          'Use either omniroute.secrets/omniroute.values.secrets or omniroute.secretRefs/omniroute.values.secretRefs, not both.',
+      );
+    }
+
     if (omnirouteEnabled) {
       // OmniRoute gets a bare Devin feature (no plugins, API gateway only).
       // Normalize the merged feature map (including value overrides) so the pinned
@@ -75,6 +86,7 @@ export class GascityStack extends Construct {
       const omnirouteValues: DeepPartial<import('@cdk8s-charts/omniroute').Values> = {
         ...props.omniroute?.values,
         features: omnirouteFeatures,
+        chownWritableFeatureMounts: true,
       };
 
       const omniroute = new Omniroute(this, omnirouteId, {
@@ -113,6 +125,22 @@ export class GascityStack extends Construct {
       | undefined;
 
     if (hindsightEnabled) {
+      const hindsightApiKey = props.hindsight?.api?.llm?.api_key as string | undefined;
+      if (hindsightApiKey !== undefined) {
+        if (omnirouteApiKeySecretRef === undefined && omnirouteApiKey === undefined) {
+          throw new Error(
+            'hindsight.api.llm.api_key is only supported when OMNIROUTE_API_KEY is supplied via omniroute.secretRefs/omniroute.values.secretRefs. ' +
+              'Omit the key or provide an OmniRoute Secret reference.',
+          );
+        }
+        if (omnirouteApiKey !== undefined && omnirouteApiKey !== hindsightApiKey) {
+          throw new Error(
+            'hindsight.api.llm.api_key conflicts with the auto-wired OMNIROUTE_API_KEY. ' +
+              'Omit one or set them to the same value, or use a secretRefs-based key for OmniRoute.',
+          );
+        }
+      }
+
       const llmConfig: Record<string, unknown> = {
         model,
         ...props.hindsight?.api?.llm,
@@ -206,6 +234,7 @@ export class GascityStack extends Construct {
     const gascityValues: DeepPartial<import('@cdk8s-charts/gascity').Values> = {
       ...props.gascityValues,
       features: gascityFeatures,
+      chownWritableFeatureMounts: true,
     };
 
     const gascity = new Gascity(this, `${id}-gascity`, {

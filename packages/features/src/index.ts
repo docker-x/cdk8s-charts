@@ -2,8 +2,10 @@
 
 // Registry
 export { FEATURE_REGISTRY, getFeatureDefinition, listFeatureIds } from './agents/registry';
+export type { ChownWritableMountsInitContainerOptions } from './feature-set';
 // FeatureSet resolver
 export {
+  buildChownWritableMountsInitContainer,
   buildStartupScript,
   DEFAULT_DEVIN_INSTALL_COMMAND,
   getFeatureDefs,

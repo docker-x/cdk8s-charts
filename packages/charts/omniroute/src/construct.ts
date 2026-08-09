@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import {
+  buildChownWritableMountsInitContainer,
   buildStartupScript,
   type FeatureId,
   type FeatureMap,
@@ -136,7 +137,7 @@ export class Omniroute extends HelmConstruct<Values> {
       secrets: props.secrets ?? {},
       secretRefs: props.secretRefs ?? {},
       features: props.features ?? {},
-      chownWritableFeatureMounts: props.chownWritableFeatureMounts ?? false,
+      chownWritableFeatureMounts: props.chownWritableFeatureMounts ?? true,
       command: props.command,
       args: props.args,
       podAnnotations: props.podAnnotations ?? {},
@@ -157,8 +158,9 @@ export class Omniroute extends HelmConstruct<Values> {
       throw new Error('hostHome must be an absolute path');
     }
 
-    // Re-normalize after value overrides so raw `features.devin: true` cannot
-    // bypass the pinned installer.
+    // Normalize the merged feature map before resolving so raw `features.devin: true`
+    // cannot bypass the pinned installer (the generic resolver no longer applies
+    // chart-level normalization).
     values.features = normalizeDevinInstall(values.features);
 
     const featureOutput = resolveFeatures({
@@ -282,44 +284,17 @@ export class Omniroute extends HelmConstruct<Values> {
     ];
 
     // Writable state hostPaths are created root-owned by DirectoryOrCreate. If the
-    // cluster policy allows root init containers, chown existing paths to the pod
-    // group while preserving the host owner, and chown newly created paths fully.
+    // cluster policy allows root init containers, repair ownership via a shared helper
+    // that uses a fixed script and passes mount paths as positional arguments.
     const writableFeatureMounts = featureOutput.volumeMounts.filter((m) => m.readOnly === false);
-    const initContainers =
-      values.chownWritableFeatureMounts && writableFeatureMounts.length > 0
-        ? [
-            {
-              name: 'chown-writable-hostpaths',
-              image: values.image,
-              imagePullPolicy: values.imagePullPolicy,
-              command: [
-                '/bin/sh',
-                '-eu',
-                `uid="$1"
-gid="$2"
-shift 2
-for path; do
-  if [ -d "$path" ]; then
-    chown -R :"$gid" "$path"
-    chmod -R g+rwx "$path"
-  else
-    mkdir -p "$path"
-    chown -R "$uid:$gid" "$path"
-  fi
-done`,
-                '--',
-                String(values.runAsUser),
-                String(values.runAsGroup),
-                ...writableFeatureMounts.map((m) => m.mountPath),
-              ],
-              securityContext: { runAsUser: 0, runAsGroup: 0 },
-              volumeMounts: writableFeatureMounts.map((m) => ({
-                name: m.name,
-                mountPath: m.mountPath,
-              })),
-            },
-          ]
-        : [];
+    const initContainers = buildChownWritableMountsInitContainer({
+      image: values.image,
+      imagePullPolicy: values.imagePullPolicy,
+      runAsUser: values.runAsUser,
+      runAsGroup: values.runAsGroup,
+      enabled: values.chownWritableFeatureMounts ?? true,
+      writableFeatureMounts,
+    });
 
     const hasSecrets = Object.keys(values.secrets).length > 0;
 

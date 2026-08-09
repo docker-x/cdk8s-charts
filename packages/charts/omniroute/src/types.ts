@@ -49,7 +49,7 @@ export interface Values {
   features: FeatureMap;
   /**
    * Run a root init container to chown writable feature hostPaths to the pod UID/GID.
-   * Enable only when your cluster policy allows root init containers (default: false).
+   * Disable only in clusters that forbid root init containers (default: true).
    */
   chownWritableFeatureMounts: boolean;
   /** Startup script override. Omit to use the default that installs agents + starts omniroute. */
@@ -110,7 +110,7 @@ export interface Props {
   resources?: ResourceRequirements;
   /**
    * Run a root init container to chown writable feature hostPaths to the pod UID/GID.
-   * Enable only when your cluster policy allows root init containers (default: false).
+   * Disable only in clusters that forbid root init containers (default: true).
    */
   chownWritableFeatureMounts?: boolean;
   /** Raw value overrides (deep-merged into computed defaults). */

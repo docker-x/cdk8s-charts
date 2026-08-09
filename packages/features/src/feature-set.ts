@@ -33,6 +33,60 @@ export function normalizeDevinInstall(features: FeatureMap): FeatureMap {
   return features;
 }
 
+/** Options for building the writable hostPath ownership repair init container. */
+export interface ChownWritableMountsInitContainerOptions {
+  image: string;
+  imagePullPolicy?: string;
+  runAsUser: number;
+  runAsGroup: number;
+  enabled: boolean;
+  writableFeatureMounts: Array<{ name: string; mountPath: string }>;
+}
+
+/**
+ * Build an init container that repairs ownership of writable feature hostPaths.
+ * Existing directories keep their owner and receive group read/write/traverse
+ * permissions; the script is fixed and receives all variable data as positional
+ * arguments so mount paths are never interpolated into shell source.
+ */
+export function buildChownWritableMountsInitContainer(
+  options: ChownWritableMountsInitContainerOptions,
+): Array<Record<string, unknown>> {
+  if (!options.enabled || options.writableFeatureMounts.length === 0) return [];
+
+  const container: Record<string, unknown> = {
+    name: 'chown-writable-hostpaths',
+    image: options.image,
+    command: [
+      '/bin/sh',
+      '-eu',
+      '-c',
+      `uid="$1"
+gid="$2"
+shift 2
+for path; do
+  if [ -d "$path" ]; then
+    chown -R :"$gid" "$path"
+    chmod -R g+rwX "$path"
+  fi
+done`,
+      '--',
+      String(options.runAsUser),
+      String(options.runAsGroup),
+      ...options.writableFeatureMounts.map((m) => m.mountPath),
+    ],
+    securityContext: { runAsUser: 0, runAsGroup: 0 },
+    volumeMounts: options.writableFeatureMounts.map((m) => ({
+      name: m.name,
+      mountPath: m.mountPath,
+    })),
+  };
+  if (options.imagePullPolicy) {
+    container.imagePullPolicy = options.imagePullPolicy;
+  }
+  return [container];
+}
+
 /**
  * Resolves a set of enabled features into container-ready output:
  * install commands, hostPath volumes, volume mounts, and env vars.
@@ -45,8 +99,7 @@ export function normalizeDevinInstall(features: FeatureMap): FeatureMap {
  *   // output.installCommands, output.volumes, output.volumeMounts, output.env
  */
 export function resolveFeatures(options: FeatureSetOptions): FeatureSetOutput {
-  const { homeDir, hostHome } = options;
-  const features = normalizeDevinInstall(options.features);
+  const { homeDir, hostHome, features } = options;
 
   const result: FeatureSetOutput = {
     installCommands: [],
