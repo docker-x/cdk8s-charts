@@ -1,4 +1,4 @@
-import type { FeatureMap, FeatureProps } from '@cdk8s-charts/features';
+import { type FeatureMap, type FeatureProps, normalizeDevinInstall } from '@cdk8s-charts/features';
 import { Gascity } from '@cdk8s-charts/gascity';
 import { Hindsight, type HindsightApiConfig, type HindsightValues } from '@cdk8s-charts/hindsight';
 import { Omniroute } from '@cdk8s-charts/omniroute';
@@ -66,12 +66,15 @@ export class GascityStack extends Construct {
 
     if (omnirouteEnabled) {
       // OmniRoute gets a bare Devin feature (no plugins, API gateway only).
-      // The default Devin install command is intentionally unconfigured; pin a
-      // versioned installer so ACP deployment does not crash-loop.
-      const omnirouteFeatures: FeatureMap = {
-        devin: {
-          installCommand: 'curl -fsSL https://static.devin.ai/cli/3000.3.27/setup.sh | bash',
-        },
+      // Normalize the merged feature map (including value overrides) so the pinned
+      // installer survives the chart's internal merge.
+      const omnirouteFeatures: FeatureMap = normalizeDevinInstall(
+        deepMerge({ devin: true }, props.omniroute?.values?.features ?? {}),
+      );
+
+      const omnirouteValues: DeepPartial<import('@cdk8s-charts/omniroute').Values> = {
+        ...props.omniroute?.values,
+        features: omnirouteFeatures,
       };
 
       const omniroute = new Omniroute(this, omnirouteId, {
@@ -83,9 +86,8 @@ export class GascityStack extends Construct {
         env: props.omniroute?.env,
         secrets: props.omniroute?.secrets,
         secretRefs: props.omniroute?.secretRefs,
-        values: props.omniroute?.values as
-          | DeepPartial<import('@cdk8s-charts/omniroute').Values>
-          | undefined,
+        chownWritableFeatureMounts: true,
+        values: omnirouteValues,
       });
 
       // Hindsight requires a plaintext api_key; a Secret reference alone cannot be auto-wired.
@@ -148,23 +150,11 @@ export class GascityStack extends Construct {
     // ─────────────────────────────────────────────────────────────────────
     // 3. Gascity (always enabled — the dev environment)
     // ─────────────────────────────────────────────────────────────────────
-    const gascityFeatures: FeatureMap = { ...props.features };
-
-    // The Devin registry no longer ships a default mutable installer. Ensure the
-    // devin feature has an explicit pinned installer unless the image is pre-baked.
-    const PINNED_DEVIN_INSTALL = 'curl -fsSL https://static.devin.ai/cli/3000.3.27/setup.sh | bash';
-    if (gascityFeatures.devin === true) {
-      gascityFeatures.devin = { installCommand: PINNED_DEVIN_INSTALL };
-    } else if (
-      gascityFeatures.devin &&
-      !gascityFeatures.devin.installCommand &&
-      !gascityFeatures.devin.skipInstall
-    ) {
-      gascityFeatures.devin = {
-        ...gascityFeatures.devin,
-        installCommand: PINNED_DEVIN_INSTALL,
-      };
-    }
+    // Normalize the merged Gascity feature map (including value overrides) so the
+    // pinned Devin installer and downstream auto-wiring see the same effective map.
+    const gascityFeatures: FeatureMap = normalizeDevinInstall(
+      deepMerge(props.features ?? {}, props.gascityValues?.features ?? {}),
+    );
 
     // Auto-wire Devin MCP to Hindsight if both Devin and Hindsight are enabled
     if (hindsightExports && gascityFeatures.devin) {
@@ -213,6 +203,11 @@ export class GascityStack extends Construct {
       };
     }
 
+    const gascityValues: DeepPartial<import('@cdk8s-charts/gascity').Values> = {
+      ...props.gascityValues,
+      features: gascityFeatures,
+    };
+
     const gascity = new Gascity(this, `${id}-gascity`, {
       namespace: props.namespace,
       imageUrl: props.gascityImageUrl,
@@ -221,7 +216,8 @@ export class GascityStack extends Construct {
       features: gascityFeatures,
       serviceType: props.serviceType,
       secretRefs: Object.keys(gascitySecretRefs).length > 0 ? gascitySecretRefs : undefined,
-      values: props.gascityValues,
+      chownWritableFeatureMounts: true,
+      values: gascityValues,
     });
 
     this.exports = {

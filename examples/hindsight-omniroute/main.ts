@@ -13,6 +13,7 @@
  *   - composed up
  */
 
+import { homedir } from 'node:os';
 import { HindsightWithOmniroute } from '@cdk8s-charts/hindsight-omniroute';
 import { App, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
@@ -25,12 +26,11 @@ class HindsightOmnirouteStack extends Chart {
 
     this.memory = new HindsightWithOmniroute(this, 'memory', {
       namespace: 'default',
-      // OmniRoute with Devin CLI feature — shares host OS config.
-      // The default mutable installer is disabled; supply a pinned installCommand or use a pre-baked image.
+      // OmniRoute with Devin CLI feature — shares host OS config from this hostHome.
+      // The recipe pins a versioned Devin installer; use a pre-baked image in production.
+      hostHome: homedir(),
       omnirouteFeatures: {
-        devin: {
-          installCommand: 'curl -fsSL https://static.devin.ai/cli/3000.3.27/setup.sh | bash',
-        },
+        devin: true,
       },
       // Hindsight config — model is served by OmniRoute via Devin CLI
       hindsightApi: {

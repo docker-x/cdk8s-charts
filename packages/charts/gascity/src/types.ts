@@ -55,6 +55,11 @@ export interface Values {
   runAsGroup?: number;
   /** K8s Service type for dashboard/supervisor services. Default: ClusterIP. */
   serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
+  /**
+   * Run a root init container to chown writable feature hostPaths to the pod GID.
+   * Enable only when your cluster policy allows root init containers (default: false).
+   */
+  chownWritableFeatureMounts?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -100,6 +105,11 @@ export interface Props {
   runAsUser?: number;
   /** Pod GID. Used for fsGroup and runAsGroup. Default: 1002730000. */
   runAsGroup?: number;
+  /**
+   * Run a root init container to chown writable feature hostPaths to the pod GID.
+   * Enable only when your cluster policy allows root init containers (default: false).
+   */
+  chownWritableFeatureMounts?: boolean;
   /** Raw value overrides (deep-merged into computed defaults). */
   values?: DeepPartial<Values>;
 }

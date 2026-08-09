@@ -5,6 +5,7 @@ import {
   type FeatureId,
   type FeatureMap,
   type FeatureSetOutput,
+  normalizeDevinInstall,
   resolveFeatures,
 } from '@cdk8s-charts/features';
 import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
@@ -135,6 +136,7 @@ export class Omniroute extends HelmConstruct<Values> {
       secrets: props.secrets ?? {},
       secretRefs: props.secretRefs ?? {},
       features: props.features ?? {},
+      chownWritableFeatureMounts: props.chownWritableFeatureMounts ?? false,
       command: props.command,
       args: props.args,
       podAnnotations: props.podAnnotations ?? {},
@@ -154,6 +156,10 @@ export class Omniroute extends HelmConstruct<Values> {
     if (!values.hostHome.startsWith('/')) {
       throw new Error('hostHome must be an absolute path');
     }
+
+    // Re-normalize after value overrides so raw `features.devin: true` cannot
+    // bypass the pinned installer.
+    values.features = normalizeDevinInstall(values.features);
 
     const featureOutput = resolveFeatures({
       homeDir: CONTAINER_HOME,
@@ -275,24 +281,36 @@ export class Omniroute extends HelmConstruct<Values> {
       })),
     ];
 
-    // Writable state hostPaths are created root-owned by DirectoryOrCreate; chown
-    // them to the runtime UID/GID before the main container starts.
+    // Writable state hostPaths are created root-owned by DirectoryOrCreate. If the
+    // cluster policy allows root init containers, chown existing paths to the pod
+    // group while preserving the host owner, and chown newly created paths fully.
     const writableFeatureMounts = featureOutput.volumeMounts.filter((m) => m.readOnly === false);
     const initContainers =
-      writableFeatureMounts.length > 0
+      values.chownWritableFeatureMounts && writableFeatureMounts.length > 0
         ? [
             {
               name: 'chown-writable-hostpaths',
               image: values.image,
+              imagePullPolicy: values.imagePullPolicy,
               command: [
-                '/bin/bash',
-                '-c',
-                writableFeatureMounts
-                  .map(
-                    (m) =>
-                      `if [ -d "${m.mountPath}" ]; then chown -R ${values.runAsUser}:${values.runAsGroup} "${m.mountPath}" && chmod u+rwx "${m.mountPath}"; else mkdir -p "${m.mountPath}" && chown -R ${values.runAsUser}:${values.runAsGroup} "${m.mountPath}"; fi`,
-                  )
-                  .join('\n'),
+                '/bin/sh',
+                '-eu',
+                `uid="$1"
+gid="$2"
+shift 2
+for path; do
+  if [ -d "$path" ]; then
+    chown -R :"$gid" "$path"
+    chmod -R g+rwx "$path"
+  else
+    mkdir -p "$path"
+    chown -R "$uid:$gid" "$path"
+  fi
+done`,
+                '--',
+                String(values.runAsUser),
+                String(values.runAsGroup),
+                ...writableFeatureMounts.map((m) => m.mountPath),
               ],
               securityContext: { runAsUser: 0, runAsGroup: 0 },
               volumeMounts: writableFeatureMounts.map((m) => ({

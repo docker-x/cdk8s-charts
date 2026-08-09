@@ -352,6 +352,7 @@ Composes OmniRoute + Hindsight with automatic cross-wiring:
 | `omnirouteEnv` | `Record<string, string>` | no | Extra OmniRoute env vars |
 | `omnirouteSecrets` | `Record<string, string>` | no | Secret env vars |
 | `omnirouteValues` | `DeepPartial<OmnirouteValues>` | no | OmniRoute value overrides |
+| `hostHome` | `string` | no | Node-visible host home directory used by OmniRoute to resolve host OS config paths (default: synthesizer `$HOME`) |
 | `hindsightApi` | `HindsightApiConfig` | yes | Hindsight config (`llm.model` required; recipe auto-wires `llm.base_url` and `llm.api_key` when OmniRoute is enabled) |
 | `hindsightValues` | `DeepPartial<HindsightValues>` | no | Hindsight value overrides |
 | `serviceType` | `ServiceType` | no | K8s Service type for both services (default: `ClusterIP`) |
@@ -654,6 +655,7 @@ Deploys the Gascity AI agent framework as raw K8s ApiObjects.
 | `serviceType` | `ServiceType` | no | K8s Service type for dashboard/supervisor services (default: `ClusterIP`) |
 | `runAsUser` | `number` | no | Pod UID; set to host UID that owns mounted credentials (default: `1002730000`) |
 | `runAsGroup` | `number` | no | Pod GID used for `fsGroup`/`runAsGroup` (default: `1002730000`) |
+| `chownWritableFeatureMounts` | `boolean` | no | Run a root init container to chown writable feature hostPaths to the pod GID (default: `false`) |
 | `values` | `DeepPartial<Values>` | no | Raw value overrides |
 
 **Exports (`Exports`):**
@@ -867,6 +869,7 @@ container. Agents are declared via the composable `features` system from
 | `podAnnotations` | `Record<string, string>` | no | Pod annotations (default: `{}`) |
 | `podLabels` | `Record<string, string>` | no | Pod labels (default: `{}`) |
 | `resources` | `ResourceRequirements` | no | Container resources |
+| `chownWritableFeatureMounts` | `boolean` | no | Run a root init container to chown writable feature hostPaths to the pod GID (default: `false`) |
 | `values` | `DeepPartial<Values>` | no | Raw value overrides |
 
 **Features**: The `features` prop accepts a `FeatureMap` from

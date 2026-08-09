@@ -5,8 +5,10 @@ export { FEATURE_REGISTRY, getFeatureDefinition, listFeatureIds } from './agents
 // FeatureSet resolver
 export {
   buildStartupScript,
+  DEFAULT_DEVIN_INSTALL_COMMAND,
   getFeatureDefs,
   isAcpCompatible,
+  normalizeDevinInstall,
   resolveFeatures,
 } from './feature-set';
 export type {

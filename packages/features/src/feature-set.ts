@@ -3,12 +3,35 @@ import { getFeatureDefinition } from './agents/registry';
 import type {
   FeatureDefinition,
   FeatureId,
+  FeatureMap,
   FeatureProps,
   FeatureSetOptions,
   FeatureSetOutput,
   FeatureVolume,
   ShareOsConfig,
 } from './types';
+
+/** Pinned Devin CLI installer that fetches a versioned manifest and verifies the binary SHA-256. */
+export const DEFAULT_DEVIN_INSTALL_COMMAND =
+  'curl -fsSL https://static.devin.ai/cli/3000.3.27/setup.sh | bash';
+
+/**
+ * Ensure the Devin feature has an explicit pinned installer when neither a custom
+ * installCommand nor skipInstall is provided. This prevents the registry guard
+ * from crash-looping the container.
+ */
+export function normalizeDevinInstall(features: FeatureMap): FeatureMap {
+  if (features.devin === true) {
+    return { ...features, devin: { installCommand: DEFAULT_DEVIN_INSTALL_COMMAND } };
+  }
+  if (features.devin && !features.devin.installCommand && !features.devin.skipInstall) {
+    return {
+      ...features,
+      devin: { ...features.devin, installCommand: DEFAULT_DEVIN_INSTALL_COMMAND },
+    };
+  }
+  return features;
+}
 
 /**
  * Resolves a set of enabled features into container-ready output:
@@ -22,7 +45,8 @@ import type {
  *   // output.installCommands, output.volumes, output.volumeMounts, output.env
  */
 export function resolveFeatures(options: FeatureSetOptions): FeatureSetOutput {
-  const { homeDir, hostHome, features } = options;
+  const { homeDir, hostHome } = options;
+  const features = normalizeDevinInstall(options.features);
 
   const result: FeatureSetOutput = {
     installCommands: [],

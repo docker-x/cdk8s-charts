@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { type FeatureMap, resolveFeatures } from '@cdk8s-charts/features';
+import { normalizeDevinInstall, resolveFeatures } from '@cdk8s-charts/features';
 import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
@@ -73,16 +73,6 @@ export class Gascity extends HelmConstruct<Values> {
       throw new Error('hostHome must be an absolute path');
     }
 
-    // Merge raw value overrides (e.g. values.features) before resolving features
-    const features: FeatureMap = deepMerge(props.features ?? {}, props.values?.features ?? {});
-
-    // Resolve features into install commands, volumes, mounts, env
-    const featureOutput = resolveFeatures({
-      homeDir: CONTAINER_HOME,
-      hostHome,
-      features,
-    });
-
     const computed: Values = {
       imageUrl: props.imageUrl,
       storageSize: props.storageSize ?? '20Gi',
@@ -98,15 +88,26 @@ export class Gascity extends HelmConstruct<Values> {
       withSupervisor: props.withSupervisor ?? true,
       supervisorUrl: props.supervisorUrl,
       hostHome,
-      features,
+      features: props.features ?? {},
       env: props.env ?? {},
       secretRefs: props.secretRefs ?? {},
       serviceType: props.serviceType ?? 'ClusterIP',
       runAsUser: props.runAsUser ?? 1002730000,
       runAsGroup: props.runAsGroup ?? 1002730000,
+      chownWritableFeatureMounts: props.chownWritableFeatureMounts ?? false,
     };
 
+    // Apply raw value overrides, then re-normalize features so value overrides
+    // cannot bypass the pinned Devin installer.
     const values = props.values ? deepMerge(computed, props.values) : computed;
+    values.features = normalizeDevinInstall(values.features ?? {});
+
+    // Resolve features into install commands, volumes, mounts, env
+    const featureOutput = resolveFeatures({
+      homeDir: CONTAINER_HOME,
+      hostHome,
+      features: values.features,
+    });
 
     const {
       imageUrl,
@@ -312,24 +313,35 @@ export class Gascity extends HelmConstruct<Values> {
         }
       : startupProbe;
 
-    // Writable state hostPaths are created root-owned by DirectoryOrCreate; chown
-    // them to the runtime UID/GID before the main container starts.
+    // Writable state hostPaths are created root-owned by DirectoryOrCreate. If the
+    // cluster policy allows root init containers, chown existing paths to the pod
+    // group while preserving the host owner, and chown newly created paths fully.
     const writableFeatureMounts = featureOutput.volumeMounts.filter((m) => m.readOnly === false);
     const initContainers =
-      writableFeatureMounts.length > 0
+      values.chownWritableFeatureMounts && writableFeatureMounts.length > 0
         ? [
             {
               name: 'chown-writable-hostpaths',
               image: imageUrl,
               command: [
-                '/bin/bash',
-                '-c',
-                writableFeatureMounts
-                  .map(
-                    (m) =>
-                      `if [ -d "${m.mountPath}" ]; then chown -R ${runAsUser}:${runAsGroup} "${m.mountPath}" && chmod u+rwx "${m.mountPath}"; else mkdir -p "${m.mountPath}" && chown -R ${runAsUser}:${runAsGroup} "${m.mountPath}"; fi`,
-                  )
-                  .join('\n'),
+                '/bin/sh',
+                '-eu',
+                `uid="$1"
+gid="$2"
+shift 2
+for path; do
+  if [ -d "$path" ]; then
+    chown -R :"$gid" "$path"
+    chmod -R g+rwx "$path"
+  else
+    mkdir -p "$path"
+    chown -R "$uid:$gid" "$path"
+  fi
+done`,
+                '--',
+                String(runAsUser),
+                String(runAsGroup),
+                ...writableFeatureMounts.map((m) => m.mountPath),
               ],
               securityContext: { runAsUser: 0, runAsGroup: 0 },
               volumeMounts: writableFeatureMounts.map((m) => ({

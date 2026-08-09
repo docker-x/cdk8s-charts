@@ -1,4 +1,9 @@
-import { type FeatureId, type FeatureMap, isAcpCompatible } from '@cdk8s-charts/features';
+import {
+  type FeatureId,
+  type FeatureMap,
+  isAcpCompatible,
+  normalizeDevinInstall,
+} from '@cdk8s-charts/features';
 import { Hindsight, type HindsightApiConfig, type HindsightValues } from '@cdk8s-charts/hindsight';
 import { Omniroute, type OmnirouteValues } from '@cdk8s-charts/omniroute';
 import { type DeepPartial, deepMerge, type SecretEnvRef } from '@cdk8s-charts/utils';
@@ -28,6 +33,12 @@ export interface HindsightWithOmnirouteProps {
 
   /** Chart-level value overrides for OmniRoute. */
   omnirouteValues?: DeepPartial<OmnirouteValues>;
+
+  /**
+   * Node-visible host home directory used by OmniRoute to resolve host OS config paths.
+   * Defaults to the synthesizer's `$HOME` for local development; override for CI/production.
+   */
+  hostHome?: string;
 
   /**
    * Hindsight API config. The recipe auto-wires:
@@ -88,28 +99,16 @@ export class HindsightWithOmniroute extends Construct {
     const omnirouteId = `${id}-omniroute`;
     const hindsightId = `${id}-hindsight`;
 
-    // Validate the merged OmniRoute features are ACP-compatible (Omniroute deep-merges
-    // `features` and `values.features`, so we validate the same effective map).
-    const effectiveFeatures: FeatureMap = deepMerge(
-      props.omnirouteFeatures ?? {},
-      props.omnirouteValues?.features ?? {},
-    );
+    // Apply recipe-level hostHome override to OmniRoute value overrides.
+    const omnirouteValues: DeepPartial<OmnirouteValues> = props.hostHome
+      ? deepMerge(props.omnirouteValues ?? {}, { hostHome: props.hostHome })
+      : (props.omnirouteValues ?? {});
 
-    // The Devin registry no longer ships a default mutable installer. If the user
-    // enabled devin without an install command or skipInstall, pin a versioned installer.
-    const PINNED_DEVIN_INSTALL = 'curl -fsSL https://static.devin.ai/cli/3000.3.27/setup.sh | bash';
-    if (effectiveFeatures.devin === true) {
-      effectiveFeatures.devin = { installCommand: PINNED_DEVIN_INSTALL };
-    } else if (
-      effectiveFeatures.devin &&
-      !effectiveFeatures.devin.installCommand &&
-      !effectiveFeatures.devin.skipInstall
-    ) {
-      effectiveFeatures.devin = {
-        ...effectiveFeatures.devin,
-        installCommand: PINNED_DEVIN_INSTALL,
-      };
-    }
+    // Validate the merged OmniRoute features are ACP-compatible. The chart re-normalizes
+    // the final feature map, so normalize here to keep the auto-wired map consistent.
+    const effectiveFeatures: FeatureMap = normalizeDevinInstall(
+      deepMerge(props.omnirouteFeatures ?? {}, omnirouteValues.features ?? {}),
+    );
 
     for (const featureId of Object.keys(effectiveFeatures) as FeatureId[]) {
       if (!isAcpCompatible(featureId)) {
@@ -122,14 +121,19 @@ export class HindsightWithOmniroute extends Construct {
 
     // Effective OMNIROUTE_API_KEY with values.secrets taking precedence over props.secrets.
     const omnirouteApiKey =
-      props.omnirouteValues?.secrets?.OMNIROUTE_API_KEY ??
-      props.omnirouteSecrets?.OMNIROUTE_API_KEY;
+      omnirouteValues.secrets?.OMNIROUTE_API_KEY ?? props.omnirouteSecrets?.OMNIROUTE_API_KEY;
 
     // If the key is supplied through a Secret reference, Hindsight needs an
     // explicit plaintext override because it cannot consume Kubernetes Secret refs.
-    const omnirouteApiKeySecretRef = props.omnirouteValues?.secretRefs?.OMNIROUTE_API_KEY as
+    const omnirouteApiKeySecretRef = omnirouteValues.secretRefs?.OMNIROUTE_API_KEY as
       | SecretEnvRef
       | undefined;
+    if (omnirouteApiKey !== undefined && omnirouteApiKeySecretRef !== undefined) {
+      throw new Error(
+        'OMNIROUTE_API_KEY cannot be supplied both as a plaintext secret and as a Secret reference. ' +
+          'Use either omnirouteSecrets/omnirouteValues.secrets or omnirouteValues.secretRefs, not both.',
+      );
+    }
     if (omnirouteApiKeySecretRef && !omnirouteApiKey && !props.hindsightApi.llm.api_key) {
       throw new Error(
         'OMNIROUTE_API_KEY supplied via omnirouteValues.secretRefs cannot be auto-wired to Hindsight. ' +
@@ -166,7 +170,8 @@ export class HindsightWithOmniroute extends Construct {
       env: props.omnirouteEnv,
       secrets: props.omnirouteSecrets,
       serviceType: svcType,
-      values: props.omnirouteValues,
+      chownWritableFeatureMounts: true,
+      values: { ...omnirouteValues, features: effectiveFeatures },
     });
 
     // Deploy Hindsight, wired to OmniRoute's OpenAI-compatible endpoint

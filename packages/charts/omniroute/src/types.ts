@@ -47,6 +47,11 @@ export interface Values {
   secretRefs: SecretRefs;
   /** CLI agent features to enable (devin, claude, codex, etc.). */
   features: FeatureMap;
+  /**
+   * Run a root init container to chown writable feature hostPaths to the pod UID/GID.
+   * Enable only when your cluster policy allows root init containers (default: false).
+   */
+  chownWritableFeatureMounts: boolean;
   /** Startup script override. Omit to use the default that installs agents + starts omniroute. */
   command?: string[];
   /** Args override. */
@@ -103,6 +108,11 @@ export interface Props {
   podLabels?: Record<string, string>;
   /** Container resources. */
   resources?: ResourceRequirements;
+  /**
+   * Run a root init container to chown writable feature hostPaths to the pod UID/GID.
+   * Enable only when your cluster policy allows root init containers (default: false).
+   */
+  chownWritableFeatureMounts?: boolean;
   /** Raw value overrides (deep-merged into computed defaults). */
   values?: DeepPartial<Values>;
 }
