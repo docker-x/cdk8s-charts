@@ -37,7 +37,6 @@ export function normalizeDevinInstall(features: FeatureMap): FeatureMap {
 export interface ChownWritableMountsInitContainerOptions {
   image: string;
   imagePullPolicy?: string;
-  runAsUser: number;
   runAsGroup: number;
   enabled: boolean;
   writableFeatureMounts: Array<{ name: string; mountPath: string }>;
@@ -61,9 +60,8 @@ export function buildChownWritableMountsInitContainer(
       '/bin/sh',
       '-eu',
       '-c',
-      `uid="$1"
-gid="$2"
-shift 2
+      `gid="$1"
+shift
 for path; do
   if [ -d "$path" ]; then
     chown -R :"$gid" "$path"
@@ -71,7 +69,6 @@ for path; do
   fi
 done`,
       '--',
-      String(options.runAsUser),
       String(options.runAsGroup),
       ...options.writableFeatureMounts.map((m) => m.mountPath),
     ],
@@ -94,9 +91,13 @@ done`,
  * Usage:
  *   const output = resolveFeatures({
  *     homeDir: '/workspace',
- *     features: { devin: true, claude: { mountConfig: true } },
+ *     features: { devin: { installCommand: '...' }, claude: { mountConfig: true } },
  *   });
  *   // output.installCommands, output.volumes, output.volumeMounts, output.env
+ *
+ * Direct callers should normalize the feature map (e.g. with `normalizeDevinInstall`)
+ * before passing it, so `devin: true` resolves to a pinned installer rather than the
+ * registry's deliberate opt-out guard.
  */
 export function resolveFeatures(options: FeatureSetOptions): FeatureSetOutput {
   const { homeDir, hostHome, features } = options;

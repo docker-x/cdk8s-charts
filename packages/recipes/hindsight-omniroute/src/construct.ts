@@ -150,25 +150,9 @@ export class HindsightWithOmniroute extends Construct {
       throw new Error('hindsightApi.llm.api_key must be a string');
     }
 
-    // Avoid a mismatch where Hindsight and OmniRoute would use different keys.
-    if (
-      omnirouteApiKey !== undefined &&
-      props.hindsightApi.llm.api_key !== undefined &&
-      omnirouteApiKey !== props.hindsightApi.llm.api_key
-    ) {
-      throw new Error(
-        'hindsightApi.llm.api_key conflicts with the auto-wired OMNIROUTE_API_KEY. ' +
-          'Omit one or set them to the same value, or use a secretRefs-based key for OmniRoute.',
-      );
-    }
-
     // An explicit Hindsight api_key is only meaningful when OmniRoute uses a Secret ref
     // (because Hindsight cannot consume K8s Secret refs). Reject it otherwise.
-    if (
-      props.hindsightApi.llm.api_key !== undefined &&
-      omnirouteApiKey === undefined &&
-      omnirouteApiKeySecretRef === undefined
-    ) {
+    if (props.hindsightApi.llm.api_key !== undefined && omnirouteApiKeySecretRef === undefined) {
       throw new Error(
         'hindsightApi.llm.api_key is only supported when OMNIROUTE_API_KEY is supplied via omnirouteValues.secretRefs. ' +
           'Omit the key or provide an OmniRoute Secret reference.',

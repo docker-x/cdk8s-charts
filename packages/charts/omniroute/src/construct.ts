@@ -290,7 +290,6 @@ export class Omniroute extends HelmConstruct<Values> {
     const initContainers = buildChownWritableMountsInitContainer({
       image: values.image,
       imagePullPolicy: values.imagePullPolicy,
-      runAsUser: values.runAsUser,
       runAsGroup: values.runAsGroup,
       enabled: values.chownWritableFeatureMounts ?? true,
       writableFeatureMounts,

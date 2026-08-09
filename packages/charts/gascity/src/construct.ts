@@ -324,7 +324,6 @@ export class Gascity extends HelmConstruct<Values> {
     const writableFeatureMounts = featureOutput.volumeMounts.filter((m) => m.readOnly === false);
     const initContainers = buildChownWritableMountsInitContainer({
       image: imageUrl,
-      runAsUser,
       runAsGroup,
       enabled: values.chownWritableFeatureMounts ?? false,
       writableFeatureMounts,

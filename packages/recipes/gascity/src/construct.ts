@@ -126,19 +126,19 @@ export class GascityStack extends Construct {
 
     if (hindsightEnabled) {
       const hindsightApiKey = props.hindsight?.api?.llm?.api_key as string | undefined;
-      if (hindsightApiKey !== undefined) {
-        if (omnirouteApiKeySecretRef === undefined && omnirouteApiKey === undefined) {
-          throw new Error(
-            'hindsight.api.llm.api_key is only supported when OMNIROUTE_API_KEY is supplied via omniroute.secretRefs/omniroute.values.secretRefs. ' +
-              'Omit the key or provide an OmniRoute Secret reference.',
-          );
-        }
-        if (omnirouteApiKey !== undefined && omnirouteApiKey !== hindsightApiKey) {
-          throw new Error(
-            'hindsight.api.llm.api_key conflicts with the auto-wired OMNIROUTE_API_KEY. ' +
-              'Omit one or set them to the same value, or use a secretRefs-based key for OmniRoute.',
-          );
-        }
+
+      // When Hindsight is auto-wired to OmniRoute, an explicit Hindsight API key is only
+      // meaningful if OmniRoute's key comes from a Secret ref (Hindsight cannot consume K8s
+      // Secret refs itself). If OmniRoute is disabled, Hindsight may use its own key.
+      if (
+        omnirouteEnabled &&
+        hindsightApiKey !== undefined &&
+        omnirouteApiKeySecretRef === undefined
+      ) {
+        throw new Error(
+          'hindsight.api.llm.api_key is only supported when OMNIROUTE_API_KEY is supplied via ' +
+            'omniroute.secretRefs/omniroute.values.secretRefs (or when OmniRoute is disabled).',
+        );
       }
 
       const llmConfig: Record<string, unknown> = {
@@ -149,10 +149,9 @@ export class GascityStack extends Construct {
       // Auto-wire Hindsight LLM to OmniRoute if OmniRoute is enabled
       if (omnirouteExports) {
         llmConfig.base_url = omnirouteExports.baseUrl;
-        llmConfig.api_key =
-          (props.hindsight?.api?.llm?.api_key as string | undefined) ??
-          omnirouteApiKey ??
-          'omniroute';
+        llmConfig.api_key = omnirouteApiKeySecretRef
+          ? (hindsightApiKey ?? 'omniroute') // explicit plaintext supplied for Secret-ref-backed OmniRoute
+          : (omnirouteApiKey ?? 'omniroute');
         llmConfig.provider = 'openai';
       }
 
