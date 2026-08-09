@@ -141,7 +141,7 @@ function resolveFeatureEnv(props: FeatureProps): Array<{ name: string; value: st
 }
 
 /** Get feature definitions for a set of feature ids. */
-export function getFeatureDefs(featureIds: FeatureId[]): FeatureDefinition[] {
+export function getFeatureDefs(featureIds: FeatureId[]): Readonly<FeatureDefinition>[] {
   return featureIds.map((id) => getFeatureDefinition(id));
 }
 

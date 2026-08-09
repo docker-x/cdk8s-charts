@@ -217,7 +217,7 @@ export const FEATURE_REGISTRY = {
 } as const satisfies Record<FeatureId, FeatureDefinition>;
 
 /** Get a feature definition by id. Throws if not found. */
-export function getFeatureDefinition(id: FeatureId): FeatureDefinition {
+export function getFeatureDefinition(id: FeatureId): Readonly<FeatureDefinition> {
   const def = FEATURE_REGISTRY[id];
   if (!def) {
     throw new Error(
