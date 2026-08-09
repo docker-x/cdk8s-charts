@@ -24,10 +24,12 @@ import { App, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
 
 class GascityStackExample extends Chart {
+  public readonly stack: GascityStack;
+
   constructor(scope: Construct, id: string) {
     super(scope, id, { namespace: 'default' });
 
-    new GascityStack(this, 'stack', {
+    this.stack = new GascityStack(this, 'stack', {
       namespace: 'default',
 
       // Gascity — dev environment
@@ -77,5 +79,5 @@ class GascityStackExample extends Chart {
 }
 
 const app = new App();
-new GascityStackExample(app, 'gascity-stack');
+export const chart = new GascityStackExample(app, 'gascity-stack');
 app.synth();

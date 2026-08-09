@@ -75,13 +75,13 @@ export class GascityStack extends Construct {
     if (hindsightEnabled) {
       const llmConfig: Record<string, unknown> = {
         model,
-        ...(props.hindsight?.api?.llm ?? {}),
+        ...props.hindsight?.api?.llm,
       };
 
       // Auto-wire Hindsight LLM to OmniRoute if OmniRoute is enabled
       if (omnirouteExports) {
         llmConfig.base_url = omnirouteExports.baseUrl;
-        llmConfig.api_key = 'omniroute';
+        llmConfig.api_key = props.omniroute?.secrets?.OMNIROUTE_API_KEY ?? 'omniroute';
         llmConfig.provider = 'openai';
       }
 
@@ -92,7 +92,6 @@ export class GascityStack extends Construct {
 
       const hindsight = new Hindsight(this, 'hindsight', {
         namespace: props.namespace,
-        version: '0.9.0',
         api: hindsightApi,
         values: props.hindsight?.values,
       });
@@ -105,12 +104,9 @@ export class GascityStack extends Construct {
     const gascityFeatures: FeatureMap = { ...props.features };
 
     // Auto-wire Devin MCP to Hindsight if both Devin and Hindsight are enabled
-    if (hindsightExports && (gascityFeatures.devin || gascityFeatures.devin === undefined)) {
+    if (hindsightExports && gascityFeatures.devin) {
       // Ensure devin feature is enabled with MCP config
-      const devinProps =
-        gascityFeatures.devin === true || gascityFeatures.devin === undefined
-          ? {}
-          : gascityFeatures.devin;
+      const devinProps = gascityFeatures.devin === true ? {} : gascityFeatures.devin;
       gascityFeatures.devin = {
         ...devinProps,
         env: {
@@ -122,11 +118,8 @@ export class GascityStack extends Construct {
     }
 
     // Auto-wire Devin LLM to OmniRoute if both Devin and OmniRoute are enabled
-    if (omnirouteExports && (gascityFeatures.devin || gascityFeatures.devin === undefined)) {
-      const devinProps =
-        gascityFeatures.devin === true || gascityFeatures.devin === undefined
-          ? {}
-          : gascityFeatures.devin;
+    if (omnirouteExports && gascityFeatures.devin) {
+      const devinProps = gascityFeatures.devin === true ? {} : gascityFeatures.devin;
       gascityFeatures.devin = {
         ...devinProps,
         env: {

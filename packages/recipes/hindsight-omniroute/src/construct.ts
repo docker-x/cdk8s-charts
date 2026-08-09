@@ -32,7 +32,7 @@ export interface HindsightWithOmnirouteProps {
   /**
    * Hindsight API config. The recipe auto-wires:
    *   - llm.base_url -> OmniRoute's OpenAI-compatible endpoint
-   *   - llm.api_key  -> "omniroute" (OmniRoute's default API key, override via omnirouteSecrets)
+   *   - llm.api_key  -> OmniRoute API key (defaults to "omniroute"; override via omnirouteSecrets.OMNIROUTE_API_KEY)
    *
    * You only need to set llm.model (and any tuning).
    */
@@ -115,7 +115,7 @@ export class HindsightWithOmniroute extends Construct {
           ...props.hindsightApi.llm,
           provider: props.hindsightApi.llm.provider ?? 'openai',
           base_url: omniroute.exports.baseUrl,
-          api_key: 'omniroute',
+          api_key: props.omnirouteSecrets?.OMNIROUTE_API_KEY ?? 'omniroute',
         },
       },
       values: props.hindsightValues

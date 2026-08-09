@@ -11,8 +11,10 @@ function startupScript(featureInstalls: string[]): string {
     featureInstalls.length > 0
       ? `\n# Install CLI agent features\n${featureInstalls.join('\n')}`
       : '';
-  return `#!/bin/sh
-set -eu
+  return `#!/bin/bash
+set -euo pipefail
+export NPM_CONFIG_PREFIX=/workspace/.local
+export PATH="\${NPM_CONFIG_PREFIX}/bin:\${PATH}"
 cd /workspace
 rm -f /workspace/.gc/supervisor.pid /workspace/.gc/supervisor.lock${installLines}
 
@@ -73,7 +75,8 @@ export class Gascity extends HelmConstruct<Values> {
       replicas: props.replicas ?? 1,
       withDashboard: props.withDashboard ?? true,
       withSupervisor: props.withSupervisor ?? true,
-      supervisorUrl: props.supervisorUrl ?? '/supervisor',
+      supervisorUrl:
+        props.supervisorUrl ?? `http://${id}-supervisor:${props.supervisorPort ?? 8372}`,
       features,
       env: props.env ?? {},
     };
@@ -114,7 +117,7 @@ export class Gascity extends HelmConstruct<Values> {
 
     if (withSupervisor && withDashboard) {
       configData['start.sh'] = startupScript(featureOutput.installCommands);
-      command = ['/bin/sh', '/scripts/start.sh'];
+      command = ['/bin/bash', '/scripts/start.sh'];
       args = undefined;
       volumeMounts = [
         { name: 'workspace', mountPath: '/workspace' },
@@ -130,9 +133,9 @@ export class Gascity extends HelmConstruct<Values> {
       volumeMounts = [{ name: 'workspace', mountPath: '/workspace' }];
     }
 
-    // Feature volume mounts (hostPath for OS config sharing)
+    // Feature volume mounts (hostPath for OS config sharing), mounted read-only for safety
     for (const m of featureOutput.volumeMounts) {
-      volumeMounts.push({ name: m.name, mountPath: m.mountPath });
+      volumeMounts.push({ name: m.name, mountPath: m.mountPath, readOnly: true });
     }
 
     new ApiObject(this, 'config', {
@@ -256,7 +259,7 @@ export class Gascity extends HelmConstruct<Values> {
               // Feature hostPath volumes (OS config sharing)
               ...featureOutput.volumes.map((v) => ({
                 name: v.name,
-                hostPath: { path: v.hostPath, type: 'Directory' as const },
+                hostPath: { path: v.hostPath, type: 'DirectoryOrCreate' as const },
               })),
             ],
           },

@@ -25,58 +25,87 @@ export function resolveFeatures(options: FeatureSetOptions): FeatureSetOutput {
   const { homeDir, features } = options;
   const hostHome = homedir();
 
-  const installCommands: string[] = [];
+  const result: FeatureSetOutput = {
+    installCommands: [],
+    volumes: [],
+    volumeMounts: [],
+    env: [],
+    featureIds: [],
+  };
+
+  for (const [featureId, rawProps] of Object.entries(features)) {
+    const def = getFeatureDefinition(featureId);
+    const props = normalizeProps(rawProps);
+
+    result.featureIds.push(featureId);
+
+    const installCommand = resolveInstallCommand(def, props);
+    if (installCommand) {
+      result.installCommands.push(installCommand);
+    }
+
+    const { volumes, volumeMounts } = resolveFeatureMounts(
+      def,
+      props,
+      featureId,
+      homeDir,
+      hostHome,
+    );
+    result.volumes.push(...volumes);
+    result.volumeMounts.push(...volumeMounts);
+
+    result.env.push(...resolveFeatureEnv(props));
+  }
+
+  return result;
+}
+
+function normalizeProps(rawProps: FeatureProps | true): FeatureProps {
+  return rawProps === true ? {} : rawProps;
+}
+
+function resolveInstallCommand(def: FeatureDefinition, props: FeatureProps): string | undefined {
+  if (props.skipInstall) return undefined;
+  return props.installCommand ?? def.installCommand;
+}
+
+function resolveFeatureMounts(
+  def: FeatureDefinition,
+  props: FeatureProps,
+  featureId: string,
+  homeDir: string,
+  hostHome: string,
+): { volumes: FeatureVolume[]; volumeMounts: Array<{ name: string; mountPath: string }> } {
   const volumes: FeatureVolume[] = [];
   const volumeMounts: Array<{ name: string; mountPath: string }> = [];
-  const env: Array<{ name: string; value: string }> = [];
-  const featureIds: string[] = [];
+  const mountConfig = props.mountConfig ?? true;
 
-  for (const [featureId, featureProps] of Object.entries(features)) {
-    const def = getFeatureDefinition(featureId);
-    const props: FeatureProps = featureProps === true ? {} : featureProps;
+  if (!mountConfig) {
+    return { volumes, volumeMounts };
+  }
 
-    featureIds.push(featureId);
+  if (def.configDirs) {
+    for (let i = 0; i < def.configDirs.length; i++) {
+      const cfg = def.configDirs[i];
+      const hostPath = resolveHostPath(cfg.hostPath, hostHome, mountConfig);
+      const containerPath = cfg.containerPath ?? join(homeDir, cfg.hostPath);
+      const volName = `${featureId}-cfg-${i}`;
 
-    // Install command
-    if (!props.skipInstall) {
-      installCommands.push(props.installCommand ?? def.installCommand);
-    }
-
-    // Config dir mounts
-    const mountConfig = props.mountConfig ?? true;
-    if (mountConfig && def.configDirs && def.configDirs.length > 0) {
-      for (let i = 0; i < def.configDirs.length; i++) {
-        const cfg = def.configDirs[i];
-        const hostPath = resolveHostPath(cfg.hostPath, hostHome, mountConfig);
-        const containerPath = cfg.containerPath ?? join(homeDir, cfg.hostPath);
-        const volName = `${featureId}-cfg-${i}`;
-
-        volumes.push({ name: volName, hostPath, mountPath: containerPath });
-        volumeMounts.push({ name: volName, mountPath: containerPath });
-      }
-    }
-
-    // Extra mounts from mountConfig.paths/extra
-    if (typeof mountConfig === 'object' && mountConfig !== null) {
-      if (mountConfig.extra) {
-        let extraIdx = 0;
-        for (const [hostPath, containerPath] of Object.entries(mountConfig.extra)) {
-          const volName = `${featureId}-extra-${extraIdx++}`;
-          volumes.push({ name: volName, hostPath, mountPath: containerPath });
-          volumeMounts.push({ name: volName, mountPath: containerPath });
-        }
-      }
-    }
-
-    // Env vars
-    if (props.env) {
-      for (const [k, v] of Object.entries(props.env)) {
-        env.push({ name: k, value: v });
-      }
+      volumes.push({ name: volName, hostPath, mountPath: containerPath });
+      volumeMounts.push({ name: volName, mountPath: containerPath });
     }
   }
 
-  return { installCommands, volumes, volumeMounts, env, featureIds };
+  if (typeof mountConfig === 'object' && mountConfig.extra) {
+    let extraIdx = 0;
+    for (const [hostPath, containerPath] of Object.entries(mountConfig.extra)) {
+      const volName = `${featureId}-extra-${extraIdx++}`;
+      volumes.push({ name: volName, hostPath, mountPath: containerPath });
+      volumeMounts.push({ name: volName, mountPath: containerPath });
+    }
+  }
+
+  return { volumes, volumeMounts };
 }
 
 /** Resolve a host path — either from override or default $HOME/<path>. */
@@ -85,11 +114,16 @@ function resolveHostPath(
   hostHome: string,
   mountConfig: ShareOsConfig,
 ): string {
-  if (typeof mountConfig === 'object' && mountConfig !== null && mountConfig.paths) {
+  if (typeof mountConfig === 'object' && mountConfig?.paths) {
     const override = mountConfig.paths[defaultRelPath];
     if (override) return override;
   }
   return join(hostHome, defaultRelPath);
+}
+
+function resolveFeatureEnv(props: FeatureProps): Array<{ name: string; value: string }> {
+  if (!props.env) return [];
+  return Object.entries(props.env).map(([name, value]) => ({ name, value }));
 }
 
 /** Get feature definitions for a set of feature ids. */
@@ -102,14 +136,23 @@ export function isAcpCompatible(featureId: string): boolean {
   return getFeatureDefinition(featureId).acpCompatible ?? false;
 }
 
-/** Build a startup script from install commands + a final exec command. */
+/**
+ * Build a startup script from install commands + a final exec command.
+ *
+ * The generated script uses bash (`set -euo pipefail`) so piped install commands
+ * fail fast, and sets `NPM_CONFIG_PREFIX` to a user-writable directory when a
+ * `homeDir` is supplied so global npm installs work for non-root users.
+ */
 export function buildStartupScript(
   installCommands: string[],
   execCommand: string,
-  preamble?: string,
+  homeDir?: string,
 ): string {
-  const lines = ['set -eu'];
-  if (preamble) lines.push(preamble);
+  const lines = ['set -euo pipefail'];
+  if (homeDir) {
+    lines.push(`export NPM_CONFIG_PREFIX="${homeDir}/.local"`);
+    lines.push('export PATH="${NPM_CONFIG_PREFIX}/bin:${PATH}"');
+  }
   for (const cmd of installCommands) {
     lines.push(cmd);
   }

@@ -10,7 +10,7 @@
  *   - environment variables
  */
 
-import type { DeepPartial } from '@cdk8s-charts/utils';
+export type { DeepPartial } from '@cdk8s-charts/utils';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Feature definitions (static metadata per agent)
@@ -114,6 +114,3 @@ export interface FeatureSetOptions {
   /** Feature map — which features to enable and their props. */
   features: FeatureMap;
 }
-
-// Re-export DeepPartial for convenience
-export type { DeepPartial };

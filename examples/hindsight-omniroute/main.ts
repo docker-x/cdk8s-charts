@@ -17,10 +17,12 @@ import { App, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
 
 class HindsightOmnirouteStack extends Chart {
+  public readonly memory: HindsightWithOmniroute;
+
   constructor(scope: Construct, id: string) {
     super(scope, id, { namespace: 'default' });
 
-    new HindsightWithOmniroute(this, 'memory', {
+    this.memory = new HindsightWithOmniroute(this, 'memory', {
       namespace: 'default',
       // OmniRoute with Devin CLI feature — shares host OS config
       omnirouteFeatures: {
@@ -43,5 +45,5 @@ class HindsightOmnirouteStack extends Chart {
 }
 
 const app = new App();
-new HindsightOmnirouteStack(app, 'hindsight-omniroute');
+export const stack = new HindsightOmnirouteStack(app, 'hindsight-omniroute');
 app.synth();

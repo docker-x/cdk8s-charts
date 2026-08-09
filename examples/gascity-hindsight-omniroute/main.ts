@@ -19,10 +19,12 @@ import { App, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
 
 class GascityHindsightOmnirouteStack extends Chart {
+  public readonly stack: GascityHindsightOmniroute;
+
   constructor(scope: Construct, id: string) {
     super(scope, id, { namespace: 'default' });
 
-    new GascityHindsightOmniroute(this, 'stack', {
+    this.stack = new GascityHindsightOmniroute(this, 'stack', {
       namespace: 'default',
       // Gascity — dev environment
       gascityImageUrl: 'ghcr.io/gascity/gascity:latest',
@@ -48,5 +50,5 @@ class GascityHindsightOmnirouteStack extends Chart {
 }
 
 const app = new App();
-new GascityHindsightOmnirouteStack(app, 'gascity-hindsight-omniroute');
+export const chart = new GascityHindsightOmnirouteStack(app, 'gascity-hindsight-omniroute');
 app.synth();
