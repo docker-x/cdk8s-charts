@@ -215,6 +215,8 @@ Use `@cdk8s-charts/litellm` for the legacy monolithic `litellm-helm` chart.
 
 Keys matching `/_API_KEY$|_PASSWORD$|_SECRET$|_SECRET_ACCESS_KEY$|_ACCOUNT_KEY$|_AUTH_TOKEN$/` are placed in `api.secrets`; all others go to `api.env`.
 
+**Typed Helm values (synced to chart v0.8.6):** the `api` and `worker` value sections include `persistence.modelCache` (`HindsightModelCachePersistence`), `extraVolumeMounts` (`VolumeMount[]`), and `extraVolumes` (`Volume[]`) for local model cache PVCs and custom volume mounts.
+
 ### 3.4 HindsightWithLitellm Recipe
 
 **Package**: `@cdk8s-charts/hindsight-litellm`

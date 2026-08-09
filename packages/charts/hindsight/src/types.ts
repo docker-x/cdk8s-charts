@@ -28,6 +28,8 @@ import type {
   ServiceAccountConfig,
   ServiceConfig,
   TcpProbeConfig,
+  Volume,
+  VolumeMount,
 } from '@cdk8s-charts/utils';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -307,6 +309,15 @@ export interface HindsightPodDisruptionBudget {
   maxUnavailable?: number;
 }
 
+/** Persistent volume for local model cache (reranker, embeddings). */
+export interface HindsightModelCachePersistence {
+  enabled?: boolean;
+  size?: string;
+  storageClass?: string;
+  accessModes?: string[];
+  annotations?: Record<string, string>;
+}
+
 export interface HindsightChartApiValues {
   enabled?: boolean;
   replicaCount?: number;
@@ -317,6 +328,9 @@ export interface HindsightChartApiValues {
   readinessProbe?: HttpGetProbeConfig;
   podDisruptionBudget?: HindsightPodDisruptionBudget;
   affinity?: Record<string, unknown>;
+  persistence?: { modelCache?: HindsightModelCachePersistence };
+  extraVolumeMounts?: VolumeMount[];
+  extraVolumes?: Volume[];
   env?: Record<string, string>;
   secrets?: Record<string, string>;
 }
@@ -332,6 +346,9 @@ export interface HindsightChartWorkerValues {
   env?: Record<string, string>;
   podDisruptionBudget?: HindsightPodDisruptionBudget;
   affinity?: Record<string, unknown>;
+  persistence?: { modelCache?: HindsightModelCachePersistence };
+  extraVolumeMounts?: VolumeMount[];
+  extraVolumes?: Volume[];
   secrets?: Record<string, string>;
 }
 
