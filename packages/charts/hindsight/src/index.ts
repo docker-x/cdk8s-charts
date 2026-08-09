@@ -14,6 +14,7 @@ export type {
   HindsightFileStorageSettings,
   HindsightLlmSettings,
   HindsightMcpSettings,
+  HindsightModelCachePersistence,
   HindsightOtelSettings,
   HindsightProps,
   HindsightReflectSettings,

@@ -296,6 +296,8 @@ Keys matching `/_API_KEY$|_PASSWORD$|_SECRET$|_SECRET_ACCESS_KEY$|_ACCOUNT_KEY$|
 
 ### 3.4 Recipes
 
+**Typed Helm values (synced to chart v0.9.0):** the `api` and `worker` value sections include `persistence.modelCache` (`HindsightModelCachePersistence`), `extraVolumeMounts` (`VolumeMount[]`), and `extraVolumes` (`Volume[]`) for local model cache PVCs and custom volume mounts.
+
 #### 3.4.1 HindsightWithLitellm Recipe
 
 **Package**: `@cdk8s-charts/hindsight-litellm`
