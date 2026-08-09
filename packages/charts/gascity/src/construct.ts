@@ -69,6 +69,9 @@ export class Gascity extends HelmConstruct<Values> {
     super(scope, id);
 
     const hostHome = props.values?.hostHome ?? props.hostHome ?? homedir();
+    if (!hostHome.startsWith('/')) {
+      throw new Error('hostHome must be an absolute path');
+    }
 
     // Merge raw value overrides (e.g. values.features) before resolving features
     const features: FeatureMap = deepMerge(props.features ?? {}, props.values?.features ?? {});
@@ -99,6 +102,8 @@ export class Gascity extends HelmConstruct<Values> {
       env: props.env ?? {},
       secretRefs: props.secretRefs ?? {},
       serviceType: props.serviceType ?? 'ClusterIP',
+      runAsUser: props.runAsUser ?? 1002730000,
+      runAsGroup: props.runAsGroup ?? 1002730000,
     };
 
     const values = props.values ? deepMerge(computed, props.values) : computed;
@@ -120,6 +125,8 @@ export class Gascity extends HelmConstruct<Values> {
       env = {},
       secretRefs = {},
       serviceType = 'ClusterIP',
+      runAsUser = 1002730000,
+      runAsGroup = 1002730000,
     } = values;
 
     if (!imageUrl) {
@@ -305,8 +312,9 @@ export class Gascity extends HelmConstruct<Values> {
           metadata: { labels: { app: id } },
           spec: {
             securityContext: {
-              runAsUser: 1002730000,
-              fsGroup: 1002730000,
+              runAsUser,
+              runAsGroup,
+              fsGroup: runAsGroup,
               hostUsers: false,
             },
             containers: [

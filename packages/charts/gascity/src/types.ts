@@ -49,6 +49,10 @@ export interface Values {
   env?: Record<string, string>;
   /** Kubernetes Secret references for env vars. */
   secretRefs?: SecretRefs;
+  /** Pod UID. Set to the host UID that owns the mounted credentials when using hostPath config mounts. Default: 1002730000. */
+  runAsUser?: number;
+  /** Pod GID. Used for fsGroup and runAsGroup. Default: 1002730000. */
+  runAsGroup?: number;
   /** K8s Service type for dashboard/supervisor services. Default: ClusterIP. */
   serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
 }
@@ -92,6 +96,10 @@ export interface Props {
   secretRefs?: SecretRefs;
   /** K8s Service type for dashboard/supervisor services. Default: ClusterIP. */
   serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
+  /** Pod UID. Set to the host UID that owns the mounted credentials when using hostPath config mounts. Default: 1002730000. */
+  runAsUser?: number;
+  /** Pod GID. Used for fsGroup and runAsGroup. Default: 1002730000. */
+  runAsGroup?: number;
   /** Raw value overrides (deep-merged into computed defaults). */
   values?: DeepPartial<Values>;
 }

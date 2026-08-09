@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
-import { buildStartupScript, type FeatureSetOutput, resolveFeatures } from '@cdk8s-charts/features';
+import {
+  buildStartupScript,
+  type FeatureId,
+  type FeatureMap,
+  type FeatureSetOutput,
+  resolveFeatures,
+} from '@cdk8s-charts/features';
 import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
@@ -27,6 +33,14 @@ function buildDefaultArgs(values: Values, featureOutput: FeatureSetOutput): stri
     CONTAINER_HOME,
   );
   return [script];
+}
+
+function willUseDefaultInstall(featureId: FeatureId, features: FeatureMap): boolean {
+  const props = features[featureId];
+  if (props === true || props === undefined) return true;
+  if (props.skipInstall) return false;
+  if (props.installCommand) return false;
+  return true;
 }
 
 function buildEnvMap(values: Values, featureOutput: FeatureSetOutput): Record<string, string> {
@@ -134,19 +148,32 @@ export class Omniroute extends HelmConstruct<Values> {
     const values = deepMerge(computed, props.values ?? {}) as Values;
     this.applyDefaults(values, props);
 
+    if (!values.hostHome.startsWith('/')) {
+      throw new Error('hostHome must be an absolute path');
+    }
+
     const featureOutput = resolveFeatures({
       homeDir: CONTAINER_HOME,
       hostHome: values.hostHome,
       features: values.features,
     });
 
-    // Aider and Amazon Q need pip/unzip, which the default node image may not include.
+    // Aider and Amazon Q need pip/unzip, but only when they run the registry's default installer.
+    // If the user overrides the startup command/args, skips install, or sets a custom installCommand,
+    // this prerequisite check does not apply.
     const imageToolsRequired = new Set(['aider', 'amazon-q']);
-    const missingTools = featureOutput.featureIds.filter((id) => imageToolsRequired.has(id));
-    if (missingTools.length > 0 && values.image === DEFAULT_IMAGE) {
+    const missingTools = featureOutput.featureIds.filter(
+      (id) => imageToolsRequired.has(id) && willUseDefaultInstall(id, values.features),
+    );
+    if (
+      missingTools.length > 0 &&
+      values.image === DEFAULT_IMAGE &&
+      values.command === undefined &&
+      values.args === undefined
+    ) {
       throw new Error(
         `Features ${missingTools.join(', ')} require pip/unzip in the container image. ` +
-          'Provide a custom image or override the feature installCommand.',
+          'Provide a custom image, override the feature installCommand, or supply a custom command/args.',
       );
     }
 

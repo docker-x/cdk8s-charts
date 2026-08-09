@@ -650,8 +650,10 @@ Deploys the Gascity AI agent framework as raw K8s ApiObjects.
 | `supervisorUrl` | `string` | no | Supervisor URL for dashboard (default: `http://{id}-supervisor:{supervisorPort}`) |
 | `features` | `FeatureMap` | no | CLI agent features (devin, claude, codex, etc.) from `@cdk8s-charts/features` |
 | `env` | `Record<string, string>` | no | Extra env vars |
-| `secretRefs` | `Record<string, { name: string; key: string }>` | no | Kubernetes Secret references for env vars |
+| `secretRefs` | `SecretRefs` | no | Kubernetes Secret references for env vars |
 | `serviceType` | `ServiceType` | no | K8s Service type for dashboard/supervisor services (default: `ClusterIP`) |
+| `runAsUser` | `number` | no | Pod UID; set to host UID that owns mounted credentials (default: `1002730000`) |
+| `runAsGroup` | `number` | no | Pod GID used for `fsGroup`/`runAsGroup` (default: `1002730000`) |
 | `values` | `DeepPartial<Values>` | no | Raw value overrides |
 
 **Exports (`Exports`):**
