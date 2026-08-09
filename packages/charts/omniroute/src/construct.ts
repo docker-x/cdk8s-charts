@@ -33,11 +33,13 @@ function buildEnvMap(values: Values, featureOutput: FeatureSetOutput): Record<st
     OMNIROUTE_HOME: values.dataMountPath,
     PATH: '/home/node/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
   };
+  // Reserved names control server/runtime wiring and must not be overridden.
+  const reserved = new Set(['OMNIROUTE_PORT', 'OMNIROUTE_HOME', 'PATH']);
   for (const [k, v] of Object.entries(values.env)) {
-    env[k] = v;
+    if (!reserved.has(k)) env[k] = v;
   }
   for (const e of featureOutput.env) {
-    env[e.name] = e.value;
+    if (!reserved.has(e.name)) env[e.name] = e.value;
   }
   return env;
 }
@@ -132,11 +134,9 @@ export class Omniroute extends HelmConstruct<Values> {
     values.env ??= {};
     values.secrets ??= {};
 
-    if (values.command === undefined) {
+    // Apply the default startup script only when neither command nor args are overridden.
+    if (values.command === undefined && values.args === undefined) {
       values.command = ['/bin/bash', '-c'];
-    }
-
-    if (values.args === undefined) {
       const featureOutput = resolveFeatures({ homeDir: CONTAINER_HOME, features: values.features });
       values.args = buildDefaultArgs(values, featureOutput);
     }

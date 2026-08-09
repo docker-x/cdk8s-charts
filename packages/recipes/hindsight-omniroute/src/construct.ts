@@ -100,7 +100,6 @@ export class HindsightWithOmniroute extends Construct {
     }
 
     // Deploy OmniRoute — LLM proxy with ACP agents
-    const omnirouteBaseValues: DeepPartial<OmnirouteValues> = {};
     const omniroute = new Omniroute(this, omnirouteId, {
       namespace: props.namespace,
       features: props.omnirouteFeatures,
@@ -109,9 +108,7 @@ export class HindsightWithOmniroute extends Construct {
       env: props.omnirouteEnv,
       secrets: props.omnirouteSecrets,
       serviceType: svcType,
-      values: props.omnirouteValues
-        ? deepMerge(omnirouteBaseValues, props.omnirouteValues)
-        : omnirouteBaseValues,
+      values: props.omnirouteValues,
     });
 
     // Deploy Hindsight, wired to OmniRoute's OpenAI-compatible endpoint

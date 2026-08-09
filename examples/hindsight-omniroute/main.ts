@@ -7,8 +7,9 @@
  *   - Devin CLI shares host OS config for authentication
  *
  * Prerequisites:
+ *   - Devin CLI installed and authenticated on the host (config is shared into the pod)
  *   - npx cdk8s synth   (generates K8s manifests in dist/)
- *   - composed add ./dist  (or use composed.yaml with x-k8s)
+ *   - composed add ./dist
  *   - composed up
  */
 
