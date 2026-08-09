@@ -1,5 +1,6 @@
+import type { FeatureMap } from '@cdk8s-charts/features';
 import { Hindsight, type HindsightApiConfig, type HindsightValues } from '@cdk8s-charts/hindsight';
-import { type AcpAgent, Omniroute, type OmnirouteValues } from '@cdk8s-charts/omniroute';
+import { Omniroute, type OmnirouteValues } from '@cdk8s-charts/omniroute';
 import { type DeepPartial, deepMerge } from '@cdk8s-charts/utils';
 import { Construct } from 'constructs';
 
@@ -10,8 +11,8 @@ import { Construct } from 'constructs';
 export interface HindsightWithOmnirouteProps {
   namespace: string;
 
-  /** ACP agents for OmniRoute (e.g. Devin CLI with shared OS config). */
-  omnirouteAgents?: AcpAgent[];
+  /** CLI agent features for OmniRoute (e.g. { devin: true }). */
+  omnirouteFeatures?: FeatureMap;
 
   /** OmniRoute server port (default: 20128). */
   omniroutePort?: number;
@@ -90,7 +91,7 @@ export class HindsightWithOmniroute extends Construct {
     const omnirouteBaseValues: DeepPartial<OmnirouteValues> = {};
     const omniroute = new Omniroute(this, omnirouteId, {
       namespace: props.namespace,
-      agents: props.omnirouteAgents,
+      features: props.omnirouteFeatures,
       port: props.omniroutePort,
       omnirouteVersion: props.omnirouteVersion,
       env: props.omnirouteEnv,

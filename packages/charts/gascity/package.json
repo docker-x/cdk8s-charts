@@ -28,6 +28,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@cdk8s-charts/features": "*",
     "@cdk8s-charts/utils": "*"
   },
   "peerDependencies": {

@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@cdk8s-charts/features": "*",
     "@cdk8s-charts/utils": "*",
     "cdk8s": "^2",
     "constructs": "^10"

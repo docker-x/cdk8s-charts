@@ -62,8 +62,12 @@ cdk8s-charts/
         src/types.ts                Grafana OTEL-LGTM container values + Props/Exports
         src/construct.ts            OtelLgtm construct (Deployment + Service + PVC)
       omniroute/                    @cdk8s-charts/omniroute
-        src/types.ts                OmniRoute values + AcpAgent + Props/Exports
+        src/types.ts                OmniRoute values + FeatureMap + Props/Exports
         src/construct.ts            Omniroute construct (Deployment + Service + PVC)
+    features/                       @cdk8s-charts/features
+      src/types.ts                  FeatureDefinition, FeatureMap, FeatureProps, FeatureSetOutput
+      src/agents/registry.ts        Registry of all CLI agent features (14 agents)
+      src/feature-set.ts            resolveFeatures() — turns FeatureMap into volumes/env/installs
     recipes/
       hindsight-litellm/            @cdk8s-charts/hindsight-litellm
         src/construct.ts            Composed stack with auto cross-wiring
@@ -73,8 +77,13 @@ cdk8s-charts/
         src/construct.ts            Gascity + Hindsight + OmniRoute multi-client stack
       litellm-plane/                @cdk8s-charts/litellm-plane
         src/construct.ts            LiteLLM + Plane CE with shared Redis & A2A gateway
+  stacks/                           Deployable, parameterized stacks
+    gascity/                        @cdk8s-charts/stack-gascity
+      src/types.ts                  GascityStackProps (hindsight/omniroute toggles, features)
+      src/construct.ts              GascityStack — Gascity + optional Hindsight + optional OmniRoute
   examples/
     coding-agent-memory/            Full working example
+    gascity-stack/                  Gascity stack example (all subcharts + features)
 ```
 
 ### Dependency graph
@@ -94,15 +103,72 @@ utils  <--  kodus
 utils  <--  mastra-studio
 utils  <--  otel-lgtm
 utils  <--  omniroute
+features  <--  omniroute
+features  <--  gascity
 utils + litellm + hindsight  <--  hindsight-litellm
 utils + omniroute + hindsight  <--  hindsight-omniroute
 utils + gascity + omniroute + hindsight  <--  gascity-hindsight-omniroute
 utils + litellm + plane-ce   <--  litellm-plane
 devpod + gascity + nginx  <--  devspace
+features + gascity + omniroute + hindsight  <--  stack-gascity
 hindsight-litellm  <--  examples/coding-agent-memory
+stack-gascity  <--  examples/gascity-stack
 ```
 
 ## 3. Construct design
+
+### 3.0 Features Package
+
+**Package**: `@cdk8s-charts/features`
+
+Composable CLI agent features — like devcontainer features but without devcontainer syntax. Each feature knows how to install, configure, and mount OS config for a specific AI CLI agent.
+
+**Supported agents (14):**
+
+| Feature ID | Binary | Install Method | Config Paths |
+|------------|--------|----------------|--------------|
+| `devin` | `devin` | curl install.sh | `.config/devin`, `.local/share/devin` |
+| `claude` | `claude` | npm `@anthropic-ai/claude-code` | `.claude` |
+| `codex` | `codex` | npm `@openai/codex` | `.codex` |
+| `cursor` | `cursor` | curl cursor.com/install | `.cursor` |
+| `opencode` | `opencode` | curl opencode.ai/install | `.config/opencode`, `.local/share/opencode` |
+| `kilo` | `kilo` | npm `@kilocode/cli` | `.config/kilo` |
+| `gemini` | `gemini` | npm `@google/gemini-cli` | `.gemini` |
+| `aider` | `aider` | pip `aider-chat` | `.aider` |
+| `goose` | `goose` | curl github.com/block/goose | `.config/goose`, `.local/share/goose` |
+| `qwen` | `qwen` | npm `@qwen-code/qwen-code` | `.qwen` |
+| `amazon-q` | `q` | curl AWS download | `.aws/amazonq` |
+| `cline` | `cline` | npm `cline` | `.cline` |
+| `forge` | `forge` | npm `@forge-agents/forge` | `.forge` |
+| `openclaw` | `openclaw` | curl openclaw.ai/install-cli.sh | `.openclaw` |
+
+**API:**
+
+```typescript
+import { resolveFeatures, type FeatureMap } from '@cdk8s-charts/features';
+
+const features: FeatureMap = {
+  devin: true,                              // defaults: mountConfig=true
+  claude: { mountConfig: true },             // explicit
+  codex: { mountConfig: false, skipInstall: true }, // binary already in image
+  gemini: { env: { GEMINI_API_KEY: '...' } },
+};
+
+const output = resolveFeatures({ homeDir: '/workspace', features });
+// output.installCommands → ['curl ... devin', 'npm install -g @anthropic-ai/claude-code', ...]
+// output.volumes       → [{ name: 'devin-cfg-0', hostPath: '/home/.../.config/devin', mountPath: '/workspace/.config/devin' }, ...]
+// output.volumeMounts  → [{ name: 'devin-cfg-0', mountPath: '/workspace/.config/devin' }, ...]
+// output.env           → [{ name: 'GEMINI_API_KEY', value: '...' }]
+```
+
+**FeatureProps:**
+
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `mountConfig` | `ShareOsConfig` | `true` | Mount host OS config/credentials |
+| `env` | `Record<string, string>` | — | Extra env vars for this agent |
+| `installCommand` | `string` | from registry | Override install command |
+| `skipInstall` | `boolean` | `false` | Skip installation (binary in image) |
 
 ### 3.1 Base class: HelmConstruct
 
@@ -314,6 +380,51 @@ Key design points:
 4. Gascity Devin LLM → OmniRoute (`http://omniroute:20128/v1`)
 5. Devin OS config shared in both Gascity and OmniRoute
 
+### 3.4.3 GascityStack (Deployable Stack)
+
+**Package**: `@cdk8s-charts/stack-gascity`
+
+A deployable, parameterized AI dev environment. Lives in `stacks/` (not `packages/recipes/`) because it's a full deployment target, not just a composition recipe.
+
+**Architecture (when all subcharts enabled):**
+```
+Gascity (dev env) → CLI agents → MCP Hindsight (memory) + LLM Omniroute (gateway)
+Hindsight → LLM → Omniroute → Devin (bare, ACP, no plugins)
+```
+
+**Subcharts are switchable:**
+- `hindsight.enabled = false` → no memory service, no MCP wiring
+- `omniroute.enabled = false` → no LLM gateway, no LLM wiring
+
+**CLI agent features are composable via `features`:**
+```typescript
+features: {
+  devin: true,    // full-featured in Gascity
+  claude: true,   // Claude Code
+  codex: true,    // OpenAI Codex
+  // ... any of 14 supported agents
+}
+```
+
+**Props (`GascityStackProps`):**
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `gascityImageUrl` | `string` | yes | Gascity image URL |
+| `gascityStorageSize` | `string` | no | PVC size (default: 20Gi) |
+| `gascityResources` | `ResourceValues` | no | Resource requests/limits |
+| `features` | `FeatureMap` | no | CLI agent features (devin, claude, codex, ...) |
+| `hindsight` | `HindsightSubchart` | no | Hindsight config (enabled: true by default) |
+| `omniroute` | `OmnirouteSubchart` | no | OmniRoute config (enabled: true by default) |
+| `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
+
+**Auto cross-wiring (when subcharts enabled):**
+1. OmniRoute gets a bare Devin feature (no plugins, API gateway only)
+2. Hindsight LLM → OmniRoute's OpenAI-compatible endpoint
+3. Gascity Devin MCP → Hindsight API (`http://hindsight-api:8888/mcp/`)
+4. Gascity Devin LLM → OmniRoute (`http://omniroute:20128/v1`)
+
 ### 3.5 Plane CE Construct
 
 **Package**: `@cdk8s-charts/plane-ce`
@@ -486,7 +597,8 @@ Deploys the Gascity AI agent framework as raw K8s ApiObjects.
 | `withDashboard` | `boolean` | no | Enable dashboard (default: `true`) |
 | `withSupervisor` | `boolean` | no | Enable supervisor (default: `true`) |
 | `supervisorUrl` | `string` | no | Supervisor URL for dashboard (default: `/supervisor`) |
-| `devin` | `DevinConfig` | no | Devin agent config (MCP servers, LLM backend, OS config sharing) |
+| `features` | `FeatureMap` | no | CLI agent features (devin, claude, codex, etc.) from `@cdk8s-charts/features` |
+| `env` | `Record<string, string>` | no | Extra env vars |
 | `values` | `DeepPartial<Values>` | no | Raw value overrides |
 
 **Exports (`Exports`):**
@@ -506,16 +618,14 @@ Deploys the Gascity AI agent framework as raw K8s ApiObjects.
 - A `trap` cleans up the supervisor/dashboard processes on container exit.
 - Dashboard mode adds Kubernetes `readinessProbe` and `livenessProbe` HTTP checks on `/`.
 
-**Devin agent configuration (`DevinConfig`):**
+**CLI agent features (`features`):**
 
-| Field | Type | Purpose |
-|-------|------|---------|
-| `mcpServers` | `Record<string, DevinMcpServer>` | MCP servers for Devin's `mcp_config.json` (e.g. Hindsight) |
-| `llm` | `DevinLlmConfig` | LLM backend (OpenAI-compatible base URL, API key, model) |
-| `shareOsConfig` | `DevinShareOsConfig` | Share host OS config/credentials (`~/.config/devin`, `~/.local/share/devin`) |
-| `env` | `Record<string, string>` | Extra env vars for Devin |
+The `features` prop accepts a `FeatureMap` from `@cdk8s-charts/features`. Each enabled feature contributes:
+- Install commands (added to `start.sh`)
+- hostPath volumes (for OS config/credentials sharing)
+- Environment variables
 
-When `devin.mcpServers` is set, the construct generates `mcp_config.json` in the ConfigMap and mounts it at `/workspace/.config/devin/mcp_config.json`. When `devin.shareOsConfig` is enabled, host config directories are mounted as `hostPath` volumes so Devin authenticates using existing CLI auth.
+See [§3.0 Features Package](#30-features-package) for the full list of supported agents and API details.
 
 **Resources created:**
 
@@ -679,15 +789,15 @@ following the same pattern as `@cdk8s-charts/otel-lgtm`.
 **ACP (Agent Client Protocol)**: OmniRoute can spawn CLI agents (Devin, Claude
 Code, Codex, etc.) as child processes instead of using HTTP APIs. Each agent
 needs its binary on PATH and its OS config/credentials mounted into the
-container. The `agents` prop declares which ACP agents to enable and whether to
-share host OS configs.
+container. Agents are declared via the composable `features` system from
+`@cdk8s-charts/features` — see [§3.0](#30-features-package).
 
 **Props** (`Props`):
 
 | Prop | Type | Required | Purpose |
 |------|------|----------|---------|
 | `namespace` | `string` | yes | K8s namespace |
-| `agents` | `AcpAgent[]` | no | ACP agents to enable with optional OS config sharing |
+| `features` | `FeatureMap` | no | CLI agent features to enable (e.g. `{ devin: true }`) |
 | `port` | `number` | no | OmniRoute server port (default: 20128) |
 | `serviceType` | `ServiceType` | no | K8s Service type (default: ClusterIP) |
 | `image` | `string` | no | Node base image (default: node:22-bookworm-slim) |
@@ -701,18 +811,9 @@ share host OS configs.
 | `resources` | `ResourceRequirements` | no | Container resources |
 | `values` | `DeepPartial<Values>` | no | Raw value overrides |
 
-**AcpAgent**:
-
-| Field | Type | Required | Purpose |
-|-------|------|----------|---------|
-| `id` | `string` | yes | Agent id (e.g. "devin", "claude", "codex") |
-| `binary` | `string` | no | Binary name to detect |
-| `installCommand` | `string` | no | Install command run at startup |
-| `shareOsConfig` | `ShareOsConfig` | no | Share host OS config/credentials |
-| `env` | `Record<string, string>` | no | Extra env vars for spawned processes |
-
-**ShareOsConfig**: `true` mounts `~/.config/<id>` and `~/.local/share/<id>`; an
-object allows overriding host source paths and adding extra mounts.
+**Features**: The `features` prop accepts a `FeatureMap` from
+`@cdk8s-charts/features`. Each enabled feature installs the agent binary and
+mounts its OS config/credentials. See [§3.0](#30-features-package) for details.
 
 **Exports** (`Exports`):
 

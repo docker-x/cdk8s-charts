@@ -8,58 +8,15 @@
  *
  * ACP (Agent Client Protocol) support: OmniRoute can spawn CLI agents (Devin,
  * Claude Code, Codex, etc.) as child processes. Each agent needs its binary on
- * PATH and its OS config/credentials mounted into the container. The `agents`
- * prop declares which ACP agents to enable and whether to share host OS configs.
+ * PATH and its OS config/credentials mounted into the container. Agents are
+ * declared via the composable `features` system from @cdk8s-charts/features.
  */
 
+import type { FeatureMap } from '@cdk8s-charts/features';
 import type { DeepPartial, ResourceRequirements } from '@cdk8s-charts/utils';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 1. ACP agents
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * OS config share options for an ACP agent.
- *
- * When `true`, mounts the default host config paths for the agent id:
- *   - `~/.config/<id>` -> `/home/node/.config/<id>`
- *   - `~/.local/share/<id>` -> `/home/node/.local/share/<id>`
- *
- * When an object, allows overriding the host source paths.
- */
-export type ShareOsConfig =
-  | boolean
-  | {
-      /** Host config directory (default: `~/.config/<id>`). */
-      configPath?: string;
-      /** Host data directory (default: `~/.local/share/<id>`). */
-      dataPath?: string;
-      /** Extra host paths to mount. Each entry maps host -> container path. */
-      extra?: Record<string, string>;
-    };
-
-/**
- * ACP agent declaration.
- *
- * OmniRoute auto-detects installed CLI agents. To use an agent inside the
- * container, its binary must be on PATH (install via `installCommand`) and its
- * OS config/credentials must be mounted (enable `shareOsConfig`).
- */
-export interface AcpAgent {
-  /** Agent id — matches OmniRoute's ACP registry (e.g. "devin", "claude", "codex"). */
-  id: string;
-  /** Binary name to install/detect (e.g. "devin", "claude", "codex"). */
-  binary?: string;
-  /** Install command run at container startup (e.g. "npm install -g @anthropic-ai/claude-code"). */
-  installCommand?: string;
-  /** Share host OS config/credentials into the container. See {@link ShareOsConfig}. */
-  shareOsConfig?: ShareOsConfig;
-  /** Extra environment variables for this agent's spawned processes. */
-  env?: Record<string, string>;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 2. Values
+// Values
 // ═══════════════════════════════════════════════════════════════════════════
 
 export type ServiceType = 'ClusterIP' | 'NodePort' | 'LoadBalancer';
@@ -81,8 +38,8 @@ export interface Values {
   env: Record<string, string>;
   /** Secret env vars (mounted as K8s Secret, base64-decoded by composed). */
   secrets: Record<string, string>;
-  /** ACP agents to enable. */
-  agents: AcpAgent[];
+  /** CLI agent features to enable (devin, claude, codex, etc.). */
+  features: FeatureMap;
   /** Startup script override. Omit to use the default that installs agents + starts omniroute. */
   command?: string[];
   /** Args override. */
@@ -99,13 +56,13 @@ export interface Values {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 3. Props & Exports
+// Props & Exports
 // ═══════════════════════════════════════════════════════════════════════════
 
 export interface Props {
   namespace: string;
-  /** ACP agents to enable with optional OS config sharing. */
-  agents?: AcpAgent[];
+  /** CLI agent features to enable (e.g. { devin: true, claude: true }). */
+  features?: FeatureMap;
   /** OmniRoute server port (default: 20128). */
   port?: number;
   /** Kubernetes Service type (default: ClusterIP). */

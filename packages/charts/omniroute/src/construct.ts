@@ -1,9 +1,8 @@
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { buildStartupScript, type FeatureMap, resolveFeatures } from '@cdk8s-charts/features';
 import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
-import type { AcpAgent, Exports, Props, Values } from './types';
+import type { Exports, Props, Values } from './types';
 
 const DEFAULT_IMAGE = 'node:22-bookworm-slim';
 const DEFAULT_OMNIROUTE_VERSION = 'latest';
@@ -11,81 +10,16 @@ const DEFAULT_PORT = 20128;
 const DEFAULT_DATA_SIZE = '1Gi';
 const DEFAULT_DATA_MOUNT_PATH = '/home/node/.omniroute';
 const DEFAULT_RUN_AS = 1000;
-
-/**
- * Default startup script: installs omniroute + declared ACP agents, then starts
- * the server. Agent install commands run before `omniroute serve` so binaries
- * are on PATH for ACP auto-detection.
- */
-function buildStartupScript(agents: AcpAgent[], omnirouteVersion: string): string {
-  const lines = ['set -eu'];
-
-  // Install omniroute
-  const installArgs = omnirouteVersion === 'latest' ? 'omniroute' : `omniroute@${omnirouteVersion}`;
-  lines.push(`npm install -g ${installArgs}`);
-
-  // Install ACP agent binaries
-  for (const agent of agents) {
-    if (agent.installCommand) {
-      lines.push(agent.installCommand);
-    }
-  }
-
-  // Start omniroute server
-  lines.push('exec omniroute serve --port "$OMNIROUTE_PORT" --no-open --no-tray');
-
-  return lines.join('\n');
-}
-
-/** Resolve host OS config paths for an agent with shareOsConfig enabled. */
-function resolveAgentMounts(agent: AcpAgent): Array<{ hostPath: string; mountPath: string }> {
-  const cfg = agent.shareOsConfig;
-  if (!cfg) return [];
-
-  const home = homedir();
-  const mounts: Array<{ hostPath: string; mountPath: string }> = [];
-
-  if (cfg === true) {
-    // Default: mount ~/.config/<id> and ~/.local/share/<id>
-    mounts.push({
-      hostPath: join(home, '.config', agent.id),
-      mountPath: `/home/node/.config/${agent.id}`,
-    });
-    mounts.push({
-      hostPath: join(home, '.local', 'share', agent.id),
-      mountPath: `/home/node/.local/share/${agent.id}`,
-    });
-  } else {
-    if (cfg.configPath) {
-      mounts.push({
-        hostPath: cfg.configPath,
-        mountPath: `/home/node/.config/${agent.id}`,
-      });
-    }
-    if (cfg.dataPath) {
-      mounts.push({
-        hostPath: cfg.dataPath,
-        mountPath: `/home/node/.local/share/${agent.id}`,
-      });
-    }
-    if (cfg.extra) {
-      for (const [hostPath, mountPath] of Object.entries(cfg.extra)) {
-        mounts.push({ hostPath, mountPath });
-      }
-    }
-  }
-
-  return mounts;
-}
+const CONTAINER_HOME = '/home/node';
 
 /**
  * Deploys OmniRoute as a standalone AI proxy/router.
  *
  * OmniRoute is an npm package (not a Helm chart), so this construct renders
- * Kubernetes resources directly: Deployment + Service + PVC. ACP agents are
- * enabled by declaring them in `props.agents` — the construct mounts host OS
- * configs and installs agent binaries so OmniRoute's ACP auto-detection finds
- * them at runtime.
+ * Kubernetes resources directly: Deployment + Service + PVC. CLI agent features
+ * (Devin, Claude Code, Codex, etc.) are enabled via the composable `features`
+ * system from @cdk8s-charts/features — the construct mounts host OS configs
+ * and installs agent binaries so OmniRoute's ACP auto-detection finds them.
  */
 export class Omniroute extends HelmConstruct<Values> {
   public readonly exports: Exports;
@@ -93,8 +27,27 @@ export class Omniroute extends HelmConstruct<Values> {
   constructor(scope: Construct, id: string, props: Props) {
     super(scope, id);
 
-    const agents = props.agents ?? [];
+    const features: FeatureMap = props.features ?? {};
     const port = props.port ?? DEFAULT_PORT;
+
+    // Resolve features into install commands, volumes, mounts, env
+    const featureOutput = resolveFeatures({
+      homeDir: CONTAINER_HOME,
+      features,
+    });
+
+    // Build startup script: install omniroute + agent features, then serve
+    const omnirouteInstall =
+      (props.omnirouteVersion ?? DEFAULT_OMNIROUTE_VERSION) === 'latest'
+        ? 'npm install -g omniroute'
+        : `npm install -g omniroute@${props.omnirouteVersion ?? DEFAULT_OMNIROUTE_VERSION}`;
+    const allInstalls = [omnirouteInstall, ...featureOutput.installCommands];
+    const defaultArgs = [
+      buildStartupScript(
+        allInstalls,
+        'omniroute serve --port "$OMNIROUTE_PORT" --no-open --no-tray',
+      ),
+    ];
 
     const computed: Values = {
       image: props.image ?? DEFAULT_IMAGE,
@@ -108,11 +61,9 @@ export class Omniroute extends HelmConstruct<Values> {
       runAsGroup: DEFAULT_RUN_AS,
       env: props.env ?? {},
       secrets: props.secrets ?? {},
-      agents,
+      features,
       command: props.command ?? ['/bin/sh', '-ec'],
-      args: props.args ?? [
-        buildStartupScript(agents, props.omnirouteVersion ?? DEFAULT_OMNIROUTE_VERSION),
-      ],
+      args: props.args ?? defaultArgs,
       podAnnotations: props.podAnnotations ?? {},
       podLabels: props.podLabels ?? {},
       resources: props.resources,
@@ -141,7 +92,6 @@ export class Omniroute extends HelmConstruct<Values> {
     if (!values.podLabels) values.podLabels = {};
     if (!values.env) values.env = {};
     if (!values.secrets) values.secrets = {};
-    if (!values.agents) values.agents = [];
 
     const selectorLabels = { app: id };
     const labels = { ...values.podLabels, ...selectorLabels };
@@ -168,17 +118,6 @@ export class Omniroute extends HelmConstruct<Values> {
       });
     }
 
-    // Resolve agent OS config mounts (hostPath bind mounts)
-    const agentMounts: Array<{ name: string; hostPath: string; mountPath: string }> = [];
-    for (const agent of values.agents) {
-      const mounts = resolveAgentMounts(agent);
-      for (let i = 0; i < mounts.length; i++) {
-        const m = mounts[i];
-        const volName = `${agent.id}-cfg-${i}`;
-        agentMounts.push({ name: volName, hostPath: m.hostPath, mountPath: m.mountPath });
-      }
-    }
-
     // Build env list
     const envList: Array<{ name: string; value: string }> = [
       { name: 'OMNIROUTE_PORT', value: String(values.port) },
@@ -191,23 +130,27 @@ export class Omniroute extends HelmConstruct<Values> {
     for (const [k, v] of Object.entries(values.env)) {
       envList.push({ name: k, value: v });
     }
+    // Feature env vars
+    for (const e of featureOutput.env) {
+      envList.push(e);
+    }
 
     // Secret env refs
     const envFrom = hasSecrets ? [{ secretRef: { name: `${id}-secret` } }] : [];
 
-    // Build volumes
+    // Build volumes: PVC + feature hostPath volumes
     const volumes: Array<Record<string, unknown>> = [
       { name: 'data', persistentVolumeClaim: { claimName: `${id}-data` } },
     ];
-    for (const m of agentMounts) {
-      volumes.push({ name: m.name, hostPath: { path: m.hostPath, type: 'Directory' } });
+    for (const v of featureOutput.volumes) {
+      volumes.push({ name: v.name, hostPath: { path: v.hostPath, type: 'Directory' } });
     }
 
-    // Build volume mounts
+    // Build volume mounts: data + feature mounts
     const volumeMounts: Array<Record<string, unknown>> = [
       { name: 'data', mountPath: values.dataMountPath },
     ];
-    for (const m of agentMounts) {
+    for (const m of featureOutput.volumeMounts) {
       volumeMounts.push({ name: m.name, mountPath: m.mountPath });
     }
 
