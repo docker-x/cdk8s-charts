@@ -860,7 +860,7 @@ container. Agents are declared via the composable `features` system from
 | `dataSize` | `string` | no | PVC size (default: 1Gi) |
 | `dataMountPath` | `string` | no | Container data path (default: /home/node/.omniroute) |
 | `env` | `Record<string, string>` | no | Extra env vars |
-| `secretRefs` | `Record<string, { name: string; key: string }>` | no | Kubernetes Secret references for env vars |
+| `secretRefs` | `SecretRefs` | no | Kubernetes Secret references for env vars |
 | `secrets` | `Record<string, string>` | no | Secret env vars (API keys, JWT secrets) |
 | `command` | `string[]` | no | Container command override |
 | `args` | `string[]` | no | Container args override |

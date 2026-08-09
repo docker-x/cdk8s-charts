@@ -35,9 +35,12 @@ class GascityHindsightOmnirouteStack extends Chart {
       namespace: 'default',
       // Gascity — dev environment (set GASCITY_IMAGE_URL to a pullable image)
       gascityImageUrl,
-      // CLI agent features — composable
+      // CLI agent features — composable.
+      // The default mutable Devin installer is disabled; pin or pre-bake in production.
       features: {
-        devin: true,
+        devin: {
+          installCommand: 'curl -fsSL https://cli.devin.ai/install.sh | bash',
+        },
       },
       // Hindsight — shared memory service
       hindsight: {

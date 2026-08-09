@@ -14,7 +14,11 @@ export const FEATURE_REGISTRY = {
     id: 'devin',
     name: 'Devin CLI',
     binary: 'devin',
-    installCommand: 'curl -fsSL https://cli.devin.ai/install.sh | bash',
+    // The Devin CLI installer is remote and mutable, so there is no default install command.
+    // Consumers must either supply a pinned installCommand, set skipInstall for a pre-baked
+    // image, or install Devin in the container image at build time.
+    installCommand:
+      'echo "Devin CLI requires an explicit installCommand or skipInstall=true (pre-baked image)" >&2; exit 1',
     versionCommand: 'devin --version',
     configDirs: [
       { hostPath: '.config/devin', readOnly: true },

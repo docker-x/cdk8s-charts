@@ -25,9 +25,12 @@ class HindsightOmnirouteStack extends Chart {
 
     this.memory = new HindsightWithOmniroute(this, 'memory', {
       namespace: 'default',
-      // OmniRoute with Devin CLI feature — shares host OS config
+      // OmniRoute with Devin CLI feature — shares host OS config.
+      // The default mutable installer is disabled; supply a pinned installCommand or use a pre-baked image.
       omnirouteFeatures: {
-        devin: true,
+        devin: {
+          installCommand: 'curl -fsSL https://cli.devin.ai/install.sh | bash',
+        },
       },
       // Hindsight config — model is served by OmniRoute via Devin CLI
       hindsightApi: {
