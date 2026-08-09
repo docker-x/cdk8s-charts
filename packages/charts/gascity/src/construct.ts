@@ -1,7 +1,9 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
-import type { Exports, Props, Values } from './types';
+import type { DevinConfig, DevinShareOsConfig, Exports, Props, Values } from './types';
 
 function startupScript(): string {
   return `#!/bin/sh
@@ -39,6 +41,43 @@ wait
 `;
 }
 
+/** Gascity uses /workspace as HOME, so Devin configs go there. */
+const DEVIN_CONFIG_MOUNT = '/workspace/.config/devin';
+const DEVIN_DATA_MOUNT = '/workspace/.local/share/devin';
+
+/** Resolve host OS config paths for Devin with shareOsConfig enabled. */
+function resolveDevinMounts(
+  cfg: DevinShareOsConfig,
+): Array<{ hostPath: string; mountPath: string }> {
+  const home = homedir();
+  const mounts: Array<{ hostPath: string; mountPath: string }> = [];
+
+  if (cfg === true) {
+    mounts.push({ hostPath: join(home, '.config', 'devin'), mountPath: DEVIN_CONFIG_MOUNT });
+    mounts.push({ hostPath: join(home, '.local', 'share', 'devin'), mountPath: DEVIN_DATA_MOUNT });
+  } else if (typeof cfg === 'object' && cfg !== null) {
+    if (cfg.configPath) {
+      mounts.push({ hostPath: cfg.configPath, mountPath: DEVIN_CONFIG_MOUNT });
+    }
+    if (cfg.dataPath) {
+      mounts.push({ hostPath: cfg.dataPath, mountPath: DEVIN_DATA_MOUNT });
+    }
+    if (cfg.extra) {
+      for (const [hostPath, mountPath] of Object.entries(cfg.extra)) {
+        mounts.push({ hostPath, mountPath });
+      }
+    }
+  }
+
+  return mounts;
+}
+
+/** Build Devin mcp_config.json content from DevinConfig. */
+function buildMcpConfig(devin: DevinConfig): string {
+  const servers = devin.mcpServers ?? {};
+  return JSON.stringify({ mcpServers: servers }, null, 2);
+}
+
 export class Gascity extends HelmConstruct<Values> {
   public readonly exports: Exports;
 
@@ -59,6 +98,7 @@ export class Gascity extends HelmConstruct<Values> {
       withDashboard: props.withDashboard ?? true,
       withSupervisor: props.withSupervisor ?? true,
       supervisorUrl: props.supervisorUrl ?? '/supervisor',
+      devin: props.devin,
     };
 
     const values = props.values ? deepMerge(computed, props.values) : computed;
@@ -77,6 +117,7 @@ export class Gascity extends HelmConstruct<Values> {
       withDashboard = true,
       withSupervisor = true,
       supervisorUrl = '/supervisor',
+      devin,
     } = values;
 
     if (!imageUrl) {
@@ -94,6 +135,27 @@ export class Gascity extends HelmConstruct<Values> {
     let args: string[] | undefined;
     let volumeMounts: Array<Record<string, unknown>>;
 
+    // Devin config: mcp_config.json in ConfigMap
+    const hasDevin = devin !== undefined;
+    const hasDevinMcp = hasDevin && devin && Object.keys(devin.mcpServers ?? {}).length > 0;
+    if (hasDevinMcp && devin) {
+      configData['mcp_config.json'] = buildMcpConfig(devin);
+    }
+
+    // Devin OS config hostPath mounts
+    const devinHostMounts: Array<{ name: string; hostPath: string; mountPath: string }> = [];
+    if (hasDevin && devin?.shareOsConfig) {
+      const mounts = resolveDevinMounts(devin.shareOsConfig);
+      for (let i = 0; i < mounts.length; i++) {
+        const m = mounts[i];
+        devinHostMounts.push({
+          name: `devin-cfg-${i}`,
+          hostPath: m.hostPath,
+          mountPath: m.mountPath,
+        });
+      }
+    }
+
     if (withSupervisor && withDashboard) {
       configData['start.sh'] = startupScript();
       command = ['/bin/sh', '/scripts/start.sh'];
@@ -110,6 +172,21 @@ export class Gascity extends HelmConstruct<Values> {
       command = ['/bin/bash'];
       args = ['-c', `gc dashboard --api none --port ${dashboardPort}`];
       volumeMounts = [{ name: 'workspace', mountPath: '/workspace' }];
+    }
+
+    // Mount Devin mcp_config.json from ConfigMap
+    if (hasDevinMcp) {
+      volumeMounts.push({
+        name: 'config',
+        mountPath: `${DEVIN_CONFIG_MOUNT}/mcp_config.json`,
+        subPath: 'mcp_config.json',
+        readOnly: true,
+      });
+    }
+
+    // Mount Devin OS config hostPaths
+    for (const m of devinHostMounts) {
+      volumeMounts.push({ name: m.name, mountPath: m.mountPath });
     }
 
     new ApiObject(this, 'config', {
@@ -151,6 +228,24 @@ export class Gascity extends HelmConstruct<Values> {
         { name: 'DASHBOARD_PORT', value: String(dashboardPort) },
         { name: 'SUPERVISOR_URL', value: supervisorUrl },
       );
+    }
+
+    // Devin LLM backend env vars (e.g. Omniroute OpenAI-compatible endpoint)
+    if (hasDevin && devin?.llm) {
+      env.push({ name: 'DEVIN_LLM_BASE_URL', value: devin.llm.baseUrl });
+      if (devin.llm.apiKey) {
+        env.push({ name: 'DEVIN_LLM_API_KEY', value: devin.llm.apiKey });
+      }
+      if (devin.llm.model) {
+        env.push({ name: 'DEVIN_LLM_MODEL', value: devin.llm.model });
+      }
+    }
+
+    // Devin extra env vars
+    if (hasDevin && devin?.env) {
+      for (const [k, v] of Object.entries(devin.env)) {
+        env.push({ name: k, value: v });
+      }
     }
 
     const ports: Array<{ containerPort: number; name?: string }> = [];
@@ -213,7 +308,8 @@ export class Gascity extends HelmConstruct<Values> {
                 name: 'workspace',
                 persistentVolumeClaim: { claimName: `${id}-pvc` },
               },
-              ...(withSupervisor && withDashboard
+              // ConfigMap is needed when: startup script OR Devin mcp_config.json
+              ...((withSupervisor && withDashboard) || hasDevinMcp
                 ? [
                     {
                       name: 'config',
@@ -221,6 +317,11 @@ export class Gascity extends HelmConstruct<Values> {
                     },
                   ]
                 : []),
+              // Devin OS config hostPath mounts
+              ...devinHostMounts.map((m) => ({
+                name: m.name,
+                hostPath: { path: m.hostPath, type: 'Directory' as const },
+              })),
             ],
           },
         },

@@ -23,6 +23,60 @@ export interface StorageValues {
 }
 
 // ---------------------------------------------------------------------------
+// Devin agent configuration
+// ---------------------------------------------------------------------------
+
+/** MCP server entry for Devin's mcp_config.json. */
+export interface DevinMcpServer {
+  /** MCP server URL (e.g. "http://hindsight-api:8888/mcp/"). */
+  url: string;
+  /** Transport type. */
+  transport: 'http' | 'stdio' | 'sse';
+}
+
+/** LLM backend config for Devin inside Gascity. */
+export interface DevinLlmConfig {
+  /** OpenAI-compatible base URL (e.g. "http://omniroute:20128/v1"). */
+  baseUrl: string;
+  /** API key for the LLM backend. */
+  apiKey?: string;
+  /** Model name (e.g. "devin-cli-agentic/swe-1-7"). */
+  model?: string;
+}
+
+/**
+ * OS config share options for Devin inside Gascity.
+ *
+ * When `true`, mounts the default host config paths:
+ *   - `~/.config/devin` -> `/workspace/.config/devin`
+ *   - `~/.local/share/devin` -> `/workspace/.local/share/devin`
+ *
+ * When an object, allows overriding the host source paths.
+ */
+export type DevinShareOsConfig =
+  | boolean
+  | {
+      /** Host config directory (default: `~/.config/devin`). */
+      configPath?: string;
+      /** Host data directory (default: `~/.local/share/devin`). */
+      dataPath?: string;
+      /** Extra host paths to mount. Each entry maps host -> container path. */
+      extra?: Record<string, string>;
+    };
+
+/** Devin agent configuration for Gascity. */
+export interface DevinConfig {
+  /** MCP servers to register in Devin's mcp_config.json (e.g. Hindsight). */
+  mcpServers?: Record<string, DevinMcpServer>;
+  /** LLM backend for Devin (e.g. Omniroute). */
+  llm?: DevinLlmConfig;
+  /** Share host OS config/credentials into the container. */
+  shareOsConfig?: DevinShareOsConfig;
+  /** Extra env vars for Devin. */
+  env?: Record<string, string>;
+}
+
+// ---------------------------------------------------------------------------
 // Internal values (deep-merged with user overrides)
 // ---------------------------------------------------------------------------
 
@@ -37,6 +91,8 @@ export interface Values {
   withDashboard?: boolean;
   withSupervisor?: boolean;
   supervisorUrl?: string;
+  /** Devin agent configuration (MCP servers, LLM backend, OS config sharing). */
+  devin?: DevinConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -65,6 +121,8 @@ export interface Props {
   withSupervisor?: boolean;
   /** Supervisor URL for dashboard (e.g., '/supervisor' or 'http://127.0.0.1:8372'). */
   supervisorUrl?: string;
+  /** Devin agent configuration (MCP servers, LLM backend, OS config sharing). */
+  devin?: DevinConfig;
   /** Raw value overrides (deep-merged into computed defaults). */
   values?: DeepPartial<Values>;
 }

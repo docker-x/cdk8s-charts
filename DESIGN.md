@@ -69,6 +69,8 @@ cdk8s-charts/
         src/construct.ts            Composed stack with auto cross-wiring
       hindsight-omniroute/          @cdk8s-charts/hindsight-omniroute
         src/construct.ts            Hindsight + OmniRoute (ACP agents) with auto cross-wiring
+      gascity-hindsight-omniroute/  @cdk8s-charts/gascity-hindsight-omniroute
+        src/construct.ts            Gascity + Hindsight + OmniRoute multi-client stack
       litellm-plane/                @cdk8s-charts/litellm-plane
         src/construct.ts            LiteLLM + Plane CE with shared Redis & A2A gateway
   examples/
@@ -94,6 +96,7 @@ utils  <--  otel-lgtm
 utils  <--  omniroute
 utils + litellm + hindsight  <--  hindsight-litellm
 utils + omniroute + hindsight  <--  hindsight-omniroute
+utils + gascity + omniroute + hindsight  <--  gascity-hindsight-omniroute
 utils + litellm + plane-ce   <--  litellm-plane
 devpod + gascity + nginx  <--  devspace
 hindsight-litellm  <--  examples/coding-agent-memory
@@ -269,6 +272,48 @@ Composes OmniRoute + Hindsight with automatic cross-wiring:
 | `hindsightValues` | `DeepPartial<HindsightValues>` | no | Hindsight value overrides |
 | `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
 
+### 3.4.2 GascityHindsightOmniroute Recipe
+
+**Package**: `@cdk8s-charts/gascity-hindsight-omniroute`
+
+Composes Gascity + Hindsight + OmniRoute as a multi-client AI dev stack:
+
+```
+Gascity (dev env) → Devin → MCP Hindsight (memory) + LLM Omniroute (gateway)
+Hindsight → LLM → Omniroute → Devin (bare, ACP, no plugins)
+```
+
+Key design points:
+- **Hindsight + OmniRoute are shared services** — not only for Gascity's Devin. Everyone on the PC can use them.
+- **Devin in OmniRoute is "bare"** (no plugins) — works purely as API gateway via ACP.
+- **Devin in Gascity is full-featured** — has MCP Hindsight (retain/recall/reflect) + LLM via OmniRoute.
+
+**Props** (`GascityHindsightOmnirouteProps`):
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `gascityImageUrl` | `string` | yes | Gascity image URL |
+| `gascityStorageSize` | `string` | no | Gascity PVC size (default: 20Gi) |
+| `gascityResources` | `ResourceValues` | no | Gascity resource requests/limits |
+| `gascityDevinShareOsConfig` | `boolean` | no | Share host OS config for Devin (default: true) |
+| `gascityDevinEnv` | `Record<string, string>` | no | Extra env vars for Devin in Gascity |
+| `omnirouteAgents` | `AcpAgent[]` | no | Extra ACP agents (bare Devin auto-added) |
+| `omniroutePort` | `number` | no | OmniRoute port (default: 20128) |
+| `omnirouteVersion` | `string` | no | OmniRoute npm version |
+| `omnirouteEnv` | `Record<string, string>` | no | Extra OmniRoute env vars |
+| `omnirouteSecrets` | `Record<string, string>` | no | Secret env vars |
+| `hindsightApi` | `HindsightApiConfig` (minus llm wiring) | yes | Hindsight config (llm.model required) |
+| `hindsightValues` | `DeepPartial<HindsightValues>` | no | Hindsight value overrides |
+| `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
+
+**Auto cross-wiring:**
+1. OmniRoute gets a bare Devin ACP agent (no plugins, API gateway only)
+2. Hindsight LLM → OmniRoute's OpenAI-compatible endpoint
+3. Gascity Devin MCP → Hindsight API (`http://hindsight-api:8888/mcp/`)
+4. Gascity Devin LLM → OmniRoute (`http://omniroute:20128/v1`)
+5. Devin OS config shared in both Gascity and OmniRoute
+
 ### 3.5 Plane CE Construct
 
 **Package**: `@cdk8s-charts/plane-ce`
@@ -441,6 +486,7 @@ Deploys the Gascity AI agent framework as raw K8s ApiObjects.
 | `withDashboard` | `boolean` | no | Enable dashboard (default: `true`) |
 | `withSupervisor` | `boolean` | no | Enable supervisor (default: `true`) |
 | `supervisorUrl` | `string` | no | Supervisor URL for dashboard (default: `/supervisor`) |
+| `devin` | `DevinConfig` | no | Devin agent config (MCP servers, LLM backend, OS config sharing) |
 | `values` | `DeepPartial<Values>` | no | Raw value overrides |
 
 **Exports (`Exports`):**
@@ -459,6 +505,17 @@ Deploys the Gascity AI agent framework as raw K8s ApiObjects.
 - Once the supervisor is reachable, it starts `gc dashboard` and `wait`s for both processes.
 - A `trap` cleans up the supervisor/dashboard processes on container exit.
 - Dashboard mode adds Kubernetes `readinessProbe` and `livenessProbe` HTTP checks on `/`.
+
+**Devin agent configuration (`DevinConfig`):**
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `mcpServers` | `Record<string, DevinMcpServer>` | MCP servers for Devin's `mcp_config.json` (e.g. Hindsight) |
+| `llm` | `DevinLlmConfig` | LLM backend (OpenAI-compatible base URL, API key, model) |
+| `shareOsConfig` | `DevinShareOsConfig` | Share host OS config/credentials (`~/.config/devin`, `~/.local/share/devin`) |
+| `env` | `Record<string, string>` | Extra env vars for Devin |
+
+When `devin.mcpServers` is set, the construct generates `mcp_config.json` in the ConfigMap and mounts it at `/workspace/.config/devin/mcp_config.json`. When `devin.shareOsConfig` is enabled, host config directories are mounted as `hostPath` volumes so Devin authenticates using existing CLI auth.
 
 **Resources created:**
 
