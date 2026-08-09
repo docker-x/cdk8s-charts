@@ -92,7 +92,12 @@ function resolveFeatureMounts(
       const containerPath = cfg.containerPath ?? posix.join(homeDir, cfg.hostPath);
       const volName = `${featureId}-cfg-${i}`;
 
-      volumes.push({ name: volName, hostPath, mountPath: containerPath });
+      volumes.push({
+        name: volName,
+        hostPath,
+        mountPath: containerPath,
+        type: 'DirectoryOrCreate',
+      });
       volumeMounts.push({ name: volName, mountPath: containerPath });
     }
   }
@@ -101,6 +106,7 @@ function resolveFeatureMounts(
     let extraIdx = 0;
     for (const [hostPath, containerPath] of Object.entries(mountConfig.extra)) {
       const volName = `${featureId}-extra-${extraIdx++}`;
+      // Extra mounts may be files; leave type unset so Kubernetes accepts either.
       volumes.push({ name: volName, hostPath, mountPath: containerPath });
       volumeMounts.push({ name: volName, mountPath: containerPath });
     }

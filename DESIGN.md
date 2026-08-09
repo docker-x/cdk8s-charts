@@ -157,7 +157,7 @@ const features: FeatureMap = {
 
 const output = resolveFeatures({ homeDir: '/workspace', features });
 // output.installCommands → ['curl ... devin', 'npm install -g @anthropic-ai/claude-code', ...]
-// output.volumes       → [{ name: 'devin-cfg-0', hostPath: '/home/.../.config/devin', mountPath: '/workspace/.config/devin' }, ...]
+// output.volumes       → [{ name: 'devin-cfg-0', hostPath: '/home/.../.config/devin', mountPath: '/workspace/.config/devin', type: 'DirectoryOrCreate' }, ...]
 // output.volumeMounts  → [{ name: 'devin-cfg-0', mountPath: '/workspace/.config/devin' }, ...]
 // output.env           → [{ name: 'GEMINI_API_KEY', value: '...' }]
 ```
@@ -168,7 +168,7 @@ const output = resolveFeatures({ homeDir: '/workspace', features });
 
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `mountConfig` | `ShareOsConfig` | `true` | Mount host OS config/credentials |
+| `mountConfig` | `ShareOsConfig` | `true` | Mount host OS config/credentials. `extra` accepts arbitrary host->container paths (files or directories). |
 | `env` | `Record<string, string>` | — | Extra env vars for this agent |
 | `installCommand` | `string` | from registry | Override install command |
 | `skipInstall` | `boolean` | `false` | Skip installation (binary in image) |

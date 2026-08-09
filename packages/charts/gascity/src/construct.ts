@@ -298,10 +298,11 @@ export class Gascity extends HelmConstruct<Values> {
                   ]
                 : []),
               // Feature hostPath volumes (OS config sharing)
-              ...featureOutput.volumes.map((v) => ({
-                name: v.name,
-                hostPath: { path: v.hostPath, type: 'DirectoryOrCreate' as const },
-              })),
+              ...featureOutput.volumes.map((v) => {
+                const hostPath: Record<string, unknown> = { path: v.hostPath };
+                if (v.type) hostPath.type = v.type;
+                return { name: v.name, hostPath };
+              }),
             ],
           },
         },

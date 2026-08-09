@@ -47,10 +47,11 @@ function buildEnvMap(values: Values, featureOutput: FeatureSetOutput): Record<st
 function buildVolumes(id: string, featureOutput: FeatureSetOutput): Array<Record<string, unknown>> {
   return [
     { name: 'data', persistentVolumeClaim: { claimName: `${id}-data` } },
-    ...featureOutput.volumes.map((v) => ({
-      name: v.name,
-      hostPath: { path: v.hostPath, type: 'DirectoryOrCreate' },
-    })),
+    ...featureOutput.volumes.map((v) => {
+      const hostPath: Record<string, unknown> = { path: v.hostPath };
+      if (v.type) hostPath.type = v.type;
+      return { name: v.name, hostPath };
+    }),
   ];
 }
 

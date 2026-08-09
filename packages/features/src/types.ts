@@ -91,6 +91,8 @@ export interface FeatureVolume {
   name: string;
   hostPath: string;
   mountPath: string;
+  /** Optional hostPath type. Omit to accept any existing path (file or directory). */
+  type?: string;
 }
 
 /** Resolved output from a feature set — ready to inject into a container. */
