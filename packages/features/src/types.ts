@@ -36,11 +36,11 @@ export type FeatureId =
 /** Config directory mount specification. */
 export interface ConfigDir {
   /** Host path relative to $HOME (e.g. ".config/devin", ".claude"). */
-  hostPath: string;
+  readonly hostPath: string;
   /** Container mount path (e.g. "/workspace/.config/devin"). If omitted, uses homeDir + hostPath. */
-  containerPath?: string;
-  /** Mount read-only. Omit to use the chart default (true for credentials, false for runtime state). */
-  readOnly?: boolean;
+  readonly containerPath?: string;
+  /** Mount read-only. Defaults to true; set to false for writable runtime state. */
+  readonly readOnly?: boolean;
 }
 
 /** Static metadata for a CLI agent feature. */
@@ -106,13 +106,13 @@ export type FeatureMap = Partial<Record<FeatureId, FeatureProps | true>>;
 
 /** A hostPath volume + mount produced by a feature. */
 export interface FeatureVolume {
-  name: string;
-  hostPath: string;
-  mountPath: string;
+  readonly name: string;
+  readonly hostPath: string;
+  readonly mountPath: string;
   /** Optional hostPath type. Currently only `DirectoryOrCreate` is emitted. */
-  type?: 'DirectoryOrCreate';
+  readonly type?: 'DirectoryOrCreate';
   /** Mount read-only. Charts default this to true for credential dirs. */
-  readOnly?: boolean;
+  readonly readOnly?: boolean;
 }
 
 /** Resolved output from a feature set — ready to inject into a container. */

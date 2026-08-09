@@ -220,15 +220,19 @@ export class Gascity extends HelmConstruct<Values> {
 
     // Extra env vars
     for (const [k, v] of Object.entries(env)) {
-      if (!reservedEnv.has(k)) {
-        envList.push({ name: k, value: v });
+      if (reservedEnv.has(k)) {
+        throw new Error(`env.${k} is a reserved environment name and cannot be overridden`);
       }
+      envList.push({ name: k, value: v });
     }
     // Feature env vars
     for (const e of featureOutput.env) {
-      if (!reservedEnv.has(e.name)) {
-        envList.push({ name: e.name, value: e.value });
+      if (reservedEnv.has(e.name)) {
+        throw new Error(
+          `Feature env ${e.name} is a reserved environment name and cannot be overridden`,
+        );
       }
+      envList.push({ name: e.name, value: e.value });
     }
 
     // Secret references

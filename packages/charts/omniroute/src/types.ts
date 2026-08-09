@@ -13,7 +13,7 @@
  */
 
 import type { FeatureMap } from '@cdk8s-charts/features';
-import type { DeepPartial, ResourceRequirements } from '@cdk8s-charts/utils';
+import type { DeepPartial, ResourceRequirements, SecretRefs } from '@cdk8s-charts/utils';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Values
@@ -44,7 +44,7 @@ export interface Values {
   /** Plaintext secret env vars (written to `stringData` of a K8s Secret and injected via `envFrom`). */
   secrets: Record<string, string>;
   /** Kubernetes Secret references for env vars. */
-  secretRefs: Record<string, { name: string; key: string }>;
+  secretRefs: SecretRefs;
   /** CLI agent features to enable (devin, claude, codex, etc.). */
   features: FeatureMap;
   /** Startup script override. Omit to use the default that installs agents + starts omniroute. */
@@ -92,7 +92,7 @@ export interface Props {
   /** Plaintext secret env vars (written to a K8s Secret and injected via `envFrom`). */
   secrets?: Record<string, string>;
   /** Kubernetes Secret references for env vars. */
-  secretRefs?: Record<string, { name: string; key: string }>;
+  secretRefs?: SecretRefs;
   /** Container command override. */
   command?: string[];
   /** Container args override. */

@@ -23,7 +23,7 @@ import { GascityStack } from '@cdk8s-charts/gascity-stack';
 import { App, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
 
-const gascityImageUrl = process.env.GASCITY_IMAGE_URL ?? '';
+const gascityImageUrl = process.env.GASCITY_IMAGE_URL?.trim() ?? '';
 if (!gascityImageUrl) {
   throw new Error('Set GASCITY_IMAGE_URL to a pullable Gascity image before synthesizing.');
 }

@@ -1,7 +1,7 @@
 import { type FeatureId, type FeatureMap, isAcpCompatible } from '@cdk8s-charts/features';
 import { Hindsight, type HindsightApiConfig, type HindsightValues } from '@cdk8s-charts/hindsight';
 import { Omniroute, type OmnirouteValues } from '@cdk8s-charts/omniroute';
-import { type DeepPartial, deepMerge } from '@cdk8s-charts/utils';
+import { type DeepPartial, deepMerge, type SecretEnvRef } from '@cdk8s-charts/utils';
 import { Construct } from 'constructs';
 
 // ---------------------------------------------------------------------------
@@ -32,7 +32,8 @@ export interface HindsightWithOmnirouteProps {
   /**
    * Hindsight API config. The recipe auto-wires:
    *   - llm.base_url -> OmniRoute's OpenAI-compatible endpoint
-   *   - llm.api_key  -> OmniRoute API key (defaults to "omniroute"; override via omnirouteSecrets.OMNIROUTE_API_KEY)
+   *   - llm.api_key  -> OmniRoute API key (defaults to "omniroute"; override via
+   *     omnirouteValues.secrets.OMNIROUTE_API_KEY or omnirouteSecrets.OMNIROUTE_API_KEY)
    *
    * You only need to set llm.model (and any tuning).
    */
@@ -107,6 +108,18 @@ export class HindsightWithOmniroute extends Construct {
       props.omnirouteValues?.secrets?.OMNIROUTE_API_KEY ??
       props.omnirouteSecrets?.OMNIROUTE_API_KEY;
 
+    // If the key is supplied through a Secret reference, Hindsight needs an
+    // explicit plaintext override because it cannot consume Kubernetes Secret refs.
+    const omnirouteApiKeySecretRef = props.omnirouteValues?.secretRefs?.OMNIROUTE_API_KEY as
+      | SecretEnvRef
+      | undefined;
+    if (omnirouteApiKeySecretRef && !omnirouteApiKey && !props.hindsightApi.llm.api_key) {
+      throw new Error(
+        'OMNIROUTE_API_KEY supplied via omnirouteValues.secretRefs cannot be auto-wired to Hindsight. ' +
+          'Provide the key via omnirouteSecrets/omnirouteValues.secrets or set an explicit hindsightApi.llm.api_key.',
+      );
+    }
+
     // Deploy OmniRoute — LLM proxy with ACP agents
     const omniroute = new Omniroute(this, omnirouteId, {
       namespace: props.namespace,
@@ -132,7 +145,10 @@ export class HindsightWithOmniroute extends Construct {
           ...props.hindsightApi.llm,
           provider: props.hindsightApi.llm.provider ?? 'openai',
           base_url: omniroute.exports.baseUrl,
-          api_key: omnirouteApiKey ?? 'omniroute',
+          api_key:
+            (props.hindsightApi.llm.api_key as string | undefined) ??
+            omnirouteApiKey ??
+            'omniroute',
         },
       },
       values: props.hindsightValues

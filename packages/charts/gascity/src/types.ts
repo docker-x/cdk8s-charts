@@ -6,7 +6,7 @@
  */
 
 import type { FeatureMap } from '@cdk8s-charts/features';
-import type { DeepPartial } from '@cdk8s-charts/utils';
+import type { DeepPartial, SecretRefs } from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
 // Resources
@@ -48,7 +48,7 @@ export interface Values {
   /** Extra env vars injected into the Gascity container. */
   env?: Record<string, string>;
   /** Kubernetes Secret references for env vars. */
-  secretRefs?: Record<string, { name: string; key: string }>;
+  secretRefs?: SecretRefs;
   /** K8s Service type for dashboard/supervisor services. Default: ClusterIP. */
   serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
 }
@@ -89,7 +89,7 @@ export interface Props {
   /** Extra env vars. */
   env?: Record<string, string>;
   /** Kubernetes Secret references for env vars. */
-  secretRefs?: Record<string, { name: string; key: string }>;
+  secretRefs?: SecretRefs;
   /** K8s Service type for dashboard/supervisor services. Default: ClusterIP. */
   serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
   /** Raw value overrides (deep-merged into computed defaults). */

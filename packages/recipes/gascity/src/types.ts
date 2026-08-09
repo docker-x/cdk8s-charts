@@ -20,7 +20,7 @@ import type {
   HindsightValues,
 } from '@cdk8s-charts/hindsight';
 import type { OmnirouteExports, OmnirouteValues } from '@cdk8s-charts/omniroute';
-import type { DeepPartial } from '@cdk8s-charts/utils';
+import type { DeepPartial, SecretRefs } from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
 // Subchart toggles
@@ -46,6 +46,8 @@ export interface OmnirouteSubchart {
   env?: Record<string, string>;
   /** Secret env vars. */
   secrets?: Record<string, string>;
+  /** Kubernetes Secret references for env vars. */
+  secretRefs?: SecretRefs;
   /** OmniRoute value overrides. */
   values?: DeepPartial<OmnirouteValues>;
 }

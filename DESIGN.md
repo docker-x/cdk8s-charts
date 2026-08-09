@@ -163,7 +163,6 @@ const output = resolveFeatures({
 // output.installCommands → ['curl ... devin', 'npm install -g @anthropic-ai/claude-code', ...]
 // output.volumes       → [{ name: 'devin-cfg-0', hostPath: '/home/user/.config/devin', mountPath: '/workspace/.config/devin', type: 'DirectoryOrCreate', readOnly: true }, ...]
 // output.volumeMounts  → [{ name: 'devin-cfg-0', mountPath: '/workspace/.config/devin', readOnly: true }, ...]
-// output.env           → [{ name: 'GEMINI_API_KEY', value: '...' }]
 ```
 
 `FeatureMap` keys are constrained to the registered `FeatureId` union, so typos (e.g. `devinn: true`) are caught at compile time.
@@ -310,7 +309,7 @@ Keys matching `/_API_KEY$|_PASSWORD$|_SECRET$|_SECRET_ACCESS_KEY$|_ACCOUNT_KEY$|
 
 **Typed Helm values (synced to chart v0.9.0):** the `api` and `worker` value sections include `persistence.modelCache` (`HindsightModelCachePersistence`), `extraVolumeMounts` (`VolumeMount[]`), and `extraVolumes` (`Volume[]`) for local model cache PVCs and custom volume mounts.
 
-#### 3.4.1 HindsightWithLitellm Recipe
+#### 3.4.1 HindsightWithLiteLLM Recipe
 
 **Package**: `@cdk8s-charts/hindsight-litellm`
 

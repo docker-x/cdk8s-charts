@@ -2,7 +2,12 @@ import type { FeatureMap } from '@cdk8s-charts/features';
 import { Gascity } from '@cdk8s-charts/gascity';
 import { Hindsight, type HindsightApiConfig, type HindsightValues } from '@cdk8s-charts/hindsight';
 import { Omniroute } from '@cdk8s-charts/omniroute';
-import { type DeepPartial, deepMerge } from '@cdk8s-charts/utils';
+import {
+  type DeepPartial,
+  deepMerge,
+  type SecretEnvRef,
+  type SecretRefs,
+} from '@cdk8s-charts/utils';
 import { Construct } from 'constructs';
 import type { GascityStackExports, GascityStackProps } from './types';
 
@@ -54,6 +59,9 @@ export class GascityStack extends Construct {
     const omnirouteApiKey =
       props.omniroute?.values?.secrets?.OMNIROUTE_API_KEY ??
       props.omniroute?.secrets?.OMNIROUTE_API_KEY;
+    const omnirouteApiKeySecretRef: SecretEnvRef | undefined =
+      (props.omniroute?.secretRefs?.OMNIROUTE_API_KEY as SecretEnvRef | undefined) ??
+      (props.omniroute?.values?.secretRefs?.OMNIROUTE_API_KEY as SecretEnvRef | undefined);
 
     if (omnirouteEnabled) {
       // OmniRoute gets a bare Devin feature (no plugins, API gateway only)
@@ -67,10 +75,24 @@ export class GascityStack extends Construct {
         features: omnirouteFeatures,
         env: props.omniroute?.env,
         secrets: props.omniroute?.secrets,
+        secretRefs: props.omniroute?.secretRefs,
         values: props.omniroute?.values as
           | DeepPartial<import('@cdk8s-charts/omniroute').Values>
           | undefined,
       });
+
+      // Hindsight requires a plaintext api_key; a Secret reference alone cannot be auto-wired.
+      if (
+        omnirouteApiKeySecretRef &&
+        !omnirouteApiKey &&
+        hindsightEnabled &&
+        !props.hindsight?.api?.llm?.api_key
+      ) {
+        throw new Error(
+          'OMNIROUTE_API_KEY supplied via secretRefs cannot be auto-wired to Hindsight. ' +
+            'Provide the key via omniroute.secrets/omniroute.values.secrets or set an explicit hindsight.api.llm.api_key.',
+        );
+      }
       omnirouteExports = omniroute.exports;
     }
 
@@ -90,7 +112,10 @@ export class GascityStack extends Construct {
       // Auto-wire Hindsight LLM to OmniRoute if OmniRoute is enabled
       if (omnirouteExports) {
         llmConfig.base_url = omnirouteExports.baseUrl;
-        llmConfig.api_key = omnirouteApiKey ?? 'omniroute';
+        llmConfig.api_key =
+          (props.hindsight?.api?.llm?.api_key as string | undefined) ??
+          omnirouteApiKey ??
+          'omniroute';
         llmConfig.provider = 'openai';
       }
 
@@ -133,7 +158,7 @@ export class GascityStack extends Construct {
     }
 
     // Auto-wire Devin LLM to OmniRoute if both Devin and OmniRoute are enabled
-    const gascitySecretRefs: Record<string, { name: string; key: string }> = {};
+    const gascitySecretRefs: SecretRefs = {};
     if (omnirouteExports && gascityFeatures.devin) {
       const devinProps = gascityFeatures.devin === true ? {} : gascityFeatures.devin;
       const devinEnv: Record<string, string> = {
@@ -151,6 +176,10 @@ export class GascityStack extends Construct {
           name: `${omnirouteId}-secret`,
           key: 'OMNIROUTE_API_KEY',
         };
+      } else if (omnirouteApiKeySecretRef !== undefined) {
+        // Make sure the feature env does not also carry a plaintext API key.
+        delete devinEnv.DEVIN_LLM_API_KEY;
+        gascitySecretRefs.DEVIN_LLM_API_KEY = omnirouteApiKeySecretRef;
       } else {
         devinEnv.DEVIN_LLM_API_KEY = 'omniroute';
       }

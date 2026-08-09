@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { buildStartupScript, type FeatureSetOutput, resolveFeatures } from '@cdk8s-charts/features';
 import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
@@ -37,10 +38,18 @@ function buildEnvMap(values: Values, featureOutput: FeatureSetOutput): Record<st
   // Reserved names control server/runtime wiring and must not be overridden.
   const reserved = new Set(['OMNIROUTE_PORT', 'OMNIROUTE_HOME', 'PATH']);
   for (const [k, v] of Object.entries(values.env)) {
-    if (!reserved.has(k)) env[k] = v;
+    if (reserved.has(k)) {
+      throw new Error(`env.${k} is a reserved environment name and cannot be overridden`);
+    }
+    env[k] = v;
   }
   for (const e of featureOutput.env) {
-    if (!reserved.has(e.name)) env[e.name] = e.value;
+    if (reserved.has(e.name)) {
+      throw new Error(
+        `Feature env ${e.name} is a reserved environment name and cannot be overridden`,
+      );
+    }
+    env[e.name] = e.value;
   }
   return env;
 }
@@ -57,7 +66,7 @@ function buildVolumes(id: string, featureOutput: FeatureSetOutput): Array<Record
 }
 
 function sha256(data: string): string {
-  return Buffer.from(data).toString('base64url').slice(0, 16);
+  return createHash('sha256').update(data).digest('hex');
 }
 
 /**
@@ -207,7 +216,16 @@ export class Omniroute extends HelmConstruct<Values> {
       value,
     }));
 
+    const reserved = new Set(['OMNIROUTE_PORT', 'OMNIROUTE_HOME', 'PATH']);
     for (const [k, v] of Object.entries(values.secretRefs)) {
+      if (reserved.has(k)) {
+        throw new Error(`secretRefs.${k} is a reserved environment name and cannot be overridden`);
+      }
+      if (envMap[k] !== undefined) {
+        throw new Error(
+          `secretRefs.${k} conflicts with an explicit or feature-provided env var; use env or secretRefs, not both`,
+        );
+      }
       if (!v.name || !v.key) {
         throw new Error(`secretRefs.${k} requires both name and key`);
       }
