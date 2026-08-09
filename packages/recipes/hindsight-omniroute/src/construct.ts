@@ -17,7 +17,7 @@ export interface HindsightWithOmnirouteProps {
   /** OmniRoute server port (default: 20128). */
   omniroutePort?: number;
 
-  /** OmniRoute npm version (default: latest). */
+  /** OmniRoute npm version (defaults to the Omniroute chart pin of 3.8.49). */
   omnirouteVersion?: string;
 
   /** Extra env vars for OmniRoute. */
@@ -84,8 +84,8 @@ export class HindsightWithOmniroute extends Construct {
     super(scope, id);
 
     const svcType = props.serviceType ?? 'ClusterIP';
-    const omnirouteId = 'omniroute';
-    const hindsightId = 'hindsight';
+    const omnirouteId = `${id}-omniroute`;
+    const hindsightId = `${id}-hindsight`;
 
     // Deploy OmniRoute — LLM proxy with ACP agents
     const omnirouteBaseValues: DeepPartial<OmnirouteValues> = {};

@@ -5,7 +5,7 @@ import type { Construct } from 'constructs';
 import type { Exports, Props, Values } from './types';
 
 const DEFAULT_IMAGE = 'node:22-bookworm-slim';
-const DEFAULT_OMNIROUTE_VERSION = 'latest';
+const DEFAULT_OMNIROUTE_VERSION = '3.8.49';
 const DEFAULT_PORT = 20128;
 const DEFAULT_DATA_SIZE = '1Gi';
 const DEFAULT_DATA_MOUNT_PATH = '/home/node/.omniroute';

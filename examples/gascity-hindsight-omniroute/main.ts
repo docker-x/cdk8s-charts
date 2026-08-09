@@ -5,8 +5,8 @@
  *   Gascity (dev env) → Devin → MCP Hindsight (memory) + LLM Omniroute (gateway)
  *   Hindsight → LLM → Omniroute → Devin (bare, ACP, no plugins)
  *
- * Hindsight + OmniRoute are shared services — not only for Gascity's Devin.
- * Everyone on the PC can use them.
+ * Hindsight + OmniRoute are shared cluster services by default. Expose them
+ * explicitly (e.g. ingress/LoadBalancer) if you want host access.
  *
  * Prerequisites:
  *   - npx cdk8s synth   (generates K8s manifests in dist/)
@@ -26,8 +26,8 @@ class GascityHindsightOmnirouteStack extends Chart {
 
     this.stack = new GascityHindsightOmniroute(this, 'stack', {
       namespace: 'default',
-      // Gascity — dev environment
-      gascityImageUrl: 'ghcr.io/gascity/gascity:latest',
+      // Gascity — dev environment (set GASCITY_IMAGE_URL to a pullable image)
+      gascityImageUrl: process.env.GASCITY_IMAGE_URL ?? 'ghcr.io/gascity/gascity:latest',
       // CLI agent features — composable
       features: {
         devin: true,

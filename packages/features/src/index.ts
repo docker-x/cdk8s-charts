@@ -11,6 +11,7 @@ export {
 } from './feature-set';
 export type {
   ConfigDir,
+  DeepPartial,
   FeatureDefinition,
   FeatureMap,
   FeatureProps,

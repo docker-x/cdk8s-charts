@@ -32,8 +32,8 @@ class GascityStackExample extends Chart {
     this.stack = new GascityStack(this, 'stack', {
       namespace: 'default',
 
-      // Gascity — dev environment
-      gascityImageUrl: 'ghcr.io/gascity/gascity:latest',
+      // Gascity — dev environment (set GASCITY_IMAGE_URL to a pullable image)
+      gascityImageUrl: process.env.GASCITY_IMAGE_URL ?? 'ghcr.io/gascity/gascity:latest',
 
       // CLI agent features — composable, any combination
       features: {

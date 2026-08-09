@@ -87,7 +87,7 @@ OmniRoute's ACP (Agent Client Protocol) spawns CLI agents as child processes ins
 | `devin` | `devin` | `curl -fsSL https://cli.devin.ai/install.sh \| bash` |
 | `claude` | `claude` | `npm install -g @anthropic-ai/claude-code` |
 | `codex` | `codex` | `npm install -g @openai/codex` |
-| `gemini-cli` | `gemini` | `npm install -g @anthropic-ai/gemini-cli` |
+| `gemini` | `gemini` | `npm install -g @google/gemini-cli` |
 
 When `shareOsConfig` is `true`, the construct mounts:
 - `~/.config/<id>` → `/home/node/.config/<id>`
@@ -98,6 +98,6 @@ When `shareOsConfig` is `true`, the construct mounts:
 | Export | Value | Description |
 |--------|-------|-------------|
 | `host` | `'{id}'` | Service DNS name |
-| `port` | `20128` | OmniRoute server port |
+| `port` | `values.port` (default: `20128`) | OmniRoute server port |
 | `baseUrl` | `http://{id}:{port}/v1` | OpenAI-compatible endpoint |
 | `dashboardUrl` | `http://{id}:{port}` | Dashboard URL |

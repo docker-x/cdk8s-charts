@@ -69,7 +69,7 @@ export interface Props {
   serviceType?: ServiceType;
   /** Node base image (default: node:22-bookworm-slim). */
   image?: string;
-  /** OmniRoute npm version to install (default: latest). */
+  /** OmniRoute npm version to install (default: 3.8.49; override with 'latest' to track releases). */
   omnirouteVersion?: string;
   /** PVC size for OmniRoute data (default: 1Gi). */
   dataSize?: string;

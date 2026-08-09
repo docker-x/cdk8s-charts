@@ -26,8 +26,8 @@ const DEFAULT_OMNIROUTE_PORT = 20128;
  * When both hindsight and omniroute are enabled, the stack auto-wires:
  *   1. OmniRoute gets a bare Devin feature (no plugins, API gateway only)
  *   2. Hindsight LLM → OmniRoute's OpenAI-compatible endpoint
- *   3. Gascity Devin MCP → Hindsight API (http://hindsight-api:8888/mcp/)
- *   4. Gascity Devin LLM → OmniRoute (http://omniroute:20128/v1)
+ *   3. Gascity Devin MCP → Hindsight API endpoint
+ *   4. Gascity Devin LLM → OmniRoute's OpenAI-compatible baseUrl
  */
 export class GascityStack extends Construct {
   public readonly exports: GascityStackExports;
@@ -51,7 +51,7 @@ export class GascityStack extends Construct {
       // OmniRoute gets a bare Devin feature (no plugins, API gateway only)
       const omnirouteFeatures: FeatureMap = { devin: true };
 
-      const omniroute = new Omniroute(this, 'omniroute', {
+      const omniroute = new Omniroute(this, `${id}-omniroute`, {
         namespace: props.namespace,
         port: omniroutePort,
         omnirouteVersion: props.omniroute?.version,
@@ -90,7 +90,7 @@ export class GascityStack extends Construct {
         llm: llmConfig as HindsightApiConfig['llm'],
       };
 
-      const hindsight = new Hindsight(this, 'hindsight', {
+      const hindsight = new Hindsight(this, `${id}-hindsight`, {
         namespace: props.namespace,
         api: hindsightApi,
         values: props.hindsight?.values,
@@ -131,7 +131,7 @@ export class GascityStack extends Construct {
       };
     }
 
-    const gascity = new Gascity(this, 'gascity', {
+    const gascity = new Gascity(this, `${id}-gascity`, {
       namespace: props.namespace,
       imageUrl: props.gascityImageUrl,
       storageSize: props.gascityStorageSize,

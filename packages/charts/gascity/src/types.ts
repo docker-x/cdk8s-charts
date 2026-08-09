@@ -68,7 +68,7 @@ export interface Props {
   withDashboard?: boolean;
   /** Enable supervisor. Default: true. */
   withSupervisor?: boolean;
-  /** Supervisor URL for dashboard (e.g., '/supervisor' or 'http://127.0.0.1:8372'). */
+  /** Supervisor URL for dashboard (default: `http://{id}-supervisor:{supervisorPort}`). */
   supervisorUrl?: string;
   /** CLI agent features to enable (devin, claude, codex, etc.). */
   features?: FeatureMap;

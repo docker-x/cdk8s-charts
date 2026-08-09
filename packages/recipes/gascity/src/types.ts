@@ -25,7 +25,7 @@ import type { DeepPartial } from '@cdk8s-charts/utils';
 export interface HindsightSubchart {
   /** Enable Hindsight memory service. Default: true. */
   enabled?: boolean;
-  /** Hindsight API config. When enabled, llm.model is required. */
+  /** Hindsight API config. When enabled, llm.model defaults to the stack's default model if omitted. */
   api?: {
     llm?: {
       model?: string;
@@ -42,7 +42,7 @@ export interface OmnirouteSubchart {
   enabled?: boolean;
   /** OmniRoute server port. Default: 20128. */
   port?: number;
-  /** OmniRoute npm version. Default: latest. */
+  /** OmniRoute npm version. Default: 3.8.49 (via the Omniroute chart). */
   version?: string;
   /** Extra env vars. */
   env?: Record<string, string>;

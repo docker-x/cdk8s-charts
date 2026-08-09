@@ -111,6 +111,8 @@ utils + litellm + plane-ce   <--  litellm-plane
 devpod + gascity + nginx  <--  devspace
 features + gascity + omniroute + hindsight  <--  gascity-stack
 hindsight-litellm  <--  examples/coding-agent-memory
+hindsight-omniroute  <--  examples/hindsight-omniroute
+gascity-hindsight-omniroute  <--  examples/gascity-hindsight-omniroute
 gascity-stack  <--  examples/gascity-stack
 ```
 
@@ -327,15 +329,28 @@ Composes OmniRoute + Hindsight with automatic cross-wiring:
 | Prop | Type | Required | Purpose |
 |------|------|----------|---------|
 | `namespace` | `string` | yes | K8s namespace |
-| `omnirouteAgents` | `AcpAgent[]` | no | ACP agents with optional OS config sharing |
+| `omnirouteFeatures` | `FeatureMap` | no | CLI agent features for OmniRoute (e.g. `{ devin: true }`) |
 | `omniroutePort` | `number` | no | OmniRoute port (default: 20128) |
-| `omnirouteVersion` | `string` | no | OmniRoute npm version |
+| `omnirouteVersion` | `string` | no | OmniRoute npm version (default: `3.8.49` via Omniroute; override with `latest` to track releases) |
 | `omnirouteEnv` | `Record<string, string>` | no | Extra OmniRoute env vars |
 | `omnirouteSecrets` | `Record<string, string>` | no | Secret env vars |
 | `omnirouteValues` | `DeepPartial<OmnirouteValues>` | no | OmniRoute value overrides |
-| `hindsightApi` | `HindsightApiConfig` (minus llm wiring) | yes | Hindsight config (llm.model required) |
+| `hindsightApi` | `HindsightApiConfig` (minus llm wiring) | yes | Hindsight config (`llm.model` required) |
 | `hindsightValues` | `DeepPartial<HindsightValues>` | no | Hindsight value overrides |
 | `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
+
+**Exports (`HindsightWithOmnirouteExports`):**
+
+| Export | Type | Value |
+|--------|------|-------|
+| `omniroute.host` | `string` | OmniRoute Service DNS name |
+| `omniroute.port` | `number` | OmniRoute server port |
+| `omniroute.baseUrl` | `string` | `http://{host}:{port}/v1` |
+| `omniroute.dashboardUrl` | `string` | `http://{host}:{port}` |
+| `hindsight.apiHost` | `string` | Hindsight API Service DNS name |
+| `hindsight.apiPort` | `number` | Hindsight API port |
+| `hindsight.cpHost` | `string` | Hindsight Control Plane Service DNS name |
+| `hindsight.cpPort` | `number` | Hindsight Control Plane port |
 
 ### 3.4.2 GascityHindsightOmniroute Recipe
 
@@ -349,35 +364,50 @@ Hindsight → LLM → Omniroute → Devin (bare, ACP, no plugins)
 ```
 
 Key design points:
-- **Hindsight + OmniRoute are shared services** — not only for Gascity's Devin. Everyone on the PC can use them.
+- **Hindsight + OmniRoute are shared cluster services by default** — not only for Gascity's Devin. Expose them explicitly (e.g. ingress/LoadBalancer) if you want host access.
 - **Devin in OmniRoute is "bare"** (no plugins) — works purely as API gateway via ACP.
 - **Devin in Gascity is full-featured** — has MCP Hindsight (retain/recall/reflect) + LLM via OmniRoute.
+- **Child-chart value overrides** are available via `gascityValues`, `hindsight.values`, and `omniroute.values`.
 
 **Props** (`GascityHindsightOmnirouteProps`):
+
+`GascityHindsightOmnirouteProps` is a deprecated alias for `GascityStackProps`.
 
 | Prop | Type | Required | Purpose |
 |------|------|----------|---------|
 | `namespace` | `string` | yes | K8s namespace |
 | `gascityImageUrl` | `string` | yes | Gascity image URL |
-| `gascityStorageSize` | `string` | no | Gascity PVC size (default: 20Gi) |
-| `gascityResources` | `ResourceValues` | no | Gascity resource requests/limits |
-| `gascityDevinShareOsConfig` | `boolean` | no | Share host OS config for Devin (default: true) |
-| `gascityDevinEnv` | `Record<string, string>` | no | Extra env vars for Devin in Gascity |
-| `omnirouteAgents` | `AcpAgent[]` | no | Extra ACP agents (bare Devin auto-added) |
-| `omniroutePort` | `number` | no | OmniRoute port (default: 20128) |
-| `omnirouteVersion` | `string` | no | OmniRoute npm version |
-| `omnirouteEnv` | `Record<string, string>` | no | Extra OmniRoute env vars |
-| `omnirouteSecrets` | `Record<string, string>` | no | Secret env vars |
-| `hindsightApi` | `HindsightApiConfig` (minus llm wiring) | yes | Hindsight config (llm.model required) |
-| `hindsightValues` | `DeepPartial<HindsightValues>` | no | Hindsight value overrides |
+| `gascityStorageSize` | `string` | no | PVC size (default: 20Gi) |
+| `gascityResources` | `ResourceValues` | no | Resource requests/limits |
+| `gascityValues` | `DeepPartial<GascityValues>` | no | Gascity raw value overrides |
+| `features` | `FeatureMap` | no | CLI agent features (devin, claude, codex, ...) |
+| `hindsight` | `HindsightSubchart` | no | Hindsight config (enabled: true by default; `hindsight.api.llm.model` defaults to `devin-cli-agentic/swe-1-7` if omitted; `hindsight.values` for raw overrides) |
+| `omniroute` | `OmnirouteSubchart` | no | OmniRoute config (enabled: true by default; `omniroute.values` for raw overrides) |
 | `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
+
+**Exports (`GascityHindsightOmnirouteExports`):**
+
+| Export | Type | Value |
+|--------|------|-------|
+| `gascity.dashboardHost` | `string` | Gascity Dashboard Service DNS name (if enabled) |
+| `gascity.dashboardPort` | `number` | Gascity Dashboard port |
+| `gascity.supervisorHost` | `string` | Gascity Supervisor Service DNS name (if enabled) |
+| `gascity.supervisorPort` | `number` | Gascity Supervisor port |
+| `omniroute.host` | `string` | OmniRoute Service DNS name |
+| `omniroute.port` | `number` | OmniRoute server port |
+| `omniroute.baseUrl` | `string` | `http://{host}:{port}/v1` |
+| `omniroute.dashboardUrl` | `string` | `http://{host}:{port}` |
+| `hindsight.apiHost` | `string` | Hindsight API Service DNS name |
+| `hindsight.apiPort` | `number` | Hindsight API port |
+| `hindsight.cpHost` | `string` | Hindsight Control Plane Service DNS name |
+| `hindsight.cpPort` | `number` | Hindsight Control Plane port |
 
 **Auto cross-wiring:**
 1. OmniRoute gets a bare Devin ACP agent (no plugins, API gateway only)
 2. Hindsight LLM → OmniRoute's OpenAI-compatible endpoint
-3. Gascity Devin MCP → Hindsight API (`http://hindsight-api:8888/mcp/`)
-4. Gascity Devin LLM → OmniRoute (`http://omniroute:20128/v1`)
-5. Devin OS config shared in both Gascity and OmniRoute
+3. Gascity Devin MCP → Hindsight API endpoint
+4. Gascity Devin LLM → OmniRoute's OpenAI-compatible baseUrl
+5. Devin OS config shared in both Gascity and OmniRoute by default
 
 ### 3.4.3 GascityStack (Deployable Stack)
 
@@ -413,16 +443,17 @@ features: {
 | `gascityImageUrl` | `string` | yes | Gascity image URL |
 | `gascityStorageSize` | `string` | no | PVC size (default: 20Gi) |
 | `gascityResources` | `ResourceValues` | no | Resource requests/limits |
+| `gascityValues` | `DeepPartial<GascityValues>` | no | Gascity raw value overrides |
 | `features` | `FeatureMap` | no | CLI agent features (devin, claude, codex, ...) |
-| `hindsight` | `HindsightSubchart` | no | Hindsight config (enabled: true by default) |
-| `omniroute` | `OmnirouteSubchart` | no | OmniRoute config (enabled: true by default) |
+| `hindsight` | `HindsightSubchart` | no | Hindsight config (enabled: true by default; `hindsight.api.llm.model` defaults to `devin-cli-agentic/swe-1-7` if omitted; `hindsight.values` for raw overrides) |
+| `omniroute` | `OmnirouteSubchart` | no | OmniRoute config (enabled: true by default; `omniroute.values` for raw overrides) |
 | `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
 
 **Auto cross-wiring (when subcharts enabled):**
 1. OmniRoute gets a bare Devin feature (no plugins, API gateway only)
 2. Hindsight LLM → OmniRoute's OpenAI-compatible endpoint
-3. Gascity Devin MCP → Hindsight API (`http://hindsight-api:8888/mcp/`)
-4. Gascity Devin LLM → OmniRoute (`http://omniroute:20128/v1`)
+3. Gascity Devin MCP → Hindsight API endpoint
+4. Gascity Devin LLM → OmniRoute's OpenAI-compatible baseUrl
 
 ### 3.5 Plane CE Construct
 
@@ -595,7 +626,7 @@ Deploys the Gascity AI agent framework as raw K8s ApiObjects.
 | `replicas` | `number` | no | Replica count (default: `1`) |
 | `withDashboard` | `boolean` | no | Enable dashboard (default: `true`) |
 | `withSupervisor` | `boolean` | no | Enable supervisor (default: `true`) |
-| `supervisorUrl` | `string` | no | Supervisor URL for dashboard (default: `/supervisor`) |
+| `supervisorUrl` | `string` | no | Supervisor URL for dashboard (default: `http://{id}-supervisor:{supervisorPort}`) |
 | `features` | `FeatureMap` | no | CLI agent features (devin, claude, codex, etc.) from `@cdk8s-charts/features` |
 | `env` | `Record<string, string>` | no | Extra env vars |
 | `values` | `DeepPartial<Values>` | no | Raw value overrides |
@@ -694,7 +725,7 @@ The construct exports `webHost`, `webPort`, `apiHost`, `apiPort`, and
 `webhooksHost`/`webhooksPort`. It creates additional `LoadBalancer` Services
 because the upstream chart's internal Services intentionally remain `ClusterIP`.
 
-### 3.10 Mastra Studio Construct
+### 3.13 Mastra Studio Construct
 
 **Package**: `@cdk8s-charts/mastra-studio`
 
@@ -730,7 +761,7 @@ Deploys a standalone [Mastra Studio](https://mastra.ai/docs/studio/overview) UI 
 - Sets the `composed.docker-x/depends-on` pod annotation so Studio starts after the Mastra server is healthy in compose projections.
 - The default startup script installs the pinned `mastra` version only when the CLI is unavailable, then runs `mastra studio` against the configured server. For prebuilt images, set `command`/`args` to invoke the baked CLI directly.
 
-### 3.11 OTEL-LGTM Construct
+### 3.14 OTEL-LGTM Construct
 
 **Package**: `@cdk8s-charts/otel-lgtm`
 
@@ -775,7 +806,7 @@ The construct creates one Deployment, one Service, one PVC, and an optional
 ConfigMap. It is suitable for local development and demos; production
 deployments should use the individual Grafana component charts.
 
-### 3.13 Omniroute Construct
+### 3.15 Omniroute Construct
 
 **Package**: `@cdk8s-charts/omniroute`
 
@@ -800,13 +831,15 @@ container. Agents are declared via the composable `features` system from
 | `port` | `number` | no | OmniRoute server port (default: 20128) |
 | `serviceType` | `ServiceType` | no | K8s Service type (default: ClusterIP) |
 | `image` | `string` | no | Node base image (default: node:22-bookworm-slim) |
-| `omnirouteVersion` | `string` | no | OmniRoute npm version (default: latest) |
+| `omnirouteVersion` | `string` | no | OmniRoute npm version (default: `3.8.49`; override with `latest` to track releases) |
 | `dataSize` | `string` | no | PVC size (default: 1Gi) |
 | `dataMountPath` | `string` | no | Container data path (default: /home/node/.omniroute) |
 | `env` | `Record<string, string>` | no | Extra env vars |
 | `secrets` | `Record<string, string>` | no | Secret env vars (API keys, JWT secrets) |
 | `command` | `string[]` | no | Container command override |
 | `args` | `string[]` | no | Container args override |
+| `podAnnotations` | `Record<string, string>` | no | Pod annotations (default: `{}`) |
+| `podLabels` | `Record<string, string>` | no | Pod labels (default: `{}`) |
 | `resources` | `ResourceRequirements` | no | Container resources |
 | `values` | `DeepPartial<Values>` | no | Raw value overrides |
 
@@ -819,7 +852,7 @@ mounts its OS config/credentials. See [§3.0](#30-features-package) for details.
 | Export | Type | Value |
 |--------|------|-------|
 | `host` | `string` | Service DNS name |
-| `port` | `number` | 20128 |
+| `port` | `number` | `values.port` (default: `20128`) |
 | `baseUrl` | `string` | `http://{id}:{port}/v1` (OpenAI-compatible) |
 | `dashboardUrl` | `string` | `http://{id}:{port}` |
 

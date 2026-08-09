@@ -18,7 +18,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
     versionCommand: 'devin --version',
     configDirs: [{ hostPath: '.config/devin' }, { hostPath: '.local/share/devin' }],
     envVars: ['DEVIN_MODEL', 'DEVIN_PERMISSION_MODE', 'DEVIN_SANDBOX'],
-    acpCompatible: true,
+    acpCompatible: false,
   },
 
   // ───────────────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
     versionCommand: 'gemini --version',
     configDirs: [{ hostPath: '.gemini' }],
     envVars: ['GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_CLOUD_PROJECT'],
-    acpCompatible: true,
+    acpCompatible: false,
   },
 
   // ───────────────────────────────────────────────────────────────────────
