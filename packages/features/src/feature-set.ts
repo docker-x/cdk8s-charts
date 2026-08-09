@@ -35,10 +35,11 @@ export function resolveFeatures(options: FeatureSetOptions): FeatureSetOutput {
   };
 
   for (const [featureId, rawProps] of Object.entries(features)) {
+    if (rawProps === undefined) continue;
     const def = getFeatureDefinition(featureId as FeatureId);
     const props = normalizeProps(rawProps);
 
-    result.featureIds.push(featureId);
+    result.featureIds.push(featureId as FeatureId);
 
     const installCommand = resolveInstallCommand(def, props);
     if (installCommand) {
@@ -48,7 +49,7 @@ export function resolveFeatures(options: FeatureSetOptions): FeatureSetOutput {
     const { volumes, volumeMounts } = resolveFeatureMounts(
       def,
       props,
-      featureId,
+      featureId as FeatureId,
       homeDir,
       hostHome,
     );
@@ -73,12 +74,15 @@ function resolveInstallCommand(def: FeatureDefinition, props: FeatureProps): str
 function resolveFeatureMounts(
   def: FeatureDefinition,
   props: FeatureProps,
-  featureId: string,
+  featureId: FeatureId,
   homeDir: string,
   hostHome: string,
-): { volumes: FeatureVolume[]; volumeMounts: Array<{ name: string; mountPath: string }> } {
+): {
+  volumes: FeatureVolume[];
+  volumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }>;
+} {
   const volumes: FeatureVolume[] = [];
-  const volumeMounts: Array<{ name: string; mountPath: string }> = [];
+  const volumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }> = [];
   const mountConfig = props.mountConfig ?? true;
 
   if (!mountConfig) {
@@ -97,8 +101,13 @@ function resolveFeatureMounts(
         hostPath,
         mountPath: containerPath,
         type: 'DirectoryOrCreate',
+        readOnly: cfg.readOnly ?? true,
       });
-      volumeMounts.push({ name: volName, mountPath: containerPath });
+      volumeMounts.push({
+        name: volName,
+        mountPath: containerPath,
+        readOnly: cfg.readOnly ?? true,
+      });
     }
   }
 

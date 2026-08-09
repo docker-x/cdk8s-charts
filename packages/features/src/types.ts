@@ -3,8 +3,8 @@
  * devcontainer syntax. Each feature knows how to install, configure, and
  * mount OS config for a specific AI CLI agent (Devin, Claude Code, Codex, etc).
  *
- * Features are applied to any container (Gascity, Omniroute, custom) via the
- * `FeatureSet` class, which collects enabled features and produces:
+ * Features are applied to any container (Gascity, Omniroute, custom) via
+ * `resolveFeatures()`, which resolves enabled features into:
  *   - install commands (joined into a startup script)
  *   - hostPath volumes + volumeMounts (for OS config sharing)
  *   - environment variables
@@ -24,28 +24,30 @@ import type { FeatureId } from './agents/registry';
 export interface ConfigDir {
   /** Host path relative to $HOME (e.g. ".config/devin", ".claude"). */
   hostPath: string;
-  /** Container mount path (e.g. "/workspace/.config/devin"). If omitted, uses homeBase + hostPath. */
+  /** Container mount path (e.g. "/workspace/.config/devin"). If omitted, uses homeDir + hostPath. */
   containerPath?: string;
+  /** Mount read-only. Omit to use the chart default (true for credentials, false for runtime state). */
+  readOnly?: boolean;
 }
 
 /** Static metadata for a CLI agent feature. */
 export interface FeatureDefinition {
   /** Feature id (e.g. "devin", "claude", "codex"). */
-  id: string;
+  readonly id: string;
   /** Display name. */
-  name: string;
+  readonly name: string;
   /** Binary name to detect on PATH (e.g. "devin", "claude", "codex"). */
-  binary: string;
+  readonly binary: string;
   /** Install command (e.g. "npm install -g @anthropic-ai/claude-code"). */
-  installCommand: string;
+  readonly installCommand: string;
   /** Version check command (e.g. "devin --version"). */
-  versionCommand?: string;
+  readonly versionCommand?: string;
   /** Config directories to mount from host. */
-  configDirs?: ConfigDir[];
+  readonly configDirs?: readonly ConfigDir[];
   /** Key environment variables (documentation only — actual values set at runtime). */
-  envVars?: string[];
+  readonly envVars?: readonly string[];
   /** Whether this agent supports ACP (Agent Client Protocol) via Omniroute. */
-  acpCompatible?: boolean;
+  readonly acpCompatible?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -71,7 +73,10 @@ export type ShareOsConfig =
 export interface FeatureProps {
   /** Share host OS config/credentials into the container. Default: true. */
   mountConfig?: ShareOsConfig;
-  /** Extra env vars for this agent. */
+  /**
+   * Extra non-sensitive env vars for this agent.
+   * Use `Omniroute.secrets` or `Gascity.secretRefs` for credentials.
+   */
   env?: Record<string, string>;
   /** Override install command (e.g. pin a version). */
   installCommand?: string;
@@ -91,8 +96,10 @@ export interface FeatureVolume {
   name: string;
   hostPath: string;
   mountPath: string;
-  /** Optional hostPath type. Omit to accept any existing path (file or directory). */
-  type?: string;
+  /** Optional hostPath type. Currently only `DirectoryOrCreate` is emitted. */
+  type?: 'DirectoryOrCreate';
+  /** Mount read-only. Charts default this to true for credential dirs. */
+  readOnly?: boolean;
 }
 
 /** Resolved output from a feature set — ready to inject into a container. */
@@ -102,11 +109,11 @@ export interface FeatureSetOutput {
   /** hostPath volumes to add to the pod. */
   volumes: FeatureVolume[];
   /** Volume mounts to add to the container. */
-  volumeMounts: Array<{ name: string; mountPath: string }>;
+  volumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }>;
   /** Environment variables to set. */
   env: Array<{ name: string; value: string }>;
   /** Feature ids that are enabled. */
-  featureIds: string[];
+  featureIds: FeatureId[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

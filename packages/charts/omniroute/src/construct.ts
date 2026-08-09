@@ -55,6 +55,10 @@ function buildVolumes(id: string, featureOutput: FeatureSetOutput): Array<Record
   ];
 }
 
+function sha256(data: string): string {
+  return Buffer.from(data).toString('base64url').slice(0, 16);
+}
+
 /**
  * Deploys OmniRoute as a standalone AI proxy/router.
  *
@@ -72,8 +76,7 @@ export class Omniroute extends HelmConstruct<Values> {
     super(scope, id);
     this.namespace = props.namespace;
 
-    const values = this.computeValues(props);
-    const featureOutput = resolveFeatures({ homeDir: CONTAINER_HOME, features: values.features });
+    const { values, featureOutput } = this.computeValues(props);
 
     this.renderPvc(values);
     this.renderSecret(values);
@@ -88,7 +91,7 @@ export class Omniroute extends HelmConstruct<Values> {
     };
   }
 
-  private computeValues(props: Props): Values {
+  private computeValues(props: Props): { values: Values; featureOutput: FeatureSetOutput } {
     const port = props.port ?? DEFAULT_PORT;
     const computed: Values = {
       image: props.image ?? DEFAULT_IMAGE,
@@ -102,6 +105,7 @@ export class Omniroute extends HelmConstruct<Values> {
       runAsGroup: DEFAULT_RUN_AS,
       env: props.env ?? {},
       secrets: props.secrets ?? {},
+      secretRefs: props.secretRefs ?? {},
       features: props.features ?? {},
       command: props.command,
       args: props.args,
@@ -117,29 +121,41 @@ export class Omniroute extends HelmConstruct<Values> {
     };
 
     const values = deepMerge(computed, props.values ?? {}) as Values;
-    this.applyDefaults(values);
-    return values;
+    this.applyDefaults(values, props);
+
+    const featureOutput = resolveFeatures({ homeDir: CONTAINER_HOME, features: values.features });
+
+    // Apply the default startup script only when neither command nor args are overridden.
+    if (values.command === undefined && values.args === undefined) {
+      values.command = ['/bin/bash', '-c'];
+      values.args = buildDefaultArgs(values, featureOutput);
+    }
+
+    return { values, featureOutput };
   }
 
-  private applyDefaults(values: Values): void {
+  private applyDefaults(values: Values, props: Props): void {
     values.readinessProbe ??= {
       path: '/api/health',
       port: values.port,
       initialDelaySeconds: 15,
       periodSeconds: 10,
     };
-    values.readinessProbe.port ??= values.port;
+    // Recompute the probe port from the merged values.port unless the user explicitly set a probe port.
+    values.readinessProbe.port =
+      (props.values?.readinessProbe?.port as number | undefined) ?? values.port;
 
     values.podAnnotations ??= {};
     values.podLabels ??= {};
     values.env ??= {};
     values.secrets ??= {};
+    values.secretRefs ??= {};
 
-    // Apply the default startup script only when neither command nor args are overridden.
-    if (values.command === undefined && values.args === undefined) {
-      values.command = ['/bin/bash', '-c'];
-      const featureOutput = resolveFeatures({ homeDir: CONTAINER_HOME, features: values.features });
-      values.args = buildDefaultArgs(values, featureOutput);
+    // Trigger a rollout when secret values change.
+    if (Object.keys(values.secrets).length > 0) {
+      values.podAnnotations['omniroute.cdk8s-charts/secrets-checksum'] = sha256(
+        JSON.stringify(values.secrets),
+      );
     }
   }
 
@@ -170,14 +186,28 @@ export class Omniroute extends HelmConstruct<Values> {
   private renderDeployment(values: Values, featureOutput: FeatureSetOutput): void {
     const id = this.node.id;
     const envMap = buildEnvMap(values, featureOutput);
-    const envList = Object.entries(envMap).map(([name, value]) => ({ name, value }));
+    const envList: Array<Record<string, unknown>> = Object.entries(envMap).map(([name, value]) => ({
+      name,
+      value,
+    }));
+
+    for (const [k, v] of Object.entries(values.secretRefs)) {
+      if (!v.name || !v.key) {
+        throw new Error(`secretRefs.${k} requires both name and key`);
+      }
+      envList.push({
+        name: k,
+        valueFrom: { secretKeyRef: { name: v.name, key: v.key } },
+      });
+    }
+
     const volumes = buildVolumes(id, featureOutput);
     const volumeMounts = [
       { name: 'data', mountPath: values.dataMountPath },
       ...featureOutput.volumeMounts.map((m) => ({
         name: m.name,
         mountPath: m.mountPath,
-        readOnly: true,
+        readOnly: m.readOnly ?? true,
       })),
     ];
 

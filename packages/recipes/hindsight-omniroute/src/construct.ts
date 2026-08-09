@@ -87,22 +87,30 @@ export class HindsightWithOmniroute extends Construct {
     const omnirouteId = `${id}-omniroute`;
     const hindsightId = `${id}-hindsight`;
 
-    // Validate OmniRoute features are ACP-compatible
-    if (props.omnirouteFeatures) {
-      for (const featureId of Object.keys(props.omnirouteFeatures) as FeatureId[]) {
-        if (!isAcpCompatible(featureId)) {
-          throw new Error(
-            `Feature '${featureId}' is not ACP-compatible and cannot be used with OmniRoute. ` +
-              `Use one of the ACP-compatible agents.`,
-          );
-        }
+    // Validate the merged OmniRoute features are ACP-compatible (Omniroute deep-merges
+    // `features` and `values.features`, so we validate the same effective map).
+    const effectiveFeatures: FeatureMap = deepMerge(
+      props.omnirouteFeatures ?? {},
+      props.omnirouteValues?.features ?? {},
+    );
+    for (const featureId of Object.keys(effectiveFeatures) as FeatureId[]) {
+      if (!isAcpCompatible(featureId)) {
+        throw new Error(
+          `Feature '${featureId}' is not ACP-compatible and cannot be used with OmniRoute. ` +
+            `Use one of the ACP-compatible agents.`,
+        );
       }
     }
+
+    // Effective OMNIROUTE_API_KEY with values.secrets taking precedence over props.secrets.
+    const omnirouteApiKey =
+      props.omnirouteValues?.secrets?.OMNIROUTE_API_KEY ??
+      props.omnirouteSecrets?.OMNIROUTE_API_KEY;
 
     // Deploy OmniRoute — LLM proxy with ACP agents
     const omniroute = new Omniroute(this, omnirouteId, {
       namespace: props.namespace,
-      features: props.omnirouteFeatures,
+      features: effectiveFeatures,
       port: props.omniroutePort,
       omnirouteVersion: props.omnirouteVersion,
       env: props.omnirouteEnv,
@@ -124,7 +132,7 @@ export class HindsightWithOmniroute extends Construct {
           ...props.hindsightApi.llm,
           provider: props.hindsightApi.llm.provider ?? 'openai',
           base_url: omniroute.exports.baseUrl,
-          api_key: props.omnirouteSecrets?.OMNIROUTE_API_KEY ?? 'omniroute',
+          api_key: omnirouteApiKey ?? 'omniroute',
         },
       },
       values: props.hindsightValues

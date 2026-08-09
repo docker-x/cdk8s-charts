@@ -33,7 +33,7 @@ imports/
 Thumbs.db
 
 # Temporary local scratch files
-tmp/
+/tmp/
 
 # NX
 .nx/

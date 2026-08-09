@@ -44,13 +44,9 @@ const chart = new Chart(app, 'my-chart', { namespace: 'default' });
 
 const omniroute = new Omniroute(chart, 'omniroute', {
   namespace: 'default',
-  agents: [
-    {
-      id: 'devin',
-      installCommand: 'curl -fsSL https://cli.devin.ai/install.sh | bash',
-      shareOsConfig: true, // mounts ~/.config/devin + ~/.local/share/devin
-    },
-  ],
+  features: {
+    devin: { mountConfig: true }, // mounts ~/.config/devin + ~/.local/share/devin
+  },
 });
 
 // Wire Hindsight to OmniRoute as its LLM backend
@@ -63,18 +59,14 @@ app.synth();
 ```typescript
 const omniroute = new Omniroute(chart, 'omniroute', {
   namespace: 'default',
-  agents: [
-    {
-      id: 'claude',
-      installCommand: 'npm install -g @anthropic-ai/claude-code',
-      shareOsConfig: {
-        configPath: '/home/user/.claude',
-        extra: {
-          '/home/user/.claude.json': '/home/node/.claude.json',
-        },
+  features: {
+    claude: {
+      mountConfig: {
+        paths: { '.claude': '/home/user/.claude' },
+        extra: { '/home/user/.claude.json': '/home/node/.claude.json' },
       },
     },
-  ],
+  },
 });
 ```
 
@@ -89,9 +81,10 @@ OmniRoute's ACP (Agent Client Protocol) spawns CLI agents as child processes ins
 | `codex` | `codex` | `npm install -g @openai/codex` |
 | `gemini` | `gemini` | `npm install -g @google/gemini-cli` |
 
-When `shareOsConfig` is `true`, the construct mounts:
-- `~/.config/<id>` → `/home/node/.config/<id>`
-- `~/.local/share/<id>` → `/home/node/.local/share/<id>`
+When a feature's `mountConfig` is `true` (the default), the construct mounts each
+registry-defined config directory for that agent. For example, Devin mounts:
+- `~/.config/devin` → `/home/node/.config/devin`
+- `~/.local/share/devin` → `/home/node/.local/share/devin`
 
 ## Exports
 

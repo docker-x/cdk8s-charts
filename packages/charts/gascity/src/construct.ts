@@ -89,8 +89,7 @@ export class Gascity extends HelmConstruct<Values> {
       replicas: props.replicas ?? 1,
       withDashboard: props.withDashboard ?? true,
       withSupervisor: props.withSupervisor ?? true,
-      supervisorUrl:
-        props.supervisorUrl ?? `http://${id}-supervisor:${props.supervisorPort ?? 8372}`,
+      supervisorUrl: props.supervisorUrl,
       features,
       env: props.env ?? {},
       secretRefs: props.secretRefs ?? {},
@@ -156,9 +155,9 @@ export class Gascity extends HelmConstruct<Values> {
       volumeMounts = [{ name: 'workspace', mountPath: '/workspace' }];
     }
 
-    // Feature volume mounts (hostPath for OS config sharing), mounted read-only for safety
+    // Feature volume mounts (hostPath for OS config sharing)
     for (const m of featureOutput.volumeMounts) {
-      volumeMounts.push({ name: m.name, mountPath: m.mountPath, readOnly: true });
+      volumeMounts.push({ name: m.name, mountPath: m.mountPath, readOnly: m.readOnly ?? true });
     }
 
     new ApiObject(this, 'config', {
@@ -204,17 +203,37 @@ export class Gascity extends HelmConstruct<Values> {
       envList.push({ name: 'SUPERVISOR_URL', value: supervisorUrl });
     }
 
+    // Reserved env names control runtime wiring and must not be overridden.
+    const reservedEnv = new Set([
+      'PATH',
+      'HOME',
+      'SUPERVISOR_PORT',
+      'DASHBOARD_PORT',
+      'SUPERVISOR_URL',
+      'GC_DASHBOARD_SUPERVISOR_URL',
+    ]);
+
     // Extra env vars
     for (const [k, v] of Object.entries(env)) {
-      envList.push({ name: k, value: v });
+      if (!reservedEnv.has(k)) {
+        envList.push({ name: k, value: v });
+      }
     }
     // Feature env vars
     for (const e of featureOutput.env) {
-      envList.push({ name: e.name, value: e.value });
+      if (!reservedEnv.has(e.name)) {
+        envList.push({ name: e.name, value: e.value });
+      }
     }
 
     // Secret references
     for (const [k, v] of Object.entries(secretRefs)) {
+      if (reservedEnv.has(k)) {
+        throw new Error(`secretRefs.${k} is a reserved environment name`);
+      }
+      if (!v.name || !v.key) {
+        throw new Error(`secretRefs.${k} requires both name and key`);
+      }
       envList.push({
         name: k,
         valueFrom: { secretKeyRef: { name: v.name, key: v.key } },
@@ -229,19 +248,19 @@ export class Gascity extends HelmConstruct<Values> {
       ports.push({ containerPort: supervisorPort, name: 'supervisor' });
     }
 
-    const startupProbePort = withDashboard
-      ? dashboardPort
-      : withSupervisor
-        ? supervisorPort
+    const startupProbePort = withSupervisor
+      ? supervisorPort
+      : withDashboard
+        ? dashboardPort
         : undefined;
     const startupProbe = startupProbePort
       ? {
           startupProbe: {
             httpGet: { path: '/', port: startupProbePort },
-            initialDelaySeconds: 10,
+            initialDelaySeconds: 30,
             periodSeconds: 10,
             timeoutSeconds: 5,
-            failureThreshold: 30,
+            failureThreshold: 60,
           },
         }
       : {};

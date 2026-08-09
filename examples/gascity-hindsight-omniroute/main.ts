@@ -10,6 +10,7 @@
  *
  * Prerequisites:
  *   - A pullable Gascity image set via GASCITY_IMAGE_URL
+ *   - Devin CLI installed and authenticated on the host (config is shared into the pod)
  *   - npx cdk8s synth   (generates K8s manifests in dist/)
  *   - composed add ./dist
  *   - composed up

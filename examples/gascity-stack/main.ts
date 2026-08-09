@@ -23,6 +23,11 @@ import { GascityStack } from '@cdk8s-charts/gascity-stack';
 import { App, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
 
+const gascityImageUrl = process.env.GASCITY_IMAGE_URL ?? '';
+if (!gascityImageUrl) {
+  throw new Error('Set GASCITY_IMAGE_URL to a pullable Gascity image before synthesizing.');
+}
+
 class GascityStackExample extends Chart {
   public readonly stack: GascityStack;
 
@@ -33,7 +38,7 @@ class GascityStackExample extends Chart {
       namespace: 'default',
 
       // Gascity — dev environment (set GASCITY_IMAGE_URL to a pullable image)
-      gascityImageUrl: process.env.GASCITY_IMAGE_URL ?? 'ghcr.io/gascity/gascity:latest',
+      gascityImageUrl,
 
       // CLI agent features — composable, any combination
       features: {

@@ -152,7 +152,7 @@ const features: FeatureMap = {
   devin: true,                              // defaults: mountConfig=true
   claude: { mountConfig: true },             // explicit
   codex: { mountConfig: false, skipInstall: true }, // binary already in image
-  gemini: { env: { GEMINI_API_KEY: '...' } },
+  gemini: { mountConfig: false },            // disable OS config sharing
 };
 
 const output = resolveFeatures({ homeDir: '/workspace', features });
@@ -294,7 +294,9 @@ Use `@cdk8s-charts/litellm` for the legacy monolithic `litellm-helm` chart.
 
 Keys matching `/_API_KEY$|_PASSWORD$|_SECRET$|_SECRET_ACCESS_KEY$|_ACCOUNT_KEY$|_AUTH_TOKEN$/` are placed in `api.secrets`; all others go to `api.env`.
 
-### 3.4 HindsightWithLitellm Recipe
+### 3.4 Recipes
+
+#### 3.4.1 HindsightWithLitellm Recipe
 
 **Package**: `@cdk8s-charts/hindsight-litellm`
 
@@ -316,7 +318,7 @@ Composes Litellm + Hindsight with automatic cross-wiring:
 | `hindsightLlmKey` | `string` | yes | Virtual key for Hindsight |
 | `serviceType` | `string` | no | K8s Service type (default: ClusterIP) |
 
-### 3.4.1 HindsightWithOmniroute Recipe
+#### 3.4.2 HindsightWithOmniroute Recipe
 
 **Package**: `@cdk8s-charts/hindsight-omniroute`
 
@@ -343,6 +345,8 @@ Composes OmniRoute + Hindsight with automatic cross-wiring:
 
 **Exports (`HindsightWithOmnirouteExports`):**
 
+*`omniroute.*` exports are only present when OmniRoute is enabled; `hindsight.*` exports are only present when Hindsight is enabled.*
+
 | Export | Type | Value |
 |--------|------|-------|
 | `omniroute.host` | `string` | OmniRoute Service DNS name |
@@ -354,7 +358,7 @@ Composes OmniRoute + Hindsight with automatic cross-wiring:
 | `hindsight.cpHost` | `string` | Hindsight Control Plane Service DNS name |
 | `hindsight.cpPort` | `number` | Hindsight Control Plane port |
 
-### 3.4.2 GascityHindsightOmniroute Recipe
+#### 3.4.3 GascityHindsightOmniroute Recipe
 
 **Package**: `@cdk8s-charts/gascity-hindsight-omniroute`
 
@@ -389,6 +393,8 @@ Key design points:
 
 **Exports (`GascityHindsightOmnirouteExports`):**
 
+*`omniroute.*` and `hindsight.*` exports are only present when those subcharts are enabled.*
+
 | Export | Type | Value |
 |--------|------|-------|
 | `gascity.dashboardHost` | `string` | Gascity Dashboard Service DNS name (if enabled) |
@@ -411,7 +417,7 @@ Key design points:
 4. Gascity Devin LLM → OmniRoute's OpenAI-compatible baseUrl
 5. Devin OS config shared in both Gascity and OmniRoute by default
 
-### 3.4.3 GascityStack (Deployable Stack)
+#### 3.4.4 GascityStack (Deployable Stack)
 
 **Package**: `@cdk8s-charts/gascity-stack`
 
@@ -868,7 +874,7 @@ mounts its OS config/credentials. See [§3.0](#30-features-package) for details.
 3. `Deployment` (`{id}`) — installs omniroute + agents at startup, runs `omniroute serve`
 4. `Service` (`{id}`) — exposes the server port
 
-**Agent OS config sharing**: when `shareOsConfig` is enabled, host config
+**Agent OS config sharing**: when a feature's `mountConfig` is enabled, host config
 directories are mounted as `hostPath` volumes into the container so ACP-spawned
 CLI agents can authenticate using existing host credentials.
 

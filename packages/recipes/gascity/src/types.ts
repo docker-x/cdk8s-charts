@@ -13,9 +13,13 @@
  */
 
 import type { FeatureMap } from '@cdk8s-charts/features';
-import type { ResourceValues } from '@cdk8s-charts/gascity';
-import type { HindsightApiConfig, HindsightValues } from '@cdk8s-charts/hindsight';
-import type { OmnirouteValues } from '@cdk8s-charts/omniroute';
+import type { Exports as GascityExports, ResourceValues } from '@cdk8s-charts/gascity';
+import type {
+  HindsightApiConfig,
+  HindsightExports,
+  HindsightValues,
+} from '@cdk8s-charts/hindsight';
+import type { OmnirouteExports, OmnirouteValues } from '@cdk8s-charts/omniroute';
 import type { DeepPartial } from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
@@ -87,22 +91,7 @@ export interface GascityStackProps {
 // ---------------------------------------------------------------------------
 
 export interface GascityStackExports {
-  gascity: {
-    dashboardHost?: string;
-    dashboardPort: number;
-    supervisorHost?: string;
-    supervisorPort: number;
-  };
-  omniroute?: {
-    host: string;
-    port: number;
-    baseUrl: string;
-    dashboardUrl: string;
-  };
-  hindsight?: {
-    apiHost: string;
-    apiPort: number;
-    cpHost: string;
-    cpPort: number;
-  };
+  gascity: GascityExports;
+  omniroute?: OmnirouteExports;
+  hindsight?: HindsightExports;
 }

@@ -16,9 +16,12 @@ export const FEATURE_REGISTRY = {
     binary: 'devin',
     installCommand: 'curl -fsSL https://cli.devin.ai/install.sh | bash',
     versionCommand: 'devin --version',
-    configDirs: [{ hostPath: '.config/devin' }, { hostPath: '.local/share/devin' }],
+    configDirs: [
+      { hostPath: '.config/devin', readOnly: true },
+      { hostPath: '.local/share/devin', readOnly: false },
+    ],
     envVars: ['DEVIN_MODEL', 'DEVIN_PERMISSION_MODE', 'DEVIN_SANDBOX'],
-    acpCompatible: false,
+    acpCompatible: true,
   },
 
   // ───────────────────────────────────────────────────────────────────────
@@ -72,7 +75,10 @@ export const FEATURE_REGISTRY = {
     binary: 'opencode',
     installCommand: 'curl -fsSL https://opencode.ai/install | bash',
     versionCommand: 'opencode --version',
-    configDirs: [{ hostPath: '.config/opencode' }, { hostPath: '.local/share/opencode' }],
+    configDirs: [
+      { hostPath: '.config/opencode', readOnly: true },
+      { hostPath: '.local/share/opencode', readOnly: false },
+    ],
     envVars: ['OPENCODE_CONFIG', 'OPENCODE_CONFIG_DIR'],
     acpCompatible: true,
   },
