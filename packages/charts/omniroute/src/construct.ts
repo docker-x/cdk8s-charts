@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { buildStartupScript, type FeatureSetOutput, resolveFeatures } from '@cdk8s-charts/features';
 import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
@@ -103,6 +104,7 @@ export class Omniroute extends HelmConstruct<Values> {
       dataMountPath: props.dataMountPath ?? DEFAULT_DATA_MOUNT_PATH,
       runAsUser: DEFAULT_RUN_AS,
       runAsGroup: DEFAULT_RUN_AS,
+      hostHome: props.hostHome ?? homedir(),
       env: props.env ?? {},
       secrets: props.secrets ?? {},
       secretRefs: props.secretRefs ?? {},
@@ -123,7 +125,21 @@ export class Omniroute extends HelmConstruct<Values> {
     const values = deepMerge(computed, props.values ?? {}) as Values;
     this.applyDefaults(values, props);
 
-    const featureOutput = resolveFeatures({ homeDir: CONTAINER_HOME, features: values.features });
+    const featureOutput = resolveFeatures({
+      homeDir: CONTAINER_HOME,
+      hostHome: values.hostHome,
+      features: values.features,
+    });
+
+    // Aider and Amazon Q need pip/unzip, which the default node image may not include.
+    const imageToolsRequired = new Set(['aider', 'amazon-q']);
+    const missingTools = featureOutput.featureIds.filter((id) => imageToolsRequired.has(id));
+    if (missingTools.length > 0 && values.image === DEFAULT_IMAGE) {
+      throw new Error(
+        `Features ${missingTools.join(', ')} require pip/unzip in the container image. ` +
+          'Provide a custom image or override the feature installCommand.',
+      );
+    }
 
     // Apply the default startup script only when neither command nor args are overridden.
     if (values.command === undefined && values.args === undefined) {

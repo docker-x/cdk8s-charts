@@ -155,10 +155,14 @@ const features: FeatureMap = {
   gemini: { mountConfig: false },            // disable OS config sharing
 };
 
-const output = resolveFeatures({ homeDir: '/workspace', features });
+const output = resolveFeatures({
+  homeDir: '/workspace',
+  hostHome: '/home/user', // node-visible host path used to resolve relative config dirs
+  features,
+});
 // output.installCommands → ['curl ... devin', 'npm install -g @anthropic-ai/claude-code', ...]
-// output.volumes       → [{ name: 'devin-cfg-0', hostPath: '/home/.../.config/devin', mountPath: '/workspace/.config/devin', type: 'DirectoryOrCreate' }, ...]
-// output.volumeMounts  → [{ name: 'devin-cfg-0', mountPath: '/workspace/.config/devin' }, ...]
+// output.volumes       → [{ name: 'devin-cfg-0', hostPath: '/home/user/.config/devin', mountPath: '/workspace/.config/devin', type: 'DirectoryOrCreate', readOnly: true }, ...]
+// output.volumeMounts  → [{ name: 'devin-cfg-0', mountPath: '/workspace/.config/devin', readOnly: true }, ...]
 // output.env           → [{ name: 'GEMINI_API_KEY', value: '...' }]
 ```
 
@@ -172,6 +176,14 @@ const output = resolveFeatures({ homeDir: '/workspace', features });
 | `env` | `Record<string, string>` | — | Extra env vars for this agent |
 | `installCommand` | `string` | from registry | Override install command |
 | `skipInstall` | `boolean` | `false` | Skip installation (binary in image) |
+
+**`FeatureSetOptions`:**
+
+| Field | Type | Required | Purpose |
+|-------|------|----------|---------|
+| `homeDir` | `string` | yes | Container home directory (e.g. `/workspace`, `/home/node`) |
+| `hostHome` | `string` | yes | Node-visible host home directory used to resolve relative config host paths. Charts default this to the synthesizer's `$HOME`; override for CI/production. |
+| `features` | `FeatureMap` | yes | Enabled features and per-feature overrides |
 
 ### 3.1 Base class: HelmConstruct
 

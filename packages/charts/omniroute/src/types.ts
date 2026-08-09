@@ -36,6 +36,11 @@ export interface Values {
   runAsGroup: number;
   /** Extra env vars injected into the OmniRoute container. */
   env: Record<string, string>;
+  /**
+   * Node-visible host home directory used to resolve relative OS config host paths.
+   * Defaults to the synthesizer's `$HOME` for local development; override for CI/production.
+   */
+  hostHome: string;
   /** Plaintext secret env vars (written to `stringData` of a K8s Secret and injected via `envFrom`). */
   secrets: Record<string, string>;
   /** Kubernetes Secret references for env vars. */
@@ -79,6 +84,11 @@ export interface Props {
   dataMountPath?: string;
   /** Extra env vars. */
   env?: Record<string, string>;
+  /**
+   * Node-visible host home directory used to resolve relative OS config host paths.
+   * Defaults to the synthesizer's `$HOME` for local development; override for CI/production.
+   */
+  hostHome?: string;
   /** Plaintext secret env vars (written to a K8s Secret and injected via `envFrom`). */
   secrets?: Record<string, string>;
   /** Kubernetes Secret references for env vars. */

@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { type FeatureMap, resolveFeatures } from '@cdk8s-charts/features';
 import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
@@ -67,12 +68,15 @@ export class Gascity extends HelmConstruct<Values> {
   constructor(scope: Construct, id: string, props: Props) {
     super(scope, id);
 
+    const hostHome = props.values?.hostHome ?? props.hostHome ?? homedir();
+
     // Merge raw value overrides (e.g. values.features) before resolving features
     const features: FeatureMap = deepMerge(props.features ?? {}, props.values?.features ?? {});
 
     // Resolve features into install commands, volumes, mounts, env
     const featureOutput = resolveFeatures({
       homeDir: CONTAINER_HOME,
+      hostHome,
       features,
     });
 
@@ -90,6 +94,7 @@ export class Gascity extends HelmConstruct<Values> {
       withDashboard: props.withDashboard ?? true,
       withSupervisor: props.withSupervisor ?? true,
       supervisorUrl: props.supervisorUrl,
+      hostHome,
       features,
       env: props.env ?? {},
       secretRefs: props.secretRefs ?? {},

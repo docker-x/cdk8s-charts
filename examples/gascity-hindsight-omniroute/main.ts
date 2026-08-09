@@ -16,7 +16,7 @@
  *   - composed up
  */
 
-import { GascityHindsightOmniroute } from '@cdk8s-charts/gascity-hindsight-omniroute';
+import { GascityStack } from '@cdk8s-charts/gascity-stack';
 import { App, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
 
@@ -26,12 +26,12 @@ if (!gascityImageUrl) {
 }
 
 class GascityHindsightOmnirouteStack extends Chart {
-  public readonly stack: GascityHindsightOmniroute;
+  public readonly stack: GascityStack;
 
   constructor(scope: Construct, id: string) {
     super(scope, id, { namespace: 'default' });
 
-    this.stack = new GascityHindsightOmniroute(this, 'stack', {
+    this.stack = new GascityStack(this, 'stack', {
       namespace: 'default',
       // Gascity — dev environment (set GASCITY_IMAGE_URL to a pullable image)
       gascityImageUrl,

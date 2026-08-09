@@ -1,9 +1,8 @@
-import { homedir } from 'node:os';
 import { join, posix } from 'node:path';
-import type { FeatureId } from './agents/registry';
 import { getFeatureDefinition } from './agents/registry';
 import type {
   FeatureDefinition,
+  FeatureId,
   FeatureProps,
   FeatureSetOptions,
   FeatureSetOutput,
@@ -23,8 +22,7 @@ import type {
  *   // output.installCommands, output.volumes, output.volumeMounts, output.env
  */
 export function resolveFeatures(options: FeatureSetOptions): FeatureSetOutput {
-  const { homeDir, features } = options;
-  const hostHome = homedir();
+  const { homeDir, hostHome, features } = options;
 
   const result: FeatureSetOutput = {
     installCommands: [],

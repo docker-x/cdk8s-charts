@@ -1,4 +1,4 @@
-import type { FeatureDefinition } from '../types';
+import type { FeatureDefinition, FeatureId } from '../types';
 
 /**
  * Registry of all supported CLI agent features.
@@ -210,10 +210,7 @@ export const FEATURE_REGISTRY = {
     envVars: ['OPENCLAW_HOME', 'OPENCLAW_STATE_DIR', 'OPENCLAW_PROFILE'],
     acpCompatible: true,
   },
-} as const satisfies Record<string, FeatureDefinition>;
-
-/** Union of all supported feature ids. */
-export type FeatureId = keyof typeof FEATURE_REGISTRY;
+} as const satisfies Record<FeatureId, FeatureDefinition>;
 
 /** Get a feature definition by id. Throws if not found. */
 export function getFeatureDefinition(id: FeatureId): FeatureDefinition {

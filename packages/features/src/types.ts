@@ -12,9 +12,22 @@
 
 export type { DeepPartial } from '@cdk8s-charts/utils';
 
-export type { FeatureId } from './agents/registry';
-
-import type { FeatureId } from './agents/registry';
+/** Union of all supported feature ids. */
+export type FeatureId =
+  | 'devin'
+  | 'claude'
+  | 'codex'
+  | 'cursor'
+  | 'opencode'
+  | 'kilo'
+  | 'gemini'
+  | 'aider'
+  | 'goose'
+  | 'qwen'
+  | 'amazon-q'
+  | 'cline'
+  | 'forge'
+  | 'openclaw';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Feature definitions (static metadata per agent)
@@ -33,7 +46,7 @@ export interface ConfigDir {
 /** Static metadata for a CLI agent feature. */
 export interface FeatureDefinition {
   /** Feature id (e.g. "devin", "claude", "codex"). */
-  readonly id: string;
+  readonly id: FeatureId;
   /** Display name. */
   readonly name: string;
   /** Binary name to detect on PATH (e.g. "devin", "claude", "codex"). */
@@ -124,6 +137,11 @@ export interface FeatureSetOutput {
 export interface FeatureSetOptions {
   /** Container home directory (e.g. "/workspace" for Gascity, "/home/node" for Omniroute). */
   homeDir: string;
+  /**
+   * Node-visible host home directory used to resolve relative OS config host paths.
+   * Must match the host path where the agent credentials live (e.g. "/home/user").
+   */
+  hostHome: string;
   /** Feature map — which features to enable and their props. */
   features: FeatureMap;
 }

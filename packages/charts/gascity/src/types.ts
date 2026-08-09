@@ -40,6 +40,11 @@ export interface Values {
   supervisorUrl?: string;
   /** CLI agent features to enable (devin, claude, codex, etc.). */
   features?: FeatureMap;
+  /**
+   * Node-visible host home directory used to resolve relative OS config host paths.
+   * Defaults to the synthesizer's `$HOME` for local development; override for CI/production.
+   */
+  hostHome?: string;
   /** Extra env vars injected into the Gascity container. */
   env?: Record<string, string>;
   /** Kubernetes Secret references for env vars. */
@@ -76,6 +81,11 @@ export interface Props {
   supervisorUrl?: string;
   /** CLI agent features to enable (devin, claude, codex, etc.). */
   features?: FeatureMap;
+  /**
+   * Node-visible host home directory used to resolve relative OS config host paths.
+   * Defaults to the synthesizer's `$HOME` for local development; override for CI/production.
+   */
+  hostHome?: string;
   /** Extra env vars. */
   env?: Record<string, string>;
   /** Kubernetes Secret references for env vars. */
