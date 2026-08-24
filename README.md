@@ -30,6 +30,7 @@ Fully typed [cdk8s](https://cdk8s.io/) constructs for popular Helm charts and ra
 | [`@cdk8s-charts/nginx`](packages/charts/nginx/) | Nginx proxy/sidecar |
 | [`@cdk8s-charts/otel-lgtm`](packages/charts/otel-lgtm/) | Grafana OTel LGTM stack (dev/demo) |
 | [`@cdk8s-charts/plane-ce`](packages/charts/plane-ce/) | Plane CE project management |
+| [`@cdk8s-charts/pubsubplus`](packages/charts/pubsubplus/) | Solace PubSub+ Software Event Broker |
 | [`@cdk8s-charts/qdrant`](packages/charts/qdrant/) | Qdrant vector database |
 | [`@cdk8s-charts/redis`](packages/charts/redis/) | Bitnami Redis |
 | [`@cdk8s-charts/temporal`](packages/charts/temporal/) | Temporal workflow platform |
