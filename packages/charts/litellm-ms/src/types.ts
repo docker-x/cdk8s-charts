@@ -166,6 +166,7 @@ export interface LitellmMsComponentConfig {
   resources?: ResourceRequirements;
   livenessProbe?: LitellmMsProbeConfig;
   readinessProbe?: LitellmMsProbeConfig;
+  startupProbe?: LitellmMsProbeConfig;
   hpa?: AutoscalingConfig;
   pdb?: PodDisruptionBudgetConfig;
   podAnnotations?: Record<string, string>;

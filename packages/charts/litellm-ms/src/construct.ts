@@ -23,7 +23,7 @@ import type {
 } from './types';
 
 const DEFAULT_CHART = 'oci://ghcr.io/berriai/litellm/chart/litellm';
-const DEFAULT_VERSION = '1.95.0';
+const DEFAULT_VERSION = '1.98.0';
 const DEFAULT_POSTGRES_CHART = 'oci://registry-1.docker.io/bitnamicharts/postgresql';
 const CURL_IMAGE = 'curlimages/curl:8.12.1';
 

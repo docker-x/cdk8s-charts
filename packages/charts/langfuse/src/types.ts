@@ -82,9 +82,27 @@ export interface LangfusePostgresqlValues {
     password?: string;
     database?: string;
     existingSecret?: string;
+    secretKeys?: { userPasswordKey?: string; adminPasswordKey?: string };
   };
-  architecture?: string;
-  image?: { repository?: string };
+  image?: { repository?: string; tag?: string; pullPolicy?: string };
+  replicaCount?: number;
+  service?: { type?: string; port?: number };
+  storage?: {
+    requestedSize?: string;
+    className?: string;
+    persistentVolumeClaimRetentionPolicy?: { whenDeleted?: string; whenScaled?: string };
+  };
+  settings?: { superuserPassword?: unknown; existingSecret?: string };
+  userDatabase?: { name?: unknown; user?: unknown; password?: unknown; existingSecret?: string };
+  resources?: ResourceRequirements;
+  nodeSelector?: Record<string, string>;
+  tolerations?: unknown[];
+  affinity?: unknown;
+  podSecurityContext?: Record<string, unknown>;
+  securityContext?: Record<string, unknown>;
+  livenessProbe?: Record<string, unknown>;
+  readinessProbe?: Record<string, unknown>;
+  startupProbe?: Record<string, unknown>;
 }
 
 export interface LangfuseClickhouseValues {
@@ -92,16 +110,35 @@ export interface LangfuseClickhouseValues {
   host?: string;
   httpPort?: number;
   nativePort?: number;
-  auth?: { username?: string; password?: string; existingSecret?: string };
-  shards?: number;
-  replicaCount?: number;
-  resources?: ResourceRequirements;
-  resourcesPreset?: string;
-  image?: { repository?: string };
-  zookeeper?: {
-    replicaCount?: number;
+  database?: string;
+  auth?: {
+    username?: string;
+    password?: string;
+    existingSecret?: string;
+    existingSecretKey?: string;
+  };
+  crdCheck?: boolean;
+  cluster?: {
+    enabled?: boolean;
+    replicas?: number;
+    image?: { repository?: string; tag?: string };
+    storage?: { size?: string; className?: string; accessModes?: string[] };
     resources?: ResourceRequirements;
-    image?: { repository?: string };
+    nodeSelector?: Record<string, string>;
+    tolerations?: unknown[];
+    affinity?: unknown;
+    settings?: Record<string, unknown>;
+    profileSettings?: Record<string, unknown>;
+  };
+  keeper?: {
+    enabled?: boolean;
+    replicas?: number;
+    image?: { repository?: string; tag?: string };
+    storage?: { size?: string; className?: string; accessModes?: string[] };
+    resources?: ResourceRequirements;
+    nodeSelector?: Record<string, string>;
+    tolerations?: unknown[];
+    affinity?: unknown;
   };
 }
 
@@ -110,12 +147,50 @@ export interface LangfuseRedisValues {
   host?: string;
   port?: number;
   auth?: {
+    enabled?: boolean;
     username?: string;
     password?: string;
     existingSecret?: string;
+    existingSecretPasswordKey?: string;
+    database?: number;
+    usersExistingSecret?: string;
+    aclUsers?: Record<string, { permissions?: string }>;
+    aclConfig?: string;
   };
-  image?: { repository?: string };
-  architecture?: string;
+  tls?: {
+    enabled?: boolean;
+    caPath?: string;
+    certPath?: string;
+    keyPath?: string;
+  };
+  cluster?: { enabled?: boolean; nodes?: string[] };
+  sentinel?: {
+    enabled?: boolean;
+    masterSet?: string;
+    nodes?: string[];
+    password?: string;
+    existingSecret?: string;
+    existingSecretPasswordKey?: string;
+  };
+  image?: { registry?: string; repository?: string; tag?: string; pullPolicy?: string };
+  service?: { type?: string; port?: number };
+  replica?: {
+    enabled?: boolean;
+    replicas?: number;
+    persistence?: { size?: string; storageClass?: string; accessModes?: string[] };
+    service?: { enabled?: boolean; type?: string; port?: number };
+  };
+  dataStorage?: {
+    enabled?: boolean;
+    requestedSize?: string;
+    className?: string;
+    accessModes?: string[];
+    keepPvc?: boolean;
+  };
+  valkeyConfig?: string;
+  resources?: ResourceRequirements;
+  podSecurityContext?: Record<string, unknown>;
+  metrics?: { enabled?: boolean };
 }
 
 export interface LangfuseS3Values {
@@ -131,10 +206,30 @@ export interface LangfuseS3Values {
     rootUser?: string;
     rootPassword?: string;
     existingSecret?: string;
+    rootUserSecretKey?: string;
+    rootPasswordSecretKey?: string;
   };
-  resources?: ResourceRequirements;
-  image?: { repository?: string };
   defaultBuckets?: string;
+  allInOne?: {
+    enabled?: boolean;
+    image?: { registry?: string; repository?: string; tag?: string; pullPolicy?: string };
+    s3?: {
+      enabled?: boolean;
+      port?: number;
+      enableAuth?: boolean;
+      existingConfigSecret?: string;
+      createBuckets?: Array<{ name: string }>;
+      createBucketsHook?: { resources?: ResourceRequirements };
+    };
+    data?: {
+      type?: string;
+      size?: string;
+      storageClass?: string;
+      accessModes?: string[];
+    };
+    service?: { type?: string; internalTrafficPolicy?: string };
+    resources?: ResourceRequirements;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +265,7 @@ export interface LangfuseProps {
   chart?: string;
   /** Helm chart repository URL (default: https://langfuse.github.io/langfuse-k8s). */
   repo?: string;
-  /** Helm chart version pin (default: 1.5.41). */
+  /** Helm chart version pin (default: 2.0.1). */
   version?: string;
   /** Raw Helm value overrides (deep-merged into computed values). */
   values?: DeepPartial<LangfuseValues>;

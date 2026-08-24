@@ -4,7 +4,7 @@ import type { QdrantExports, QdrantProps, QdrantValues } from './types';
 
 const CHART = 'qdrant';
 const CHART_REPO = 'https://qdrant.github.io/qdrant-helm';
-const DEFAULT_VERSION = '1.18.2';
+const DEFAULT_VERSION = '1.19.0';
 const HTTP_PORT = 6333;
 const GRPC_PORT = 6334;
 
