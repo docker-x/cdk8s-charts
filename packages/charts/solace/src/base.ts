@@ -1,22 +1,24 @@
 import { HelmConstruct } from '@cdk8s-charts/utils';
 import type { Construct } from 'constructs';
 import type {
-  PubsubPlusExports,
-  PubsubPlusInsightsProps,
-  PubsubPlusProps,
-  PubsubPlusServicePort,
-  PubsubPlusStorageProps,
-  PubsubPlusTlsProps,
-  PubsubPlusValues,
+  SolaceExports,
+  SolaceInsightsProps,
+  SolaceProps,
+  SolaceServicePort,
+  SolaceStorageProps,
+  SolaceTlsProps,
+  SolaceValues,
 } from './types';
 
-const CHART_NAME = 'pubsubplus';
-const CHART_REPO =
+/** Upstream Helm chart repository (shared by all three Solace charts). */
+export const SOLACE_CHART_REPO =
   'https://solaceproducts.github.io/pubsubplus-kubernetes-helm-quickstart/helm-charts/';
-const DEFAULT_VERSION = '3.10.0';
+
+/** Default chart version pin (shared by all three Solace charts). */
+export const SOLACE_DEFAULT_VERSION = '3.10.0';
 
 /** Default service ports exposed by the Solace PubSub+ broker container. */
-const DEFAULT_SERVICE_PORTS: PubsubPlusServicePort[] = [
+const DEFAULT_SERVICE_PORTS: SolaceServicePort[] = [
   { servicePort: 2222, containerPort: 2222, protocol: 'TCP', name: 'tcp-ssh' },
   { servicePort: 8080, containerPort: 8080, protocol: 'TCP', name: 'tcp-semp' },
   { servicePort: 1943, containerPort: 1943, protocol: 'TCP', name: 'tls-semp' },
@@ -38,7 +40,7 @@ const DEFAULT_SERVICE_PORTS: PubsubPlusServicePort[] = [
 
 /** Look up a service port by name from the merged values, falling back to a default. */
 function portByName(
-  ports: PubsubPlusServicePort[] | undefined,
+  ports: SolaceServicePort[] | undefined,
   name: string,
   fallback: number,
 ): number {
@@ -47,9 +49,9 @@ function portByName(
 }
 
 /** Map convenience TLS props into the chart's `tls.*` value section. */
-function buildTlsValues(tls: PubsubPlusTlsProps | undefined): PubsubPlusValues['tls'] {
+function buildTlsValues(tls: SolaceTlsProps | undefined): SolaceValues['tls'] {
   if (!tls) return undefined;
-  const out: NonNullable<PubsubPlusValues['tls']> = { enabled: tls.enabled ?? false };
+  const out: NonNullable<SolaceValues['tls']> = { enabled: tls.enabled ?? false };
   if (tls.serverCertificatesSecret !== undefined)
     out.serverCertificatesSecret = tls.serverCertificatesSecret;
   if (tls.certFilename !== undefined) out.certFilename = tls.certFilename;
@@ -59,12 +61,13 @@ function buildTlsValues(tls: PubsubPlusTlsProps | undefined): PubsubPlusValues['
 
 /** Map convenience storage props into the chart's `storage.*` value section. */
 function buildStorageValues(
-  storage: PubsubPlusStorageProps | undefined,
-): PubsubPlusValues['storage'] {
+  storage: SolaceStorageProps | undefined,
+  defaultSize: string,
+): SolaceValues['storage'] {
   if (!storage) return undefined;
-  const out: NonNullable<PubsubPlusValues['storage']> = {
+  const out: NonNullable<SolaceValues['storage']> = {
     persistent: storage.persistent ?? true,
-    size: storage.size ?? '30Gi',
+    size: storage.size ?? defaultSize,
   };
   if (storage.useStorageClass !== undefined) out.useStorageClass = storage.useStorageClass;
   if (storage.slow !== undefined) out.slow = storage.slow;
@@ -75,9 +78,7 @@ function buildStorageValues(
 }
 
 /** Map convenience Insights props into the chart's `insights.*` value section. */
-function buildInsightsValues(
-  insights: PubsubPlusInsightsProps | undefined,
-): PubsubPlusValues['insights'] {
+function buildInsightsValues(insights: SolaceInsightsProps | undefined): SolaceValues['insights'] {
   if (!insights) return undefined;
   const env: Record<string, string> = {};
   if (insights.apiKey !== undefined) env.INSIGHTS_AGENT_API_KEY = insights.apiKey;
@@ -87,7 +88,7 @@ function buildInsightsValues(
     for (const [k, v] of Object.entries(insights.extraEnvironmentVariables)) env[k] = v;
   }
 
-  const out: NonNullable<PubsubPlusValues['insights']> = {
+  const out: NonNullable<SolaceValues['insights']> = {
     enabled: insights.enabled ?? false,
   };
   if (Object.keys(env).length > 0) out.environmentVariables = env;
@@ -97,17 +98,35 @@ function buildInsightsValues(
   return out;
 }
 
-export class PubsubPlus extends HelmConstruct<PubsubPlusValues> {
-  public readonly exports: PubsubPlusExports;
+/** Per-chart defaults passed to the shared base. */
+export interface SolaceChartDefaults {
+  /** Helm chart name (e.g. "pubsubplus", "pubsubplus-dev", "pubsubplus-ha"). */
+  chartName: string;
+  /** Default `solace.redundancy`. */
+  redundancy: boolean;
+  /** Default `solace.size`. */
+  size: 'dev' | 'prod1k' | 'prod10k' | 'prod100k';
+  /** Default `storage.size`. */
+  storageSize: string;
+}
 
-  constructor(scope: Construct, id: string, props: PubsubPlusProps) {
+/**
+ * Shared base for the three Solace PubSub+ chart constructs.
+ *
+ * Subclasses pin the chart name and defaults via `SolaceChartDefaults`; all
+ * other logic (value mapping, port export, repo/version handling) is shared.
+ */
+export abstract class SolaceBase extends HelmConstruct<SolaceValues> {
+  public readonly exports: SolaceExports;
+
+  constructor(scope: Construct, id: string, props: SolaceProps, defaults: SolaceChartDefaults) {
     super(scope, id);
 
     const serviceType = props.serviceType ?? 'LoadBalancer';
 
-    const solace: PubsubPlusValues['solace'] = {
-      redundancy: props.redundancy ?? false,
-      size: props.systemScaling ? undefined : (props.size ?? 'prod1k'),
+    const solace: SolaceValues['solace'] = {
+      redundancy: props.redundancy ?? defaults.redundancy,
+      size: props.systemScaling ? undefined : (props.size ?? defaults.size),
       affinity: {},
       tolerations: [],
     };
@@ -117,7 +136,7 @@ export class PubsubPlus extends HelmConstruct<PubsubPlusValues> {
       solace.usernameAdminPasswordSecretName = props.adminPasswordSecretName;
     if (props.timezone !== undefined) solace.timezone = props.timezone;
 
-    const computed: PubsubPlusValues = {
+    const computed: SolaceValues = {
       solace,
       image: {
         repository: 'solace/solace-pubsub-standard',
@@ -135,23 +154,23 @@ export class PubsubPlus extends HelmConstruct<PubsubPlusValues> {
         type: serviceType,
         ports: DEFAULT_SERVICE_PORTS,
       },
-      storage: buildStorageValues(props.storage) ?? {
+      storage: buildStorageValues(props.storage, defaults.storageSize) ?? {
         persistent: true,
-        size: '30Gi',
+        size: defaults.storageSize,
         monitorStorageSize: '1500M',
       },
       insights: buildInsightsValues(props.insights) ?? { enabled: false },
     };
 
     const values = this.renderChart(
-      props.chart ?? CHART_NAME,
+      props.chart ?? defaults.chartName,
       id,
       props.namespace,
       computed,
       props.values,
       {
-        repo: props.repo ?? CHART_REPO,
-        version: props.version ?? DEFAULT_VERSION,
+        repo: props.repo ?? SOLACE_CHART_REPO,
+        version: props.version ?? SOLACE_DEFAULT_VERSION,
       },
     );
 
