@@ -4,7 +4,7 @@ import type { LangfuseExports, LangfuseProps, LangfuseValues } from './types';
 
 const CHART = 'langfuse';
 const CHART_REPO = 'https://langfuse.github.io/langfuse-k8s';
-const DEFAULT_VERSION = '1.5.41';
+const DEFAULT_VERSION = '2.0.1';
 const DEFAULT_PORT = 3000;
 
 export class Langfuse extends HelmConstruct<LangfuseValues> {
@@ -49,14 +49,16 @@ export class Langfuse extends HelmConstruct<LangfuseValues> {
       clickhouse: {
         deploy: true,
         auth: { password: 'langfuse-dev' },
-        shards: 1,
-        replicaCount: 1,
-        resources: {
-          requests: { cpu: '100m', memory: '256Mi' },
-          limits: { memory: '512Mi' },
+        cluster: {
+          replicas: 1,
+          resources: {
+            requests: { cpu: '100m', memory: '256Mi' },
+            limits: { memory: '512Mi' },
+          },
         },
-        zookeeper: {
-          replicaCount: 1,
+        keeper: {
+          enabled: true,
+          replicas: 1,
           resources: {
             requests: { cpu: '50m', memory: '64Mi' },
             limits: { memory: '128Mi' },
@@ -73,9 +75,11 @@ export class Langfuse extends HelmConstruct<LangfuseValues> {
           rootUser: 'langfuse',
           rootPassword: 'langfuse-dev',
         },
-        resources: {
-          requests: { cpu: '50m', memory: '64Mi' },
-          limits: { memory: '256Mi' },
+        allInOne: {
+          resources: {
+            requests: { cpu: '50m', memory: '64Mi' },
+            limits: { memory: '256Mi' },
+          },
         },
       },
     };

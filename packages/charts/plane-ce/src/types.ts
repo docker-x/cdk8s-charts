@@ -65,6 +65,7 @@ export interface PlaneCeRabbitmqValues extends K8sSchedulingFields {
 export interface PlaneCeMinioValues extends K8sSchedulingFields {
   image?: string;
   image_mc?: string;
+  init_image?: string;
   local_setup?: boolean;
   pullPolicy?: string;
   root_password?: string;

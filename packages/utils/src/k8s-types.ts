@@ -128,6 +128,8 @@ export interface AutoscalingConfig {
   maxReplicas?: number;
   targetCPUUtilizationPercentage?: number;
   targetMemoryUtilizationPercentage?: number;
+  /** Optional autoscaling/v2 scaling behavior (scaleUp / scaleDown policies). */
+  behavior?: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------

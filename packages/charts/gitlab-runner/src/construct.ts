@@ -3,7 +3,7 @@ import type { Construct } from 'constructs';
 import type { GitlabRunnerExports, GitlabRunnerProps, GitlabRunnerValues } from './types';
 
 const DEFAULT_JOB_IMAGE = 'node:22';
-const DEFAULT_VERSION = '0.91.0';
+const DEFAULT_VERSION = '0.92.0';
 const DEFAULT_RUNNER_CONFIG = (namespace: string, image: string, gitlabUrl: string) => `[[runners]]
   clone_url = "${gitlabUrl}"
   [runners.kubernetes]
