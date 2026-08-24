@@ -1,5 +1,5 @@
 {
-  "name": "@cdk8s-charts/pubsubplus",
+  "name": "@cdk8s-charts/solace",
   "version": "0.1.0",
   "type": "module",
   "main": "./src/index.ts",
