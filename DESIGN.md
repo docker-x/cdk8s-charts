@@ -68,6 +68,9 @@ cdk8s-charts/
         src/types.ts                Solace PubSub+ Helm values + Props/Exports (shared)
         src/base.ts                 SolaceBase — shared base for the 3 chart constructs
         src/construct.ts            PubsubPlus / PubsubPlusDev / PubsubPlusHa constructs
+      devcontainer/                 @cdk8s-charts/devcontainer
+        src/types.ts                Devcontainer raw-deployment values + Props/Exports
+        src/construct.ts            Devcontainer construct (ApiObject based)
     features/                       @cdk8s-charts/features
       src/types.ts                  FeatureDefinition, FeatureMap, FeatureProps, FeatureSetOutput
       src/agents/registry.ts        Registry of all CLI agent features (14 agents)
@@ -84,6 +87,9 @@ cdk8s-charts/
       gascity/                      @cdk8s-charts/gascity-stack
         src/types.ts                GascityStackProps (hindsight/omniroute toggles, features)
         src/construct.ts            GascityStack — Gascity + optional Hindsight + optional OmniRoute
+      openshift-workspace/          @cdk8s-charts/openshift-workspace
+        src/types.ts                OpenShiftWorkspaceProps + Exports
+        src/construct.ts            OpenShiftWorkspace recipe (devcontainer + Routes + OAuth + keepalive + backup)
   examples/
     coding-agent-memory/            Full working example
     gascity-stack/                  Gascity stack example (all subcharts + features)
@@ -107,6 +113,7 @@ utils  <--  mastra-studio
 utils  <--  otel-lgtm
 utils  <--  omniroute
 utils  <--  solace
+utils  <--  devcontainer
 features  <--  omniroute
 features  <--  gascity
 utils + litellm + hindsight  <--  hindsight-litellm
@@ -115,6 +122,7 @@ utils + gascity + omniroute + hindsight  <--  gascity-hindsight-omniroute
 utils + litellm + plane-ce   <--  litellm-plane
 devpod + gascity + nginx  <--  devspace
 features + gascity + omniroute + hindsight  <--  gascity-stack
+devcontainer  <--  openshift-workspace
 hindsight-litellm  <--  examples/coding-agent-memory
 hindsight-omniroute  <--  examples/hindsight-omniroute
 gascity-hindsight-omniroute  <--  examples/gascity-hindsight-omniroute
@@ -971,6 +979,123 @@ per-chart defaults:
 4. Exposes the canonical broker ports (SMF `55555`, SEMP `8080`, AMQP `5672`,
    MQTT `1883`, REST `9000`) for downstream wiring. Port values are read back
    from the merged `service.ports` list so user overrides are honoured.
+
+### 3.17 Devcontainer Construct
+
+**Package**: `@cdk8s-charts/devcontainer`
+
+Deploys a devcontainer workspace as raw K8s ApiObjects. The container image is
+built from a `devcontainer.json` (via `devcontainer build` or similar) and
+pushed to a registry. This construct deploys that image as a Kubernetes
+Deployment with a durable PVC, SSH access, and configurable ports/env/volumes.
+
+There is no upstream Helm chart — the construct renders K8s resources directly,
+following the same pattern as `@cdk8s-charts/devpod` and `@cdk8s-charts/gascity`.
+
+**Props (`Props`):**
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `image` | `string` | yes | Devcontainer image (e.g. `ghcr.io/org/workspace:latest`) |
+| `imageDigest` | `string` | no | Image digest for rollout annotation (default: `unknown`) |
+| `command` | `string[]` | no | Container command override (default: `["/usr/local/bin/entrypoint.sh"]`) |
+| `storageSize` | `string` | no | PVC size (default: `30Gi`) |
+| `storageClass` | `string` | no | Storage class for PVC (default: `gp3`) |
+| `homeMountPath` | `string` | no | Where the PVC is mounted (default: `/home/vscode`) |
+| `sshPort` | `number` | no | SSH port (default: `2222`) |
+| `previewPort` | `number` | no | Preview port for web UIs (default: `3000`) |
+| `sshAuthorizedKeys` | `string` | no | SSH authorized_keys content (creates a Secret) |
+| `sshSecretName` | `string` | no | Existing Secret name with `authorized_keys` key |
+| `imagePullSecret` | `string` | no | Base64 docker config JSON for private registry auth |
+| `imagePullSecretName` | `string` | no | Existing pull secret name (default: `ghcr-pull-secret`) |
+| `env` | `Record<string, string>` | no | Extra env vars |
+| `secretEnv` | `Record<string, string>` | no | Secret env vars (placed in a Secret) |
+| `secretRefs` | `SecretRefs` | no | K8s Secret references for env vars |
+| `resources` | `ResourceValues` | no | CPU/memory requests/limits |
+| `replicas` | `number` | no | Replica count (default: `1`) |
+| `labels` | `Record<string, string>` | no | Extra pod labels |
+| `annotations` | `Record<string, string>` | no | Extra pod annotations |
+| `volumes` | `Volume[]` | no | Extra volumes (secrets, configmaps, etc.) |
+| `volumeMounts` | `VolumeMount[]` | no | Extra volume mounts |
+| `serviceAccountName` | `string` | no | SA name (default: `{id}-sa`) |
+| `automountServiceAccountToken` | `boolean` | no | Automount SA token (default: `true`) |
+| `runAsNonRoot` | `boolean` | no | Security context (default: `true`) |
+| `name` | `string` | no | Resource name prefix (default: `{id}`) |
+| `values` | `DeepPartial<Values>` | no | Raw value overrides |
+
+**Exports (`Exports`):**
+
+| Export | Value | Description |
+|--------|-------|-------------|
+| `host` | `{name}` | Service DNS name |
+| `sshPort` | `sshPort` | SSH port |
+| `previewPort` | `previewPort` | Preview port |
+| `pvcName` | `{name}-state` | PVC name |
+| `serviceName` | `{name}` | Service name |
+| `deploymentName` | `{name}` | Deployment name |
+| `secretName` | `{name}-ssh-keys` or supplied | SSH keys Secret name |
+
+**Resources created:**
+
+1. `Secret` (`{name}-ssh-keys`) — SSH authorized keys (when `sshAuthorizedKeys` is provided)
+2. `Secret` (`{name}-secret-env`) — secret env vars (when `secretEnv` is non-empty)
+3. `Secret` (`ghcr-pull-secret`) — image pull secret (when `imagePullSecret` is provided)
+4. `ServiceAccount` (`{name}-sa`) — when `serviceAccountName` is not supplied
+5. `PersistentVolumeClaim` (`{name}-state`) — durable home directory
+6. `Deployment` (`{name}`) — devcontainer with PVC, SSH, env, extra volumes
+7. `Service` (`{name}`) — exposes sshPort, previewPort
+
+### 3.18 OpenShiftWorkspace Recipe
+
+**Package**: `@cdk8s-charts/openshift-workspace`
+
+Composes the Devcontainer construct with OpenShift-specific resources for a
+production remote workspace:
+
+1. **Devcontainer workspace** — the base Deployment + PVC + SSH
+2. **OAuth proxy sidecar** — OpenShift OAuth proxy for SSO-protected web access
+3. **OpenShift Routes** — edge-terminated TLS routes for Paseo web UI and preview
+4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
+5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2
+6. **Paseo auto-resume** — postStart hook to resume closed Paseo agents after restart
+7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform deployments
+8. **All secrets** — R2 credentials, SSH keys, OAuth cookie, GHCR pull secret
+
+**Props (`OpenShiftWorkspaceProps`):**
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `image` | `string` | yes | Devcontainer image |
+| `imageDigest` | `string` | no | Image digest for rollout annotation |
+| `appsDomain` | `string` | yes | OpenShift apps domain for Route URLs |
+| `sshAuthorizedKeys` | `string` | yes | SSH authorized_keys content |
+| `oauthCookieSecret` | `string` | yes | OAuth proxy cookie secret (base64) |
+| `ghcrPullSecret` | `string` | no | Base64 docker config JSON |
+| `pvcSize` | `string` | no | PVC size (default: `30Gi`) |
+| `pvcStorageClass` | `string` | no | Storage class (default: `gp3`) |
+| `name` | `string` | no | Resource name prefix (default: `workspace`) |
+| `env` | `Record<string, string>` | no | Extra env vars for the workspace container |
+| `resources` | `ResourceValues` | no | Workspace container resources |
+| `backup` | `BackupConfig` | no | R2 backup configuration |
+| `keepalive` | `{ enabled, schedule }` | no | Keepalive CronJob config |
+| `paseoAutoResume` | `{ enabled }` | no | Paseo auto-resume hook |
+| `tfDeployer` | `{ enabled }` | no | TF deployer SA + RBAC |
+| `values` | `DeepPartial<Values>` | no | Raw devcontainer value overrides |
+
+**Exports (`OpenShiftWorkspaceExports`):**
+
+| Export | Type | Description |
+|--------|------|-------------|
+| `pvcName` | `string` | Durable PVC name |
+| `paseoRouteName` | `string` | OpenShift Route name for Paseo |
+| `paseoRouteUrl` | `string` | Full Paseo Route URL |
+| `previewRouteName` | `string` | OpenShift Route name for preview |
+| `previewRouteUrl` | `string` | Full preview Route URL |
+| `backupCronJobName` | `string` | Backup CronJob name |
+| `keepaliveCronJobName` | `string` | Keepalive CronJob name |
+| `tfDeployerSaName` | `string` | TF deployer ServiceAccount name |
 
 ## 4. Memory bank configuration
 

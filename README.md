@@ -16,6 +16,7 @@ Fully typed [cdk8s](https://cdk8s.io/) constructs for popular Helm charts and ra
 |---------|-------------|
 | [`@cdk8s-charts/a2a-agent`](packages/charts/a2a-agent/) | A2A agent gateway |
 | [`@cdk8s-charts/devpod`](packages/charts/devpod/) | DevPod/VS Code workspace via code-server |
+| [`@cdk8s-charts/devcontainer`](packages/charts/devcontainer/) | Generic devcontainer workspace in a K8s pod |
 | [`@cdk8s-charts/gascity`](packages/charts/gascity/) | Gascity AI agent framework |
 | [`@cdk8s-charts/gitlab-ce`](packages/charts/gitlab-ce/) | GitLab Community Edition Helm chart |
 | [`@cdk8s-charts/gitlab-runner`](packages/charts/gitlab-runner/) | GitLab Runner in-cluster executor |
@@ -44,6 +45,7 @@ Fully typed [cdk8s](https://cdk8s.io/) constructs for popular Helm charts and ra
 | [`@cdk8s-charts/gitlab-pilot`](packages/recipes/gitlab-pilot/) | GitLab + agent tooling recipe |
 | [`@cdk8s-charts/hindsight-litellm`](packages/recipes/hindsight-litellm/) | Hindsight + LiteLLM composed stack |
 | [`@cdk8s-charts/litellm-plane`](packages/recipes/litellm-plane/) | LiteLLM + Plane CE + Redis |
+| [`@cdk8s-charts/openshift-workspace`](packages/recipes/openshift-workspace/) | Devcontainer workspace on OpenShift with OAuth, backup, keepalive |
 
 ## Quick Start
 
