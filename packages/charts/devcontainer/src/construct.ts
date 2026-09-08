@@ -5,6 +5,11 @@ import type { Exports, Props, Values } from './types';
 
 const DEFAULT_COMMAND = ['/usr/local/bin/entrypoint.sh'];
 
+/** Build standard metadata labels for this devcontainer. */
+function buildLabels(name: string): Record<string, string> {
+  return { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' };
+}
+
 export class Devcontainer extends HelmConstruct<Values> {
   public readonly exports: Exports;
 
@@ -63,7 +68,7 @@ export class Devcontainer extends HelmConstruct<Values> {
         metadata: {
           name: sshSecretName,
           namespace: props.namespace,
-          labels: { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' },
+          labels: buildLabels(name),
         },
         type: 'Opaque',
         stringData: { authorized_keys: values.sshAuthorizedKeys },
@@ -78,7 +83,7 @@ export class Devcontainer extends HelmConstruct<Values> {
         metadata: {
           name: `${name}-secret-env`,
           namespace: props.namespace,
-          labels: { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' },
+          labels: buildLabels(name),
         },
         type: 'Opaque',
         stringData: values.secretEnv,
@@ -93,7 +98,7 @@ export class Devcontainer extends HelmConstruct<Values> {
         metadata: {
           name: pullSecretName,
           namespace: props.namespace,
-          labels: { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' },
+          labels: buildLabels(name),
         },
         type: 'kubernetes.io/dockerconfigjson',
         data: { '.dockerconfigjson': values.imagePullSecret },
@@ -108,7 +113,7 @@ export class Devcontainer extends HelmConstruct<Values> {
         metadata: {
           name: saName,
           namespace: props.namespace,
-          labels: { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' },
+          labels: buildLabels(name),
         },
         automountServiceAccountToken: values.automountServiceAccountToken,
       });

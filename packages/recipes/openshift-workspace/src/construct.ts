@@ -6,6 +6,16 @@ import type { OpenShiftWorkspaceExports, OpenShiftWorkspaceProps } from './types
 const OAUTH_PROXY_IMAGE = 'quay.io/openshift/origin-oauth-proxy:4.18';
 const OC_CLI_IMAGE = 'quay.io/openshift/origin-cli:latest';
 
+/** Build standard metadata labels for a resource in this workspace. */
+function buildLabels(name: string): Record<string, string> {
+  return { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' };
+}
+
+/** Build standard metadata (name, namespace, labels) for a resource. */
+function buildMetadata(name: string, namespace: string, resourceName: string) {
+  return { name: resourceName, namespace, labels: buildLabels(name) };
+}
+
 export class OpenShiftWorkspace extends Chart {
   public readonly exports: OpenShiftWorkspaceExports;
 
@@ -43,7 +53,7 @@ export class OpenShiftWorkspace extends Chart {
       metadata: {
         name: oauthCookieSecretName,
         namespace,
-        labels: { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' },
+        labels: buildLabels(name),
       },
       type: 'Opaque',
       data: { 'cookie-secret': Buffer.from(props.oauthCookieSecret, 'utf8').toString('base64') },
@@ -57,7 +67,7 @@ export class OpenShiftWorkspace extends Chart {
       metadata: {
         name: saTokenSecretName,
         namespace,
-        labels: { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' },
+        labels: buildLabels(name),
         annotations: { 'kubernetes.io/service-account.name': `${name}-sa` },
       },
       type: 'kubernetes.io/service-account-token',
@@ -268,7 +278,7 @@ export class OpenShiftWorkspace extends Chart {
       metadata: {
         name: paseoRouteName,
         namespace,
-        labels: { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' },
+        labels: buildLabels(name),
       },
       spec: {
         to: { kind: 'Service', name: devcontainer.exports.serviceName, weight: 100 },
@@ -283,7 +293,7 @@ export class OpenShiftWorkspace extends Chart {
       metadata: {
         name: previewRouteName,
         namespace,
-        labels: { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' },
+        labels: buildLabels(name),
       },
       spec: {
         to: { kind: 'Service', name: devcontainer.exports.serviceName, weight: 100 },
