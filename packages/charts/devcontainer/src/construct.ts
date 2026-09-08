@@ -12,7 +12,10 @@ export class Devcontainer extends HelmConstruct<Values> {
     super(scope, id);
 
     const name = props.name ?? id;
+    const hasSshKeys = Boolean(props.sshAuthorizedKeys || props.sshSecretName);
     const sshSecretName = props.sshSecretName ?? `${name}-ssh-keys`;
+    const hasPullSecretData = Boolean(props.imagePullSecret);
+    const hasPullSecretRef = Boolean(props.imagePullSecretName);
     const pullSecretName = props.imagePullSecretName ?? 'ghcr-pull-secret';
     const saName = props.serviceAccountName ?? `${name}-sa`;
 
@@ -172,7 +175,7 @@ export class Devcontainer extends HelmConstruct<Values> {
       subPath?: string;
     }> = [{ name: 'workspace-state', mountPath: values.homeMountPath ?? '/home/vscode' }];
 
-    if (values.sshAuthorizedKeys || values.sshSecretName) {
+    if (values.sshAuthorizedKeys || hasSshKeys) {
       volumeMounts.push({
         name: 'ssh-keys',
         mountPath: '/ssh-keys',
@@ -189,7 +192,7 @@ export class Devcontainer extends HelmConstruct<Values> {
       { name: 'workspace-state', persistentVolumeClaim: { claimName: pvcName } },
     ];
 
-    if (values.sshAuthorizedKeys || values.sshSecretName) {
+    if (values.sshAuthorizedKeys || hasSshKeys) {
       volumes.push({
         name: 'ssh-keys',
         secret: {
@@ -210,10 +213,13 @@ export class Devcontainer extends HelmConstruct<Values> {
     };
 
     // --- Build pod labels ---
+    // User labels are merged first; the required selector label is applied
+    // last so it cannot be overridden by user-supplied labels (which would
+    // break the Deployment selector ↔ pod label match).
     const podLabels: Record<string, string> = {
+      ...(values.labels ?? {}),
       'app.kubernetes.io/name': name,
       'app.kubernetes.io/managed-by': 'cdk8s',
-      ...(values.labels ?? {}),
     };
 
     // --- Deployment ---
@@ -234,7 +240,7 @@ export class Devcontainer extends HelmConstruct<Values> {
           spec: {
             serviceAccountName: saName,
             automountServiceAccountToken: values.automountServiceAccountToken,
-            ...(values.imagePullSecret ? { imagePullSecrets: [{ name: pullSecretName }] } : {}),
+            ...(hasPullSecretData || hasPullSecretRef ? { imagePullSecrets: [{ name: pullSecretName }] } : {}),
             containers: [
               {
                 name: 'devcontainer',

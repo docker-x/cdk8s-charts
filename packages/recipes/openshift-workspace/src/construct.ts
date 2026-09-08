@@ -16,6 +16,16 @@ export class OpenShiftWorkspace extends Chart {
     const namespace = props.namespace;
     const appsDomain = props.appsDomain;
 
+    // Validate name and namespace to prevent shell injection in embedded scripts.
+    // K8s resource names must be lowercase alphanumeric with hyphens/dots.
+    const k8sNameRe = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
+    if (!k8sNameRe.test(name)) {
+      throw new Error(`Invalid workspace name "${name}": must be a valid Kubernetes resource name`);
+    }
+    if (!k8sNameRe.test(namespace)) {
+      throw new Error(`Invalid namespace "${namespace}": must be a valid Kubernetes namespace name`);
+    }
+
     const keepalive = { enabled: true, schedule: '*/2 * * * *', ...props.keepalive };
     const paseoAutoResume = { enabled: true, ...props.paseoAutoResume };
     const tfDeployer = { enabled: true, ...props.tfDeployer };
@@ -467,7 +477,7 @@ export class OpenShiftWorkspace extends Chart {
                         { name: 'WORKSPACE_POD_LABEL', value: `app.kubernetes.io/name=${name}` },
                         { name: 'NAMESPACE', value: namespace },
                       ],
-                      command: ['/bin/sh', '-ec', buildBackupScript(backup.keep ?? 3)],
+                      command: ['/bin/sh', '-ec', buildBackupScript(backup.keep ?? 3, props.homeMountPath ?? '/home/vscode')],
                     },
                   ],
                 },
@@ -630,7 +640,7 @@ function buildKeepaliveScript(name: string, namespace: string): string {
   ].join('\n');
 }
 
-function buildBackupScript(keep: number): string {
+function buildBackupScript(keep: number, homeMountPath: string): string {
   return [
     'POD=$(oc get pods -n "${NAMESPACE}" -l "${WORKSPACE_POD_LABEL}" --field-selector=status.phase=Running -o jsonpath=\'{.items[0].metadata.name}\')',
     'if [ -z "${POD}" ]; then',
@@ -639,13 +649,16 @@ function buildBackupScript(keep: number): string {
     'fi',
     'echo "Backing up from pod: ${POD}"',
     'oc exec -n "${NAMESPACE}" "${POD}" -c devcontainer -- /bin/sh -ec \'',
+    '  for f in /etc/r2-credentials/AWS_ACCESS_KEY_ID /etc/r2-credentials/AWS_SECRET_ACCESS_KEY /etc/r2-credentials/R2_ACCOUNT_ID /etc/r2-credentials/R2_BUCKET /etc/r2-credentials/BACKUP_PASSWORD; do',
+    '    if [ ! -f "$f" ]; then echo "Fatal: missing R2 credential file $f"; exit 1; fi',
+    '  done',
     '  export AWS_ACCESS_KEY_ID=$(cat /etc/r2-credentials/AWS_ACCESS_KEY_ID)',
     '  export AWS_SECRET_ACCESS_KEY=$(cat /etc/r2-credentials/AWS_SECRET_ACCESS_KEY)',
     '  export R2_ACCOUNT_ID=$(cat /etc/r2-credentials/R2_ACCOUNT_ID)',
     '  export R2_BUCKET=$(cat /etc/r2-credentials/R2_BUCKET)',
     '  export BACKUP_PASSWORD=$(cat /etc/r2-credentials/BACKUP_PASSWORD)',
     `  export BACKUP_KEEP=${keep}`,
-    '  cd /home/vscode',
+    `  cd ${JSON.stringify(homeMountPath)}`,
     '  tar czf /tmp/backup.tar.gz \\',
     '    --exclude=".ssh" --exclude=".aws" --exclude=".kube" --exclude=".gnupg" \\',
     '    --exclude=".env" --exclude=".env.*" --exclude="*_history" --exclude="node_modules" \\',
@@ -670,7 +683,7 @@ function buildBackupScript(keep: number): string {
     '    UPLOAD_EXIT=$?',
     '    if [ "${UPLOAD_EXIT}" -ne 0 ]; then echo "Fatal: upload failed"; exit "${UPLOAD_EXIT}"; fi',
     '    echo "Cleaning up old backups (keeping last ${BACKUP_KEEP})..."',
-    '    aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "workspace-state-" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" --region auto --output json --query \'Contents[*].Key\' | jq -r \'.[]\' | sort -r > /tmp/all.txt',
+    '    aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "workspace-state-" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" --region auto --output json --query "Contents[*].Key" | jq -r ".[]" | sort -r > /tmp/all.txt',
     '    head -n "${BACKUP_KEEP}" /tmp/all.txt > /tmp/keep.txt',
     '    while IFS= read -r key; do grep -qxF "${key}" /tmp/keep.txt || aws s3api delete-object --bucket "${R2_BUCKET}" --key "${key}" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" --region auto; done < /tmp/all.txt',
     '    rm -f /tmp/all.txt /tmp/keep.txt',

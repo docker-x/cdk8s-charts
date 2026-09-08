@@ -12,8 +12,6 @@ export interface BackupConfig {
   keep?: number;
   /** R2 account ID. */
   r2AccountId?: string;
-  /** R2 API token (cfat_...). */
-  r2ApiToken?: string;
   /** R2 access key ID for S3 API. */
   r2AccessKeyId?: string;
   /** R2 secret access key for S3 API. */
@@ -57,7 +55,7 @@ export interface OpenShiftWorkspaceProps {
   appsDomain: string;
   /** SSH authorized_keys content. */
   sshAuthorizedKeys: string;
-  /** OAuth proxy cookie secret (base64). */
+  /** OAuth proxy cookie secret (plain string, will be base64-encoded for K8s Secret). */
   oauthCookieSecret: string;
   /** Base64 docker config JSON for GHCR auth. */
   ghcrPullSecret?: string;
@@ -65,6 +63,8 @@ export interface OpenShiftWorkspaceProps {
   pvcSize?: string;
   /** Storage class (default: gp3). */
   pvcStorageClass?: string;
+  /** Home mount path (default: /home/vscode). Must match the devcontainer PVC mount. */
+  homeMountPath?: string;
   /** Resource name prefix (default: "workspace"). */
   name?: string;
   /** Extra env vars for the workspace container. */
