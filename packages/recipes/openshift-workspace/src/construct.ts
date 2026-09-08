@@ -64,14 +64,17 @@ export class OpenShiftWorkspace extends Chart {
     });
 
     // --- R2 credentials secret (for backup + workspace pod) ---
+    // NOTE: R2 credentials are mounted into the devcontainer pod because the
+    // backup CronJob runs via `oc exec` inside the workspace pod. This is the
+    // same pattern as the existing openshift-devsy stack. SSH users with pod
+    // access can read these credentials — restrict SSH access accordingly.
     const r2SecretName = `${name}-r2-credentials`;
-    const hasBackupSecrets = Boolean(
-      backup.r2AccountId ||
-        backup.r2AccessKeyId ||
-        backup.r2SecretAccessKey ||
-        backup.r2BucketName ||
-        backup.resticPassword,
-    );
+    const r2Fields = [backup.r2AccountId, backup.r2AccessKeyId, backup.r2SecretAccessKey, backup.r2BucketName, backup.resticPassword];
+    const providedCount = r2Fields.filter(Boolean).length;
+    if (providedCount > 0 && providedCount < r2Fields.length) {
+      throw new Error('Partial R2 credentials: provide all of r2AccountId, r2AccessKeyId, r2SecretAccessKey, r2BucketName, resticPassword — or none to disable backup.');
+    }
+    const hasBackupSecrets = providedCount === r2Fields.length;
     if (hasBackupSecrets) {
       new ApiObject(this, 'r2-credentials-secret', {
         apiVersion: 'v1',
@@ -706,7 +709,7 @@ function buildBackupScript(keep: number, homeMountPath: string): string {
     '      console.log(`Cleanup done. Kept ${Math.min(keep, objects.length)} of ${objects.length}.`);',
     '    }',
     '    main().catch(e => { console.error(e); process.exit(1); });',
-    '    NODE_SCRIPT',
+    'NODE_SCRIPT',
     '    cd /tmp && npm install @aws-sdk/client-s3 --no-save 2>&1 | tail -1',
     '    node /tmp/upload.js',
     '    UPLOAD_EXIT=$?',
