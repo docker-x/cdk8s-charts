@@ -38,7 +38,14 @@ const CHARTS_DIR = join(REPO_ROOT, 'packages', 'charts');
 /** Map of const NAME = 'value' declarations extracted from the source. */
 type ConstMap = Map<string, string>;
 
-/** Extract the string value from a TypeScript expression node. */
+/**
+ * Extract the string value from a TypeScript expression node.
+ *
+ * Limitations: does not handle string concatenation ('a' + 'b') or
+ * template literals with substitutions (`${BASE}/chart`). The current
+ * construct patterns use simple literals, identifiers, and ?? / ||
+ * fallbacks, so these are not needed.
+ */
 function getStringValue(node: ts.Expression | undefined, consts: ConstMap): string | undefined {
   if (!node) return undefined;
   // String literal: 'foo' or "foo"
@@ -49,12 +56,13 @@ function getStringValue(node: ts.Expression | undefined, consts: ConstMap): stri
   if (ts.isIdentifier(node)) {
     return consts.get(node.text);
   }
-  // Binary expression: props.chart ?? 'fallback' → try left first, then right
-  if (
-    ts.isBinaryExpression(node) &&
-    node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken
-  ) {
-    return getStringValue(node.left, consts) ?? getStringValue(node.right, consts);
+  // Binary expression: props.chart ?? 'fallback' or props.chart || 'fallback'
+  // → try left first, then right
+  if (ts.isBinaryExpression(node)) {
+    const kind = node.operatorToken.kind;
+    if (kind === ts.SyntaxKind.QuestionQuestionToken || kind === ts.SyntaxKind.BarBarToken) {
+      return getStringValue(node.left, consts) ?? getStringValue(node.right, consts);
+    }
   }
   return undefined;
 }
@@ -118,7 +126,14 @@ function extractChartRef(call: ts.CallExpression, consts: ConstMap): string | un
   return getStringValue(arg, consts);
 }
 
-/** Extract the repo url from the options object of a renderChart call. */
+/**
+ * Extract the repo url from the options object of a renderChart call.
+ *
+ * Limitation: only works with inline object literals. If options are
+ * passed as a variable (e.g. `const opts = { repo: '...' }; renderChart(..., opts)`),
+ * the repo URL cannot be extracted. All current constructs use inline
+ * object literals for the options argument.
+ */
 function extractRepo(call: ts.CallExpression, consts: ConstMap): string | undefined {
   // renderChart(chart, id, namespace, computed, overrides, options)
   // The options object is the last argument containing `repo:` and `version:`
