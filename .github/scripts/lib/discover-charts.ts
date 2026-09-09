@@ -80,31 +80,41 @@ function collectConstDeclarations(sourceFile: ts.SourceFile): ConstMap {
   return consts;
 }
 
-/** Find the first renderChart() or renderChartOn() call expression. */
+/** Get the function name from a call expression (handles this.foo() and foo()). */
+function getCallName(call: ts.CallExpression): string | undefined {
+  const expr = call.expression;
+  if (ts.isIdentifier(expr)) return expr.text;
+  if (ts.isPropertyAccessExpression(expr)) return expr.name.text;
+  return undefined;
+}
+
+/** Find the first renderChart() call, preferring renderChart over renderChartOn. */
 function findRenderChartCall(sourceFile: ts.SourceFile): ts.CallExpression | undefined {
-  let result: ts.CallExpression | undefined;
+  let renderChartCall: ts.CallExpression | undefined;
+  let renderChartOnCall: ts.CallExpression | undefined;
   function visit(node: ts.Node): void {
-    if (result) return;
-    if (ts.isCallExpression(node)) {
-      // Handle both renderChart(...) and this.renderChart(...)
-      const expr = node.expression;
-      let name: string | undefined;
-      if (ts.isIdentifier(expr)) name = expr.text;
-      else if (ts.isPropertyAccessExpression(expr)) name = expr.name.text;
-      if (name === 'renderChart' || name === 'renderChartOn') {
-        result = node;
-        return;
-      }
+    if (renderChartCall) return;
+    const name = ts.isCallExpression(node) ? getCallName(node) : undefined;
+    if (name === 'renderChart') {
+      renderChartCall = node;
+      return;
+    }
+    if (!renderChartOnCall && name === 'renderChartOn') {
+      renderChartOnCall = node;
     }
     ts.forEachChild(node, visit);
   }
   visit(sourceFile);
-  return result;
+  return renderChartCall ?? renderChartOnCall;
 }
 
-/** Extract the chart ref from the first argument of a renderChart call. */
+/** Extract the chart ref from the correct argument of a renderChart call. */
 function extractChartRef(call: ts.CallExpression, consts: ConstMap): string | undefined {
-  const arg = call.arguments[0];
+  // renderChart(chart, ...) → arg 0 is chart
+  // renderChartOn(scope, chart, ...) → arg 1 is chart
+  const name = getCallName(call);
+  const argIndex = name === 'renderChartOn' ? 1 : 0;
+  const arg = call.arguments[argIndex];
   return getStringValue(arg, consts);
 }
 
