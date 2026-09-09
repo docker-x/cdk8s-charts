@@ -4,7 +4,7 @@ import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { HindsightExports, HindsightProps, HindsightValues } from './types';
 
-const DEFAULT_VERSION = '0.9.1';
+const DEFAULT_VERSION = '0.9.2';
 
 // ---------------------------------------------------------------------------
 // Helpers

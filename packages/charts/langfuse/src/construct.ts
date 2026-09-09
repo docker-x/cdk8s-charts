@@ -4,7 +4,7 @@ import type { LangfuseExports, LangfuseProps, LangfuseValues } from './types';
 
 const CHART = 'langfuse';
 const CHART_REPO = 'https://langfuse.github.io/langfuse-k8s';
-const DEFAULT_VERSION = '2.0.1';
+const DEFAULT_VERSION = '2.1.0';
 const DEFAULT_PORT = 3000;
 
 export class Langfuse extends HelmConstruct<LangfuseValues> {

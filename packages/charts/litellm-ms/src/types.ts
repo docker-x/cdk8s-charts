@@ -114,6 +114,8 @@ export interface LitellmMsDatabaseEndpoint {
   dbname?: string;
   schema?: string;
   useIAMAuth?: boolean;
+  /** Azure Database for PostgreSQL with a Microsoft Entra ID token; mutually exclusive with useIAMAuth. */
+  useAzureEntraAuth?: boolean;
   passwordSecret?: {
     name?: string;
     usernameKey?: string;
@@ -142,6 +144,12 @@ export interface LitellmMsIngressConfig {
   annotations?: Record<string, string>;
   host?: string;
   tls?: IngressTls[];
+  /** Extra HTTP paths appended to the ingress rule (additive to built-in paths). */
+  extraPaths?: Array<{
+    path: string;
+    service?: 'gateway' | 'backend' | 'ui';
+    pathType?: 'Prefix' | 'Exact' | 'ImplementationSpecific';
+  }>;
 }
 
 export interface LitellmMsProbeConfig {
@@ -193,6 +201,8 @@ export interface LitellmMsUiConfig extends LitellmMsComponentConfig {
 export interface LitellmMsMigrationJobConfig {
   enabled?: boolean;
   backoffLimit?: number;
+  /** Wall-clock budget for the whole Job (shared across retries). Set null to opt out. */
+  activeDeadlineSeconds?: number | null;
   ttlSecondsAfterFinished?: number;
   resources?: ResourceRequirements;
   image?: ImageConfig;

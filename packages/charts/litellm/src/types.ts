@@ -426,6 +426,10 @@ export interface LitellmDbSecret {
   usernameKey?: string;
   passwordKey?: string;
   endpointKey?: string;
+  /** Secret key holding a read-replica URL (sourced as DATABASE_URL_READ_REPLICA). */
+  readReplicaUrlKey?: string;
+  /** Secret key holding a bare reader hostname (sourced as DATABASE_READER_HOST). */
+  readReplicaEndpointKey?: string;
 }
 
 export interface LitellmDbConfig {
@@ -433,6 +437,8 @@ export interface LitellmDbConfig {
   endpoint?: string;
   database?: string;
   url?: string;
+  /** Read-replica URL for routing read-only queries. */
+  readReplicaUrl?: string;
   secret?: LitellmDbSecret;
   useStackgresOperator?: boolean;
   deployStandalone?: boolean;
@@ -451,6 +457,8 @@ export interface LitellmMigrationJob {
   enabled?: boolean;
   retries?: number;
   backoffLimit?: number;
+  /** Wall-clock budget for the whole Job (shared across retries). Set null to opt out. */
+  activeDeadlineSeconds?: number | null;
   disableSchemaUpdate?: boolean;
   serviceAccountName?: string;
   annotations?: Record<string, string>;

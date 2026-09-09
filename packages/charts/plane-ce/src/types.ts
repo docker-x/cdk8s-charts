@@ -3,7 +3,7 @@
  *
  * Chart: plane-ce
  * Repo:  https://helm.plane.so/
- * Chart version: 1.6.1 / appVersion: 1.3.1
+ * Chart version: 1.8.0 / appVersion: 1.4.1
  *
  * Generated from `helm show values` output — every top-level key and its
  * nested structure is represented.  All fields are optional because the
@@ -112,6 +112,8 @@ export interface PlaneCeWorkerComponent extends K8sSchedulingFields {
 
 export interface PlaneCeDockerRegistryValues {
   enabled?: boolean;
+  /** Name of an existing Secret holding docker registry credentials. */
+  existingSecret?: string;
   host?: string;
   loginid?: string;
   password?: string;
@@ -123,6 +125,8 @@ export interface PlaneCeDockerRegistryValues {
 
 export interface PlaneCeIngressTraefikValues {
   maxRequestBodyBytes?: number;
+  /** Traefik entrypoints the IngressRoutes attach to. Leave empty to derive from SSL settings. */
+  entryPoints?: string[];
 }
 
 export interface PlaneCeIngressValues {
@@ -133,6 +137,8 @@ export interface PlaneCeIngressValues {
   ingressClass?: string;
   traefik?: PlaneCeIngressTraefikValues;
   ingress_annotations?: Record<string, string>;
+  /** Set true when TLS is terminated in front of Plane (cloud LB, Cloudflare, mesh). */
+  externalTermination?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +165,16 @@ export interface PlaneCeExternalSecretsValues {
   doc_store_existingSecret?: string;
   app_env_existingSecret?: string;
   live_env_existingSecret?: string;
+  /** Shared signing keys (SECRET_KEY and LIVE_SERVER_SECRET_KEY). */
+  app_keys_existingSecret?: string;
+  /** DNS-01 API token for cert-manager Issuer (cloudflare/digitalocean). */
+  ssl_token_existingSecret?: string;
+  /** Object-storage credentials for an S3-compatible backend without workload identity. */
+  storage?: {
+    secretName?: string;
+    accessKeyIdKey?: string;
+    secretAccessKeyKey?: string;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +201,25 @@ export interface PlaneCeEnvValues {
   default_cluster_domain?: string;
   api_key_rate_limit?: string;
   minio_endpoint_ssl?: boolean;
+  /** Fail the render instead of falling back to PUBLIC example values for SECRET_KEY and LIVE_SERVER_SECRET_KEY. */
+  requireExplicitSecrets?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// ServiceAccount / cloud workload identity
+// ---------------------------------------------------------------------------
+
+export interface PlaneCeServiceAccountValues {
+  /** Set false to reference a ServiceAccount managed outside the chart. */
+  create?: boolean;
+  /** Defaults to "<release>-srv-account". */
+  name?: string;
+  /** Workload identity annotations (e.g. IRSA role-arn, GCP service-account). */
+  annotations?: Record<string, string>;
+  /** Extra pod-template labels (Azure Workload Identity requires one). */
+  podLabels?: Record<string, string>;
+  /** Declares a cloud identity bound out-of-band (enables warnings, no rendered output change). */
+  cloudIdentity?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -207,8 +242,11 @@ export interface PlaneCeValues {
   api?: PlaneCeServiceComponent;
   worker?: PlaneCeWorkerComponent;
   beatworker?: PlaneCeWorkerComponent;
+  serviceAccount?: PlaneCeServiceAccountValues;
   external_secrets?: PlaneCeExternalSecretsValues;
   env?: PlaneCeEnvValues;
+  /** Arbitrary extra Kubernetes objects rendered as part of this release. */
+  extraObjects?: unknown[];
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +257,7 @@ export interface PlaneCeProps {
   namespace: string;
   /** Plane application version tag (e.g. 'v1.3.1'). */
   version?: string;
-  /** Plane CE Helm chart version (default: 1.6.1). */
+  /** Plane CE Helm chart version (default: 1.8.0). */
   chartVersion?: string;
   /**
    * Django secret key for hashing/encryption.
