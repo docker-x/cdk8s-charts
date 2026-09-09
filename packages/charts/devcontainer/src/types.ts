@@ -84,6 +84,8 @@ export interface Values {
   extraServicePorts?: ServicePort[];
   /** SA name (default: {id}-sa). */
   serviceAccountName?: string;
+  /** Annotations for the ServiceAccount (e.g. OpenShift OAuth redirect URIs). */
+  serviceAccountAnnotations?: Record<string, string>;
   /** Automount SA token (default: true). */
   automountServiceAccountToken?: boolean;
   /** Security context runAsNonRoot (default: true). */

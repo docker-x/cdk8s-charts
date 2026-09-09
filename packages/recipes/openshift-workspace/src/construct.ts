@@ -72,7 +72,7 @@ export class OpenShiftWorkspace extends Chart {
     const podAnnotations = this.buildPodAnnotations(paseoAutoResume);
     const homeMountPath = props.values?.homeMountPath ?? props.homeMountPath ?? '/home/vscode';
     const devcontainer = this.createDevcontainer({
-      name, namespace, props, homeMountPath, workspaceEnv, podAnnotations, extraVolumes, extraVolumeMounts, oauthProxySidecar, lifecycle,
+      name, namespace, appsDomain, props, homeMountPath, workspaceEnv, podAnnotations, extraVolumes, extraVolumeMounts, oauthProxySidecar, lifecycle,
     });
     const routes = this.createRoutes(name, namespace, appsDomain, devcontainer.exports.serviceName);
     if (keepalive.enabled) this.createKeepaliveRbac(name, namespace);
@@ -226,13 +226,14 @@ export class OpenShiftWorkspace extends Chart {
   }
 
   private createDevcontainer(opts: {
-    name: string; namespace: string; props: OpenShiftWorkspaceProps; homeMountPath: string;
+    name: string; namespace: string; appsDomain: string; props: OpenShiftWorkspaceProps; homeMountPath: string;
     workspaceEnv: Record<string, string>; podAnnotations: Record<string, string>;
     extraVolumes: Array<{ name: string; [key: string]: unknown }>;
     extraVolumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }>;
     oauthProxySidecar: SidecarContainer; lifecycle: PodLifecycle | undefined;
   }) {
-    const { name, namespace, props, homeMountPath, workspaceEnv, podAnnotations, extraVolumes, extraVolumeMounts, oauthProxySidecar, lifecycle } = opts;
+    const { name, namespace, appsDomain, props, homeMountPath, workspaceEnv, podAnnotations, extraVolumes, extraVolumeMounts, oauthProxySidecar, lifecycle } = opts;
+    const paseoRedirectUri = `https://${name}-paseo-${namespace}.${appsDomain}/oauth/callback`;
     return new Devcontainer(this, 'workspace', {
       namespace, image: props.image, imageDigest: props.imageDigest, name,
       storageSize: props.pvcSize ?? '30Gi', storageClass: props.pvcStorageClass ?? 'gp3',
@@ -241,7 +242,7 @@ export class OpenShiftWorkspace extends Chart {
       labels: { 'app.kubernetes.io/managed-by': 'cdk8s' }, annotations: podAnnotations,
       volumes: extraVolumes, volumeMounts: extraVolumeMounts, sidecars: [oauthProxySidecar], lifecycle,
       extraServicePorts: [{ name: 'oauth-proxy', port: 4180, targetPort: 'oauth-proxy' }],
-      values: props.values,
+      values: { ...props.values, serviceAccountAnnotations: { 'serviceaccounts.openshift.io/oauth-redirecturi.primary': paseoRedirectUri, ...props.values?.serviceAccountAnnotations } },
     });
   }
 
