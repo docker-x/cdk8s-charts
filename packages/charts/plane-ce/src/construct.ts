@@ -4,8 +4,8 @@ import type { PlaneCeExports, PlaneCeProps, PlaneCeValues } from './types';
 
 const CHART_NAME = 'plane-ce';
 const CHART_REPO = 'https://helm.plane.so/';
-const DEFAULT_CHART_VERSION = '1.6.1';
-const DEFAULT_APP_VERSION = 'v1.3.1';
+const DEFAULT_CHART_VERSION = '1.8.0';
+const DEFAULT_APP_VERSION = 'v1.4.1';
 
 export class PlaneCe extends HelmConstruct<PlaneCeValues> {
   public readonly exports: PlaneCeExports;

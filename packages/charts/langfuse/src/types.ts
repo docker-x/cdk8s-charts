@@ -30,6 +30,8 @@ export interface LangfuseWebValues {
   additionalEnv?: Array<{ name: string; value: string }>;
   livenessProbe?: { path?: string; initialDelaySeconds?: number; periodSeconds?: number };
   readinessProbe?: { path?: string; initialDelaySeconds?: number; periodSeconds?: number };
+  /** PriorityClass for the web pods. Overrides the global priorityClassName. */
+  priorityClassName?: string | null;
 }
 
 export interface LangfuseWorkerValues {
@@ -37,6 +39,8 @@ export interface LangfuseWorkerValues {
   resources?: ResourceRequirements;
   replicas?: number;
   additionalEnv?: Array<{ name: string; value: string }>;
+  /** PriorityClass for the worker pods. Overrides the global priorityClassName. */
+  priorityClassName?: string | null;
 }
 
 export interface LangfuseNextauthValues {
@@ -50,11 +54,56 @@ export interface LangfuseFeaturesValues {
   experimentalFeaturesEnabled?: boolean;
 }
 
+export interface LangfuseAiFeaturesValues {
+  /** LANGFUSE_AI_PROVIDER: bedrock, anthropic, or openai. Required to enable AI features. */
+  provider?: string;
+  /** LANGFUSE_AI_MODEL. Required whenever provider is set. */
+  model?: string;
+  /** LANGFUSE_AI_SMALL_MODEL for supplementary calls such as conversation titles. */
+  smallModel?: string;
+  /** LANGFUSE_AI_API_KEY. Required for anthropic and openai; rejected for bedrock. */
+  apiKey?: LangfuseSecretValue;
+  /** LANGFUSE_AI_BASE_URL. For openai, include `/v1`. */
+  baseUrl?: string;
+  /** LANGFUSE_AI_EXTRA_HEADERS as a JSON object string. */
+  extraHeaders?: string;
+  /** Set LANGFUSE_AI_USE_RESPONSES_API=true for the OpenAI Responses API. */
+  useResponsesApi?: boolean;
+  /** LANGFUSE_AI_AWS_BEDROCK_REGION. */
+  bedrockRegion?: string;
+  /** LANGFUSE_AI_FEATURES_PROJECT_ID for tracing AI feature runs on this instance. */
+  projectId?: string;
+  inAppAgent?: {
+    /** Set to true to enable LANGFUSE_IN_APP_AGENT_ENABLED on web and worker. */
+    enabled?: boolean;
+    mcp?: {
+      /** Use the in-cluster web Service URL for worker MCP calls. */
+      useInternalWebUrl?: boolean;
+    };
+    sandbox?: {
+      /** Sandbox provider; `lambda-microvm` is the only accepted value. */
+      provider?: string;
+      /** AWS Lambda MicroVM image identifier. */
+      imageIdentifier?: string;
+      /** AWS Lambda MicroVM execution role ARN. */
+      executionRoleArn?: string;
+      /** AWS Lambda MicroVM region. */
+      region?: string;
+      /** Egress network connector ARN (required with lambda-microvm). */
+      egressNetworkConnectorArn?: string;
+    };
+  };
+}
+
 export interface LangfuseCoreValues {
   logging?: { level?: string; format?: string };
   salt?: LangfuseSecretValue;
   encryptionKey?: LangfuseSecretValue;
   features?: LangfuseFeaturesValues;
+  /** PriorityClass for all Langfuse deployments. */
+  priorityClassName?: string;
+  /** Langfuse AI features: the in-app agent and Ask AI. */
+  aiFeatures?: LangfuseAiFeaturesValues;
   nodeEnv?: string;
   web?: LangfuseWebValues;
   worker?: LangfuseWorkerValues;
@@ -82,9 +131,27 @@ export interface LangfusePostgresqlValues {
     password?: string;
     database?: string;
     existingSecret?: string;
+    secretKeys?: { userPasswordKey?: string; adminPasswordKey?: string };
   };
-  architecture?: string;
-  image?: { repository?: string };
+  image?: { repository?: string; tag?: string; pullPolicy?: string };
+  replicaCount?: number;
+  service?: { type?: string; port?: number };
+  storage?: {
+    requestedSize?: string;
+    className?: string;
+    persistentVolumeClaimRetentionPolicy?: { whenDeleted?: string; whenScaled?: string };
+  };
+  settings?: { superuserPassword?: string; existingSecret?: string };
+  userDatabase?: { name?: string; user?: string; password?: string; existingSecret?: string };
+  resources?: ResourceRequirements;
+  nodeSelector?: Record<string, string>;
+  tolerations?: unknown[];
+  affinity?: unknown;
+  podSecurityContext?: Record<string, unknown>;
+  securityContext?: Record<string, unknown>;
+  livenessProbe?: Record<string, unknown>;
+  readinessProbe?: Record<string, unknown>;
+  startupProbe?: Record<string, unknown>;
 }
 
 export interface LangfuseClickhouseValues {
@@ -92,30 +159,88 @@ export interface LangfuseClickhouseValues {
   host?: string;
   httpPort?: number;
   nativePort?: number;
-  auth?: { username?: string; password?: string; existingSecret?: string };
-  shards?: number;
-  replicaCount?: number;
-  resources?: ResourceRequirements;
-  resourcesPreset?: string;
-  image?: { repository?: string };
-  zookeeper?: {
-    replicaCount?: number;
-    resources?: ResourceRequirements;
-    image?: { repository?: string };
+  database?: string;
+  auth?: {
+    username?: string;
+    password?: string;
+    existingSecret?: string;
+    existingSecretKey?: string;
   };
+  crdCheck?: boolean;
+  cluster?: LangfuseClickhouseClusterValues;
+  keeper?: LangfuseClickhouseKeeperValues;
 }
+
+/** Shared shape for ClickHouse cluster and keeper sub-component config. */
+export interface LangfuseClickhouseComponentValues {
+  enabled?: boolean;
+  replicas?: number;
+  image?: { repository?: string; tag?: string };
+  storage?: { size?: string; className?: string; accessModes?: string[] };
+  resources?: ResourceRequirements;
+  nodeSelector?: Record<string, string>;
+  tolerations?: unknown[];
+  affinity?: unknown;
+  /** PriorityClass for pods. */
+  priorityClassName?: string;
+}
+
+export interface LangfuseClickhouseClusterValues extends LangfuseClickhouseComponentValues {
+  settings?: Record<string, unknown>;
+  profileSettings?: Record<string, unknown>;
+}
+
+export type LangfuseClickhouseKeeperValues = LangfuseClickhouseComponentValues;
 
 export interface LangfuseRedisValues {
   deploy?: boolean;
   host?: string;
   port?: number;
   auth?: {
+    enabled?: boolean;
     username?: string;
     password?: string;
     existingSecret?: string;
+    existingSecretPasswordKey?: string;
+    database?: number;
+    usersExistingSecret?: string;
+    aclUsers?: Record<string, { permissions?: string }>;
+    aclConfig?: string;
   };
-  image?: { repository?: string };
-  architecture?: string;
+  tls?: {
+    enabled?: boolean;
+    caPath?: string;
+    certPath?: string;
+    keyPath?: string;
+  };
+  cluster?: { enabled?: boolean; nodes?: string[] };
+  sentinel?: {
+    enabled?: boolean;
+    masterSet?: string;
+    nodes?: string[];
+    password?: string;
+    existingSecret?: string;
+    existingSecretPasswordKey?: string;
+  };
+  image?: { registry?: string; repository?: string; tag?: string; pullPolicy?: string };
+  service?: { type?: string; port?: number };
+  replica?: {
+    enabled?: boolean;
+    replicas?: number;
+    persistence?: { size?: string; storageClass?: string; accessModes?: string[] };
+    service?: { enabled?: boolean; type?: string; port?: number };
+  };
+  dataStorage?: {
+    enabled?: boolean;
+    requestedSize?: string;
+    className?: string;
+    accessModes?: string[];
+    keepPvc?: boolean;
+  };
+  valkeyConfig?: string;
+  resources?: ResourceRequirements;
+  podSecurityContext?: Record<string, unknown>;
+  metrics?: { enabled?: boolean };
 }
 
 export interface LangfuseS3Values {
@@ -131,10 +256,30 @@ export interface LangfuseS3Values {
     rootUser?: string;
     rootPassword?: string;
     existingSecret?: string;
+    rootUserSecretKey?: string;
+    rootPasswordSecretKey?: string;
   };
-  resources?: ResourceRequirements;
-  image?: { repository?: string };
   defaultBuckets?: string;
+  allInOne?: {
+    enabled?: boolean;
+    image?: { registry?: string; repository?: string; tag?: string; pullPolicy?: string };
+    s3?: {
+      enabled?: boolean;
+      port?: number;
+      enableAuth?: boolean;
+      existingConfigSecret?: string;
+      createBuckets?: Array<{ name: string }>;
+      createBucketsHook?: { resources?: ResourceRequirements };
+    };
+    data?: {
+      type?: string;
+      size?: string;
+      storageClass?: string;
+      accessModes?: string[];
+    };
+    service?: { type?: string; internalTrafficPolicy?: string };
+    resources?: ResourceRequirements;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +315,7 @@ export interface LangfuseProps {
   chart?: string;
   /** Helm chart repository URL (default: https://langfuse.github.io/langfuse-k8s). */
   repo?: string;
-  /** Helm chart version pin (default: 1.5.41). */
+  /** Helm chart version pin (default: 2.1.0). */
   version?: string;
   /** Raw Helm value overrides (deep-merged into computed values). */
   values?: DeepPartial<LangfuseValues>;

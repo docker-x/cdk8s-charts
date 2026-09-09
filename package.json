@@ -17,6 +17,10 @@
     "format": "biome format --write .",
     "test": "nx run-many --target=test",
     "synth": "nx run-many --target=synth",
+    "check-updates": "node .github/scripts/check-chart-updates-local.ts",
+    "check-updates:outdated": "node .github/scripts/check-chart-updates-local.ts --outdated",
+    "check-updates:json": "node .github/scripts/check-chart-updates-local.ts --json",
+    "check-updates:ci": "node .github/scripts/check-chart-updates.ts --dry-run",
     "prepare": "husky"
   },
   "lint-staged": {
