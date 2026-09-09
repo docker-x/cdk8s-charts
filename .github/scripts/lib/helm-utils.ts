@@ -30,8 +30,9 @@ export function helmLatestVersion(chart: string, repo?: string): string {
 function parseVersion(v: string): semver.SemVer | null {
   const parsed = semver.parse(v);
   if (parsed) return parsed;
-  // Only coerce strings that look like partial versions (optional v prefix, digits and dots only)
-  if (/^v?[\d.]+$/.test(v)) return semver.coerce(v);
+  // Only coerce strings that look like partial versions (optional v prefix,
+  // 1-3 numeric segments separated by dots) — rejects malformed input like 1..2
+  if (/^v?\d+(?:\.\d+){0,2}$/.test(v)) return semver.coerce(v);
   return null;
 }
 

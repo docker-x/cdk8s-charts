@@ -57,11 +57,15 @@ function getStringValue(node: ts.Expression | undefined, consts: ConstMap): stri
     return consts.get(node.text);
   }
   // Binary expression: props.chart ?? 'fallback' or props.chart || 'fallback'
-  // → try left first, then right
+  // → try left first, then right. Use || for BarBarToken (empty string is
+  // falsy) and ?? for QuestionQuestionToken (only null/undefined is falsy).
   if (ts.isBinaryExpression(node)) {
     const kind = node.operatorToken.kind;
     if (kind === ts.SyntaxKind.QuestionQuestionToken || kind === ts.SyntaxKind.BarBarToken) {
-      return getStringValue(node.left, consts) ?? getStringValue(node.right, consts);
+      const left = getStringValue(node.left, consts);
+      return kind === ts.SyntaxKind.BarBarToken
+        ? left || getStringValue(node.right, consts)
+        : (left ?? getStringValue(node.right, consts));
     }
   }
   return undefined;
