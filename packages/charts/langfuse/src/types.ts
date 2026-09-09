@@ -141,8 +141,8 @@ export interface LangfusePostgresqlValues {
     className?: string;
     persistentVolumeClaimRetentionPolicy?: { whenDeleted?: string; whenScaled?: string };
   };
-  settings?: { superuserPassword?: unknown; existingSecret?: string };
-  userDatabase?: { name?: unknown; user?: unknown; password?: unknown; existingSecret?: string };
+  settings?: { superuserPassword?: string; existingSecret?: string };
+  userDatabase?: { name?: string; user?: string; password?: string; existingSecret?: string };
   resources?: ResourceRequirements;
   nodeSelector?: Record<string, string>;
   tolerations?: unknown[];

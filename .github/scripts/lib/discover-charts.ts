@@ -34,10 +34,13 @@ const CHARTS_DIR = join(REPO_ROOT, 'packages', 'charts');
 function buildSymbolTable(source: string): Map<string, string> {
   const symbols = new Map<string, string>();
   // Matches `const NAME = 'value'`, `export const NAME = "value"`,
-  // and template-literal delimited values (backticks).
+  // template-literal delimited values (backticks), and optional type
+  // annotations (e.g. `const NAME: string = 'value'`).
   // Uses a backreference (\2) to match the closing quote type so values
   // containing the other quote type (e.g. "It's fine") are captured fully.
-  const re = /(?:export\s+)?const\s+([A-Z_][A-Z0-9_]*)\s*=\s*(['"`])([^'"`]+)\2/g;
+  // Limitation: single-line only; multi-line declarations are not supported.
+  const re =
+    /(?:export\s+)?const\s+([A-Z_][A-Z0-9_]*)\s*(?::\s*[\w<>[\]|, ]+)?\s*=\s*(['"`])([^'"`]+)\2/g;
   for (const m of source.matchAll(re)) {
     symbols.set(m[1], m[3]);
   }
@@ -56,6 +59,11 @@ function resolveToken(token: string, symbols: Map<string, string>): string | und
 /**
  * Extract the first argument of the first renderChart / renderChartOn call.
  * Handles `props.chart ?? 'x'`, `props.chart ?? CONST`, or a bare `CONST`.
+ *
+ * Limitation: captures until the first comma, so complex expressions
+ * containing commas (e.g. function calls with multiple args) will break.
+ * This is acceptable for the current construct patterns, which use
+ * simple identifiers or `props.chart ?? CONST` fallbacks.
  */
 function extractChartRef(source: string, symbols: Map<string, string>): string | undefined {
   // Match renderChart( or renderChartOn( then capture up to the first comma.
@@ -73,10 +81,11 @@ function extractChartRef(source: string, symbols: Map<string, string>): string |
 
 /** Extract the repo url from `repo: ...` inside a renderChart options object. */
 function extractRepo(source: string, symbols: Map<string, string>): string | undefined {
-  // Constrain to the first renderChart/renderChartOn call's options object
-  // so we don't match `repo:` in comments or interface definitions.
+  // Constrain to the first renderChart/renderChartOn call's options object.
+  // `[^)]*?` bounds the match to within the call's argument list (won't cross
+  // the closing paren), preventing matches in later code or comments.
   const re =
-    /render(?:Chart|ChartOn)\s*\([\s\S]*?repo:\s*(?:props\.repo\s*\?\?\s*)?(['"][^'"]+['"]|[A-Z_][A-Z0-9_]*)/g;
+    /render(?:Chart|ChartOn)\s*\([^)]*?repo:\s*(?:props\.repo\s*\?\?\s*)?(['"][^'"]+['"]|[A-Z_][A-Z0-9_]*)/g;
   const m = re.exec(source);
   if (!m) return undefined;
   return resolveToken(m[1], symbols);
