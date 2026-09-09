@@ -1138,3 +1138,58 @@ The `coding-agent.json` template is optimized for AI coding assistants:
 5. Export from `src/index.ts`
 6. Create an example in `examples/`
 7. Update this document
+
+## 7. NX plugin architecture
+
+Targets are **inferred** — no `project.json` files exist anywhere in the repo. Two plugin sources are registered in `nx.json`:
+
+### 7.1 vendored nx-devkit plugins (submodule)
+
+`vendor/nx.ts` is a git submodule pointing at [nx-devkit/nx.ts](https://github.com/nx-devkit/nx.ts). We register its `typescript-preset` plugin, which infers:
+
+| Target | Trigger file | Command |
+|--------|-------------|---------|
+| `build` | `tsdown.config.ts` | `npx tsdown` |
+| `typecheck` | `tsconfig.json` | `npx tsc --build tsconfig.json` |
+| `format` / `format-check` / `lint` | `biome.json` (non-root) | `npx biome …` |
+
+Plugin options in `nx.json`:
+- `tsgo: false` — use stock `tsc`, not the experimental native compiler
+- `tsdown: true` — infer `build` from `tsdown.config.ts`
+- `biome: true` — infer format/lint from `biome.json`
+- `oxlint: false` — we use biome for lint, not oxlint
+
+The submodule is pinned to a commit; bump it with `git -C vendor/nx.ts checkout <ref> && git add vendor/nx.ts`.
+
+### 7.2 local cdk8s plugin
+
+`tools/plugins/cdk8s/src/plugin.ts` — a `createNodesV2` plugin that infers the `synth` target:
+
+| Target | Trigger file | Command |
+|--------|-------------|---------|
+| `synth` | `cdk8s.yaml` | `npx cdk8s synth` |
+
+Only `examples/*/cdk8s.yaml` files trigger it (the plugin skips workspace root). The `synth` target depends on `^build` so chart packages are compiled before synthesis.
+
+### 7.3 nx.json plugin registration
+
+```json
+{
+  "plugins": [
+    { "plugin": "./vendor/nx.ts/packages/typescript-preset/src/plugin.ts",
+      "options": { "tsgo": false, "tsdown": true, "biome": true, "oxlint": false } },
+    "./tools/plugins/cdk8s/src/plugin.ts"
+  ]
+}
+```
+
+### 7.4 Known environment limitation
+
+The `nx` native binary (`@nx/nx-linux-x64-gnu`) can crash with **SIGBUS / "Bus error (core dumped)"** in some sandboxed container environments (observed on Linux 5.14 / glibc 2.39 under restricted seccomp). When this happens, `npx nx …` produces no output and exits non-zero.
+
+Workarounds:
+- Run `npm install --ignore-scripts` to skip the nx post-install (which loads the native binding).
+- Use `node node_modules/nx/dist/bin/nx.js …` (the pure-JS entry) if the native binding is the crash source.
+- On CI, ensure the runner allows `mmap` with execute for the nx `.node` file.
+
+The inferred targets themselves are pure JS and do not require the native binding to *register* — only the `nx` CLI graph walk loads it.

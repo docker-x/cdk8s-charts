@@ -56,6 +56,19 @@ npx cdk8s synth      # synthesize K8s manifests to dist/
 - NX handles dependency ordering, caching, and parallel builds.
 - Each package has its own `package.json` and `tsconfig.json`.
 
+### NX plugins (inferred targets — no project.json)
+
+Targets are inferred by plugins registered in `nx.json`. **Never create `project.json` files.**
+
+| Plugin | Source | Infers | Trigger |
+|--------|--------|--------|---------|
+| `@nx-devkit/typescript-preset` | `vendor/nx.ts` (submodule) | `build`, `typecheck`, `format`, `format-check`, `lint` | `tsdown.config.ts`, `tsconfig.json`, `biome.json` |
+| `@cdk8s-charts/nx-plugin-cdk8s` | `tools/plugins/cdk8s/` (local) | `synth` | `cdk8s.yaml` |
+
+- `vendor/nx.ts` is a git submodule — bump with `git -C vendor/nx.ts checkout <ref> && git add vendor/nx.ts`.
+- The local cdk8s plugin lives at `tools/plugins/cdk8s/src/plugin.ts`.
+- See DESIGN.md §7 for full architecture and the known nx native SIGBUS limitation.
+
 ## Skills
 
 Detailed step-by-step workflows live in `.agents/skills/`. **Use these instead of improvising.**
