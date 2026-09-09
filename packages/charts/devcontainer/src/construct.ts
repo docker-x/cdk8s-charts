@@ -47,6 +47,7 @@ export class Devcontainer extends HelmConstruct<Values> {
       command: props.command ?? DEFAULT_COMMAND,
       storageSize: props.storageSize ?? '30Gi',
       storageClass: props.storageClass ?? 'gp3',
+      existingPvcName: props.existingPvcName,
       homeMountPath: props.homeMountPath ?? '/home/vscode',
       sshPort: props.sshPort ?? 2222,
       previewPort: props.previewPort ?? 3000,
