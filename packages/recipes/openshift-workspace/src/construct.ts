@@ -11,11 +11,6 @@ function buildLabels(name: string): Record<string, string> {
   return { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' };
 }
 
-/** Build standard metadata (name, namespace, labels) for a resource. */
-function buildMetadata(name: string, namespace: string, resourceName: string) {
-  return { name: resourceName, namespace, labels: buildLabels(name) };
-}
-
 export class OpenShiftWorkspace extends Chart {
   public readonly exports: OpenShiftWorkspaceExports;
 
@@ -26,14 +21,16 @@ export class OpenShiftWorkspace extends Chart {
     const namespace = props.namespace;
     const appsDomain = props.appsDomain;
 
-    // Validate name and namespace to prevent shell injection in embedded scripts.
-    // K8s resource names must be lowercase alphanumeric with hyphens/dots.
-    const k8sNameRe = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
-    if (!k8sNameRe.test(name)) {
-      throw new Error(`Invalid workspace name "${name}": must be a valid Kubernetes resource name`);
+    // Validate name and namespace as DNS-label values (RFC 1123):
+    // lowercase alphanumeric and hyphens, max 63 chars, no dots.
+    // This prevents shell injection in embedded scripts and ensures
+    // the values are valid as Kubernetes Service and Namespace names.
+    const dnsLabelRe = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+    if (!dnsLabelRe.test(name) || name.length > 63) {
+      throw new Error(`Invalid workspace name "${name}": must be a DNS-label value (lowercase alphanumeric with hyphens, max 63 chars, no dots)`);
     }
-    if (!k8sNameRe.test(namespace)) {
-      throw new Error(`Invalid namespace "${namespace}": must be a valid Kubernetes namespace name`);
+    if (!dnsLabelRe.test(namespace) || namespace.length > 63) {
+      throw new Error(`Invalid namespace "${namespace}": must be a DNS-label value (lowercase alphanumeric with hyphens, max 63 chars, no dots)`);
     }
 
     const keepalive = { enabled: true, schedule: '*/2 * * * *', ...props.keepalive };
@@ -245,6 +242,7 @@ export class OpenShiftWorkspace extends Chart {
     }
 
     // --- Devcontainer workspace ---
+    const homeMountPath = props.homeMountPath ?? '/home/vscode';
     const devcontainer = new Devcontainer(this, 'workspace', {
       namespace,
       image: props.image,
@@ -252,6 +250,7 @@ export class OpenShiftWorkspace extends Chart {
       name,
       storageSize: props.pvcSize ?? '30Gi',
       storageClass: props.pvcStorageClass ?? 'gp3',
+      homeMountPath,
       sshAuthorizedKeys: props.sshAuthorizedKeys,
       imagePullSecret: props.ghcrPullSecret,
       env: workspaceEnv,
@@ -490,7 +489,7 @@ export class OpenShiftWorkspace extends Chart {
                         { name: 'WORKSPACE_POD_LABEL', value: `app.kubernetes.io/name=${name}` },
                         { name: 'NAMESPACE', value: namespace },
                       ],
-                      command: ['/bin/sh', '-ec', buildBackupScript(backup.keep ?? 3, props.homeMountPath ?? '/home/vscode')],
+                      command: ['/bin/sh', '-ec', buildBackupScript(backup.keep ?? 3, homeMountPath)],
                     },
                   ],
                 },
@@ -549,13 +548,28 @@ export class OpenShiftWorkspace extends Chart {
             apiGroups: [''],
             resources: [
               'pods',
-              'secrets',
               'serviceaccounts',
               'persistentvolumeclaims',
               'services',
               'configmaps',
             ],
             verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+          },
+          // Secrets: allow management (create/update/delete) but not reading
+          // values, to prevent credential exfiltration via the deployer token.
+          // The deployer can create/update secrets with data but cannot get
+          // (read) existing secret values.
+          {
+            apiGroups: [''],
+            resources: ['secrets'],
+            verbs: ['create', 'delete', 'list', 'patch', 'update', 'watch'],
+          },
+          // Allow reading only its own token secret.
+          {
+            apiGroups: [''],
+            resources: ['secrets'],
+            resourceNames: [`${tfDeployerSaName}-token`],
+            verbs: ['get'],
           },
           { apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] },
           {
@@ -661,15 +675,14 @@ function buildBackupScript(keep: number, homeMountPath: string): string {
     '  exit 1',
     'fi',
     'echo "Backing up from pod: ${POD}"',
-    'oc exec -n "${NAMESPACE}" "${POD}" -c devcontainer -- /bin/sh -ec \'',
+    `oc exec -n "\${NAMESPACE}" "\${POD}" -c devcontainer -- env HOME_MOUNT_PATH=${JSON.stringify(homeMountPath)} BACKUP_KEEP=${keep} /bin/sh -ec '`,
     '  for f in /etc/r2-credentials/AWS_ACCESS_KEY_ID /etc/r2-credentials/AWS_SECRET_ACCESS_KEY /etc/r2-credentials/R2_ACCOUNT_ID /etc/r2-credentials/R2_BUCKET /etc/r2-credentials/BACKUP_PASSWORD; do',
     '    if [ ! -f "$f" ]; then echo "Fatal: missing R2 credential file $f"; exit 1; fi',
     '  done',
     '  for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET BACKUP_PASSWORD; do',
     '    export "$f=$(cat /etc/r2-credentials/$f)"',
     '  done',
-    `  export BACKUP_KEEP=${keep}`,
-    `  cd ${JSON.stringify(homeMountPath)}`,
+    '  cd -- "$HOME_MOUNT_PATH"',
     '  tar czf /tmp/backup.tar.gz \\',
     '    --exclude=".ssh" --exclude=".aws" --exclude=".kube" --exclude=".gnupg" \\',
     '    --exclude=".env" --exclude=".env.*" --exclude="*_history" --exclude="node_modules" \\',
@@ -693,7 +706,7 @@ function buildBackupScript(keep: number, homeMountPath: string): string {
     '    R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"',
     '    aws s3 cp /tmp/backup.tar.gz.enc "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto',
     '    UPLOAD_EXIT=$?',
-    '    if [ "${UPLOAD_EXIT}" -ne 0 ]; then echo "Fatal: upload failed"; exit "${UPLOAD_EXIT}"; fi',
+    '    if [ "${UPLOAD_EXIT}" -ne 0 ]; then echo "Fatal: upload failed"; rm -f /tmp/backup.tar.gz.enc; exit "${UPLOAD_EXIT}"; fi',
     '    echo "Cleaning up old backups (keeping last ${BACKUP_KEEP})..."',
     '    aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "workspace-state-" --endpoint-url "${R2_ENDPOINT}" --region auto --output json --query "Contents[*].Key" | jq -r ".[]" | sort -r > /tmp/all.txt',
     '    head -n "${BACKUP_KEEP}" /tmp/all.txt > /tmp/keep.txt',
@@ -701,6 +714,7 @@ function buildBackupScript(keep: number, homeMountPath: string): string {
     '    rm -f /tmp/all.txt /tmp/keep.txt',
     '  else',
     '    echo "Fatal: aws-cli not found in workspace image. Install aws-cli to enable backups."',
+    '    rm -f /tmp/backup.tar.gz.enc',
     '    exit 1',
     '  fi',
     '  rm -f /tmp/backup.tar.gz.enc',

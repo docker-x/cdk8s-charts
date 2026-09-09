@@ -17,12 +17,6 @@ export class Devcontainer extends HelmConstruct<Values> {
     super(scope, id);
 
     const name = props.name ?? id;
-    const hasSshKeys = Boolean(props.sshAuthorizedKeys || props.sshSecretName);
-    const sshSecretName = props.sshSecretName ?? `${name}-ssh-keys`;
-    const hasPullSecretData = Boolean(props.imagePullSecret);
-    const hasPullSecretRef = Boolean(props.imagePullSecretName);
-    const pullSecretName = props.imagePullSecretName ?? 'ghcr-pull-secret';
-    const saName = props.serviceAccountName ?? `${name}-sa`;
 
     const computed: Values = {
       image: props.image,
@@ -34,9 +28,9 @@ export class Devcontainer extends HelmConstruct<Values> {
       sshPort: props.sshPort ?? 2222,
       previewPort: props.previewPort ?? 3000,
       sshAuthorizedKeys: props.sshAuthorizedKeys,
-      sshSecretName,
+      sshSecretName: props.sshSecretName ?? `${name}-ssh-keys`,
       imagePullSecret: props.imagePullSecret,
-      imagePullSecretName: pullSecretName,
+      imagePullSecretName: props.imagePullSecretName ?? 'ghcr-pull-secret',
       env: props.env,
       secretEnv: props.secretEnv,
       secretRefs: props.secretRefs,
@@ -47,18 +41,30 @@ export class Devcontainer extends HelmConstruct<Values> {
       replicas: props.replicas ?? 1,
       labels: props.labels,
       annotations: props.annotations,
-      volumes: props.volumes,
-      volumeMounts: props.volumeMounts,
-      sidecars: props.sidecars,
+      // Note: volumes, volumeMounts, and sidecars are NOT in computed values
+      // because deepMerge replaces arrays. They are concatenated separately
+      // below to ensure required entries are never removed by user overrides.
       lifecycle: props.lifecycle,
       extraServicePorts: props.extraServicePorts,
-      serviceAccountName: saName,
+      serviceAccountName: props.serviceAccountName ?? `${name}-sa`,
       automountServiceAccountToken: props.automountServiceAccountToken ?? true,
       runAsNonRoot: props.runAsNonRoot ?? true,
+      fsGroup: props.fsGroup,
       name,
     };
 
     const values = props.values ? deepMerge(computed, props.values) : computed;
+
+    // Derive all Secret/SA state from the final merged values so that
+    // raw value overrides (values.sshSecretName, values.imagePullSecretName,
+    // values.serviceAccountName) are honored consistently.
+    const hasSshKeys = Boolean(values.sshAuthorizedKeys || values.sshSecretName);
+    const sshSecretName = values.sshSecretName ?? `${name}-ssh-keys`;
+    const hasPullSecretData = Boolean(values.imagePullSecret);
+    const hasPullSecretRef = Boolean(values.imagePullSecretName);
+    const pullSecretName = values.imagePullSecretName ?? 'ghcr-pull-secret';
+    const saName = values.serviceAccountName ?? `${name}-sa`;
+    const shouldCreateSa = !props.serviceAccountName && !props.values?.serviceAccountName;
 
     // --- SSH keys Secret ---
     if (values.sshAuthorizedKeys) {
@@ -106,7 +112,7 @@ export class Devcontainer extends HelmConstruct<Values> {
     }
 
     // --- ServiceAccount ---
-    if (!props.serviceAccountName) {
+    if (shouldCreateSa) {
       new ApiObject(this, 'sa', {
         apiVersion: 'v1',
         kind: 'ServiceAccount',
@@ -173,6 +179,8 @@ export class Devcontainer extends HelmConstruct<Values> {
     }
 
     // --- Build volume mounts ---
+    // Required mounts are always present; user mounts from both props and
+    // values overrides are appended (not replaced) to preserve required entries.
     const volumeMounts: Array<{
       name: string;
       mountPath: string;
@@ -188,8 +196,13 @@ export class Devcontainer extends HelmConstruct<Values> {
       });
     }
 
-    if (values.volumeMounts) {
-      volumeMounts.push(...values.volumeMounts);
+    // Concatenate props.volumeMounts and values.volumeMounts (from raw overrides).
+    // deepMerge is not used for arrays, so both sources are preserved.
+    if (props.volumeMounts) {
+      volumeMounts.push(...props.volumeMounts);
+    }
+    if (props.values?.volumeMounts) {
+      volumeMounts.push(...props.values.volumeMounts);
     }
 
     // --- Build volumes ---
@@ -207,8 +220,12 @@ export class Devcontainer extends HelmConstruct<Values> {
       });
     }
 
-    if (values.volumes) {
-      volumes.push(...values.volumes);
+    // Concatenate props.volumes and values.volumes (from raw overrides).
+    if (props.volumes) {
+      volumes.push(...props.volumes);
+    }
+    if (props.values?.volumes) {
+      volumes.push(...props.values.volumes);
     }
 
     // --- Build pod annotations ---
@@ -245,6 +262,7 @@ export class Devcontainer extends HelmConstruct<Values> {
           spec: {
             serviceAccountName: saName,
             automountServiceAccountToken: values.automountServiceAccountToken,
+            ...(values.fsGroup ? { securityContext: { fsGroup: values.fsGroup } } : {}),
             ...(hasPullSecretData || hasPullSecretRef ? { imagePullSecrets: [{ name: pullSecretName }] } : {}),
             containers: [
               {
@@ -265,7 +283,9 @@ export class Devcontainer extends HelmConstruct<Values> {
                 resources: values.resources,
                 ...(values.lifecycle ? { lifecycle: values.lifecycle } : {}),
               },
-              ...(values.sidecars ?? []),
+              // Concatenate props.sidecars and values.sidecars (from raw overrides).
+              ...(props.sidecars ?? []),
+              ...(props.values?.sidecars ?? []),
             ],
             volumes,
           },

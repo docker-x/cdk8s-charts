@@ -61,6 +61,7 @@ export interface Values {
   serviceAccountName?: string;
   automountServiceAccountToken?: boolean;
   runAsNonRoot?: boolean;
+  fsGroup?: number;
   name?: string;
 }
 
@@ -124,6 +125,8 @@ export interface Props {
   automountServiceAccountToken?: boolean;
   /** Security context runAsNonRoot (default: true). */
   runAsNonRoot?: boolean;
+  /** Pod security context fsGroup for PVC ownership (default: undefined). */
+  fsGroup?: number;
   /** Resource name prefix (default: {id}). */
   name?: string;
   /** Raw value overrides (deep-merged into computed defaults). */
