@@ -17,8 +17,31 @@ export class Devcontainer extends HelmConstruct<Values> {
     super(scope, id);
 
     const name = props.name ?? id;
+    const values = this.computeValues(props, name);
+    const derived = this.deriveState(values, name, props);
+    const pvcName = `${name}-state`;
 
-    const computed: Values = {
+    this.createSecrets(values, name, props.namespace, derived, pvcName);
+    this.createPvc(name, props.namespace, values);
+    const containerEnv = this.buildContainerEnv(values, name);
+    const volumeMounts = this.buildVolumeMounts(values, derived.hasSshKeys, props);
+    const volumes = this.buildVolumes(values, derived.hasSshKeys, derived.sshSecretName, pvcName, props);
+    this.createDeployment(name, props.namespace, values, derived, containerEnv, volumeMounts, volumes, props);
+    this.createService(name, props.namespace, values);
+
+    this.exports = {
+      host: name,
+      sshPort: values.sshPort ?? 2222,
+      previewPort: values.previewPort ?? 3000,
+      pvcName,
+      serviceName: name,
+      deploymentName: name,
+      secretName: derived.sshSecretName,
+    };
+  }
+
+  private computeValues(props: Props, name: string): Values {
+    return deepMerge({
       image: props.image,
       imageDigest: props.imageDigest ?? 'unknown',
       command: props.command ?? DEFAULT_COMMAND,
@@ -34,16 +57,10 @@ export class Devcontainer extends HelmConstruct<Values> {
       env: props.env,
       secretEnv: props.secretEnv,
       secretRefs: props.secretRefs,
-      resources: props.resources ?? {
-        requests: { cpu: '500m', memory: '2Gi' },
-        limits: { cpu: '1', memory: '8Gi' },
-      },
+      resources: props.resources ?? { requests: { cpu: '500m', memory: '2Gi' }, limits: { cpu: '1', memory: '8Gi' } },
       replicas: props.replicas ?? 1,
       labels: props.labels,
       annotations: props.annotations,
-      // Note: volumes, volumeMounts, and sidecars are NOT in computed values
-      // because deepMerge replaces arrays. They are concatenated separately
-      // below to ensure required entries are never removed by user overrides.
       lifecycle: props.lifecycle,
       extraServicePorts: props.extraServicePorts,
       serviceAccountName: props.serviceAccountName ?? `${name}-sa`,
@@ -51,93 +68,58 @@ export class Devcontainer extends HelmConstruct<Values> {
       runAsNonRoot: props.runAsNonRoot ?? true,
       fsGroup: props.fsGroup,
       name,
+    } as Values, props.values ?? {});
+  }
+
+  private deriveState(values: Values, name: string, props: Props) {
+    return {
+      hasSshKeys: Boolean(values.sshAuthorizedKeys || values.sshSecretName),
+      sshSecretName: values.sshSecretName ?? `${name}-ssh-keys`,
+      hasPullSecretData: Boolean(values.imagePullSecret),
+      hasPullSecretRef: Boolean(values.imagePullSecretName),
+      pullSecretName: values.imagePullSecretName ?? 'ghcr-pull-secret',
+      saName: values.serviceAccountName ?? `${name}-sa`,
+      shouldCreateSa: !props.serviceAccountName && !props.values?.serviceAccountName,
     };
+  }
 
-    const values = props.values ? deepMerge(computed, props.values) : computed;
-
-    // Derive all Secret/SA state from the final merged values so that
-    // raw value overrides (values.sshSecretName, values.imagePullSecretName,
-    // values.serviceAccountName) are honored consistently.
-    const hasSshKeys = Boolean(values.sshAuthorizedKeys || values.sshSecretName);
-    const sshSecretName = values.sshSecretName ?? `${name}-ssh-keys`;
-    const hasPullSecretData = Boolean(values.imagePullSecret);
-    const hasPullSecretRef = Boolean(values.imagePullSecretName);
-    const pullSecretName = values.imagePullSecretName ?? 'ghcr-pull-secret';
-    const saName = values.serviceAccountName ?? `${name}-sa`;
-    const shouldCreateSa = !props.serviceAccountName && !props.values?.serviceAccountName;
-
-    // --- SSH keys Secret ---
+  private createSecrets(values: Values, name: string, namespace: string, d: ReturnType<Devcontainer['deriveState']>, pvcName: string) {
     if (values.sshAuthorizedKeys) {
       new ApiObject(this, 'ssh-secret', {
-        apiVersion: 'v1',
-        kind: 'Secret',
-        metadata: {
-          name: sshSecretName,
-          namespace: props.namespace,
-          labels: buildLabels(name),
-        },
-        type: 'Opaque',
-        stringData: { authorized_keys: values.sshAuthorizedKeys },
+        apiVersion: 'v1', kind: 'Secret',
+        metadata: { name: d.sshSecretName, namespace, labels: buildLabels(name) },
+        type: 'Opaque', stringData: { authorized_keys: values.sshAuthorizedKeys },
       });
     }
-
-    // --- Secret env vars ---
     if (values.secretEnv && Object.keys(values.secretEnv).length > 0) {
       new ApiObject(this, 'secret-env', {
-        apiVersion: 'v1',
-        kind: 'Secret',
-        metadata: {
-          name: `${name}-secret-env`,
-          namespace: props.namespace,
-          labels: buildLabels(name),
-        },
-        type: 'Opaque',
-        stringData: values.secretEnv,
+        apiVersion: 'v1', kind: 'Secret',
+        metadata: { name: `${name}-secret-env`, namespace, labels: buildLabels(name) },
+        type: 'Opaque', stringData: values.secretEnv,
       });
     }
-
-    // --- Image pull secret ---
     if (values.imagePullSecret) {
       new ApiObject(this, 'pull-secret', {
-        apiVersion: 'v1',
-        kind: 'Secret',
-        metadata: {
-          name: pullSecretName,
-          namespace: props.namespace,
-          labels: buildLabels(name),
-        },
-        type: 'kubernetes.io/dockerconfigjson',
-        data: { '.dockerconfigjson': values.imagePullSecret },
+        apiVersion: 'v1', kind: 'Secret',
+        metadata: { name: d.pullSecretName, namespace, labels: buildLabels(name) },
+        type: 'kubernetes.io/dockerconfigjson', data: { '.dockerconfigjson': values.imagePullSecret },
       });
     }
-
-    // --- ServiceAccount ---
-    if (shouldCreateSa) {
+    if (d.shouldCreateSa) {
       new ApiObject(this, 'sa', {
-        apiVersion: 'v1',
-        kind: 'ServiceAccount',
-        metadata: {
-          name: saName,
-          namespace: props.namespace,
-          labels: buildLabels(name),
-        },
+        apiVersion: 'v1', kind: 'ServiceAccount',
+        metadata: { name: d.saName, namespace, labels: buildLabels(name) },
         automountServiceAccountToken: values.automountServiceAccountToken,
       });
     }
+  }
 
-    // --- PVC ---
-    const pvcName = `${name}-state`;
+  private createPvc(name: string, namespace: string, values: Values) {
     new ApiObject(this, 'pvc', {
-      apiVersion: 'v1',
-      kind: 'PersistentVolumeClaim',
+      apiVersion: 'v1', kind: 'PersistentVolumeClaim',
       metadata: {
-        name: pvcName,
-        namespace: props.namespace,
-        labels: {
-          'app.kubernetes.io/name': name,
-          'app.kubernetes.io/component': 'workspace-state',
-          'app.kubernetes.io/managed-by': 'cdk8s',
-        },
+        name: `${name}-state`, namespace,
+        labels: { 'app.kubernetes.io/name': name, 'app.kubernetes.io/component': 'workspace-state', 'app.kubernetes.io/managed-by': 'cdk8s' },
         annotations: { 'helm.sh/resource-policy': 'keep' },
       },
       spec: {
@@ -146,113 +128,51 @@ export class Devcontainer extends HelmConstruct<Values> {
         resources: { requests: { storage: values.storageSize } },
       },
     });
+  }
 
-    // --- Build container env ---
-    const containerEnv: Array<{
-      name: string;
-      value?: string;
-      valueFrom?: { secretKeyRef?: { name: string; key: string } };
-    }> = [];
+  private buildContainerEnv(values: Values, name: string) {
+    const env: Array<{ name: string; value?: string; valueFrom?: { secretKeyRef?: { name: string; key: string } } }> = [];
+    if (values.env) for (const [k, v] of Object.entries(values.env)) env.push({ name: k, value: v });
+    if (values.secretEnv) for (const k of Object.keys(values.secretEnv)) env.push({ name: k, valueFrom: { secretKeyRef: { name: `${name}-secret-env`, key: k } } });
+    if (values.secretRefs) for (const [k, r] of Object.entries(values.secretRefs)) env.push({ name: k, valueFrom: { secretKeyRef: { name: r.name, key: r.key } } });
+    return env;
+  }
 
-    if (values.env) {
-      for (const [key, val] of Object.entries(values.env)) {
-        containerEnv.push({ name: key, value: val });
-      }
-    }
+  private buildVolumeMounts(values: Values, hasSshKeys: boolean, props: Props) {
+    const mounts: Array<{ name: string; mountPath: string; readOnly?: boolean; subPath?: string }> = [
+      { name: 'workspace-state', mountPath: values.homeMountPath ?? '/home/vscode' },
+    ];
+    if (values.sshAuthorizedKeys || hasSshKeys) mounts.push({ name: 'ssh-keys', mountPath: '/ssh-keys', readOnly: true });
+    if (props.volumeMounts) mounts.push(...props.volumeMounts);
+    if (props.values?.volumeMounts) mounts.push(...props.values.volumeMounts);
+    return mounts;
+  }
 
-    if (values.secretEnv && Object.keys(values.secretEnv).length > 0) {
-      for (const key of Object.keys(values.secretEnv)) {
-        containerEnv.push({
-          name: key,
-          valueFrom: { secretKeyRef: { name: `${name}-secret-env`, key } },
-        });
-      }
-    }
-
-    if (values.secretRefs) {
-      for (const [key, ref] of Object.entries(values.secretRefs)) {
-        containerEnv.push({
-          name: key,
-          valueFrom: { secretKeyRef: { name: ref.name, key: ref.key } },
-        });
-      }
-    }
-
-    // --- Build volume mounts ---
-    // Required mounts are always present; user mounts from both props and
-    // values overrides are appended (not replaced) to preserve required entries.
-    const volumeMounts: Array<{
-      name: string;
-      mountPath: string;
-      readOnly?: boolean;
-      subPath?: string;
-    }> = [{ name: 'workspace-state', mountPath: values.homeMountPath ?? '/home/vscode' }];
-
-    if (values.sshAuthorizedKeys || hasSshKeys) {
-      volumeMounts.push({
-        name: 'ssh-keys',
-        mountPath: '/ssh-keys',
-        readOnly: true,
-      });
-    }
-
-    // Concatenate props.volumeMounts and values.volumeMounts (from raw overrides).
-    // deepMerge is not used for arrays, so both sources are preserved.
-    if (props.volumeMounts) {
-      volumeMounts.push(...props.volumeMounts);
-    }
-    if (props.values?.volumeMounts) {
-      volumeMounts.push(...props.values.volumeMounts);
-    }
-
-    // --- Build volumes ---
-    const volumes: Array<{ name: string; [key: string]: unknown }> = [
+  private buildVolumes(values: Values, hasSshKeys: boolean, sshSecretName: string, pvcName: string, props: Props) {
+    const vols: Array<{ name: string; [key: string]: unknown }> = [
       { name: 'workspace-state', persistentVolumeClaim: { claimName: pvcName } },
     ];
-
     if (values.sshAuthorizedKeys || hasSshKeys) {
-      volumes.push({
-        name: 'ssh-keys',
-        secret: {
-          secretName: sshSecretName,
-          items: [{ key: 'authorized_keys', path: 'authorized_keys' }],
-        },
-      });
+      vols.push({ name: 'ssh-keys', secret: { secretName: sshSecretName, items: [{ key: 'authorized_keys', path: 'authorized_keys' }] } });
     }
+    if (props.volumes) vols.push(...props.volumes);
+    if (props.values?.volumes) vols.push(...props.values.volumes);
+    return vols;
+  }
 
-    // Concatenate props.volumes and values.volumes (from raw overrides).
-    if (props.volumes) {
-      volumes.push(...props.volumes);
-    }
-    if (props.values?.volumes) {
-      volumes.push(...props.values.volumes);
-    }
-
-    // --- Build pod annotations ---
-    const podAnnotations: Record<string, string> = {
-      'rollouts.dev/image-digest': values.imageDigest ?? 'unknown',
-      ...(values.annotations ?? {}),
-    };
-
-    // --- Build pod labels ---
-    // User labels are merged first; the required selector label is applied
-    // last so it cannot be overridden by user-supplied labels (which would
-    // break the Deployment selector ↔ pod label match).
-    const podLabels: Record<string, string> = {
-      ...(values.labels ?? {}),
-      'app.kubernetes.io/name': name,
-      'app.kubernetes.io/managed-by': 'cdk8s',
-    };
-
-    // --- Deployment ---
+  private createDeployment(
+    name: string, namespace: string, values: Values,
+    d: ReturnType<Devcontainer['deriveState']>,
+    containerEnv: ReturnType<Devcontainer['buildContainerEnv']>,
+    volumeMounts: ReturnType<Devcontainer['buildVolumeMounts']>,
+    volumes: ReturnType<Devcontainer['buildVolumes']>,
+    props: Props,
+  ) {
+    const podAnnotations = { 'rollouts.dev/image-digest': values.imageDigest ?? 'unknown', ...(values.annotations ?? {}) };
+    const podLabels = { ...(values.labels ?? {}), 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' };
     new ApiObject(this, 'deployment', {
-      apiVersion: 'apps/v1',
-      kind: 'Deployment',
-      metadata: {
-        name,
-        namespace: props.namespace,
-        labels: podLabels,
-      },
+      apiVersion: 'apps/v1', kind: 'Deployment',
+      metadata: { name, namespace, labels: podLabels },
       spec: {
         replicas: values.replicas,
         strategy: { type: 'Recreate' },
@@ -260,30 +180,22 @@ export class Devcontainer extends HelmConstruct<Values> {
         template: {
           metadata: { labels: podLabels, annotations: podAnnotations },
           spec: {
-            serviceAccountName: saName,
+            serviceAccountName: d.saName,
             automountServiceAccountToken: values.automountServiceAccountToken,
             ...(values.fsGroup ? { securityContext: { fsGroup: values.fsGroup } } : {}),
-            ...(hasPullSecretData || hasPullSecretRef ? { imagePullSecrets: [{ name: pullSecretName }] } : {}),
+            ...(d.hasPullSecretData || d.hasPullSecretRef ? { imagePullSecrets: [{ name: d.pullSecretName }] } : {}),
             containers: [
               {
-                name: 'devcontainer',
-                image: values.image,
-                command: values.command,
-                securityContext: {
-                  runAsNonRoot: values.runAsNonRoot,
-                  allowPrivilegeEscalation: false,
-                  capabilities: { drop: ['ALL'] },
-                },
+                name: 'devcontainer', image: values.image, command: values.command,
+                securityContext: { runAsNonRoot: values.runAsNonRoot, allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } },
                 env: containerEnv,
                 ports: [
                   { containerPort: values.sshPort ?? 2222, name: 'ssh' },
                   { containerPort: values.previewPort ?? 3000, name: 'preview' },
                 ],
-                volumeMounts,
-                resources: values.resources,
+                volumeMounts, resources: values.resources,
                 ...(values.lifecycle ? { lifecycle: values.lifecycle } : {}),
               },
-              // Concatenate props.sidecars and values.sidecars (from raw overrides).
               ...(props.sidecars ?? []),
               ...(props.values?.sidecars ?? []),
             ],
@@ -292,16 +204,13 @@ export class Devcontainer extends HelmConstruct<Values> {
         },
       },
     });
+  }
 
-    // --- Service ---
+  private createService(name: string, namespace: string, values: Values) {
+    const podLabels = { ...(values.labels ?? {}), 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' };
     new ApiObject(this, 'service', {
-      apiVersion: 'v1',
-      kind: 'Service',
-      metadata: {
-        name,
-        namespace: props.namespace,
-        labels: podLabels,
-      },
+      apiVersion: 'v1', kind: 'Service',
+      metadata: { name, namespace, labels: podLabels },
       spec: {
         selector: { 'app.kubernetes.io/name': name },
         ports: [
@@ -312,15 +221,5 @@ export class Devcontainer extends HelmConstruct<Values> {
         type: 'ClusterIP',
       },
     });
-
-    this.exports = {
-      host: name,
-      sshPort: values.sshPort ?? 2222,
-      previewPort: values.previewPort ?? 3000,
-      pvcName,
-      serviceName: name,
-      deploymentName: name,
-      secretName: sshSecretName,
-    };
   }
 }
