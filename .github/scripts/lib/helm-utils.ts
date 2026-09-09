@@ -22,18 +22,30 @@ export function helmLatestVersion(chart: string, repo?: string): string {
 }
 
 /**
+ * Parse a version string, returning a SemVer or null.
+ * Uses semver.parse first (preserves pre-release), then falls back to
+ * semver.coerce only for partial versions like "1.0" or "1.2".
+ * Guards against coercing arbitrary digit-bearing strings like "latest-2024".
+ */
+function parseVersion(v: string): semver.SemVer | null {
+  const parsed = semver.parse(v);
+  if (parsed) return parsed;
+  // Only coerce strings that look like partial versions (digits and dots only)
+  if (/^[\d.]+$/.test(v)) return semver.coerce(v);
+  return null;
+}
+
+/**
  * Compare two semver-ish versions. Returns true when `latest` is newer
  * than `current`.
  *
  * Uses the `semver` package for full SemVer 2.0.0 compliance, including
  * pre-release precedence and optional `v` prefix handling.
- * `semver.parse` is tried first (preserves pre-release), falling back
- * to `semver.coerce` for partial versions like `1.0`.
  */
 export function isNewer(current: string | undefined, latest: string): boolean {
   if (!current) return true;
-  const c = semver.parse(current) ?? semver.coerce(current);
-  const l = semver.parse(latest) ?? semver.coerce(latest);
+  const c = parseVersion(current);
+  const l = parseVersion(latest);
   if (!c || !l) return false;
   return semver.gt(l, c);
 }

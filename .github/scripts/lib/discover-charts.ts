@@ -49,12 +49,12 @@ function getStringValue(node: ts.Expression | undefined, consts: ConstMap): stri
   if (ts.isIdentifier(node)) {
     return consts.get(node.text);
   }
-  // Binary expression: props.chart ?? 'fallback' → return the right side
+  // Binary expression: props.chart ?? 'fallback' → try left first, then right
   if (
     ts.isBinaryExpression(node) &&
     node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken
   ) {
-    return getStringValue(node.right, consts);
+    return getStringValue(node.left, consts) ?? getStringValue(node.right, consts);
   }
   return undefined;
 }
