@@ -1,5 +1,5 @@
 import { Devcontainer } from '@cdk8s-charts/devcontainer';
-import type { Lifecycle, SidecarContainer } from '@cdk8s-charts/devcontainer';
+import type { SidecarContainer } from '@cdk8s-charts/devcontainer';
 import { ApiObject, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { BackupConfig, KeepaliveConfig, OpenShiftWorkspaceExports, OpenShiftWorkspaceProps, PaseoAutoResumeConfig, TfDeployerConfig } from './types';
@@ -7,10 +7,17 @@ import type { BackupConfig, KeepaliveConfig, OpenShiftWorkspaceExports, OpenShif
 const OAUTH_PROXY_IMAGE = 'quay.io/openshift/origin-oauth-proxy:4.18';
 const OC_CLI_IMAGE = 'quay.io/openshift/origin-cli:latest';
 
+/** Pod lifecycle hooks (matches Devcontainer.Lifecycle). */
+interface PodLifecycle {
+  postStart?: { exec?: { command: string[] } };
+  preStop?: { exec?: { command: string[] } };
+}
+
 type ResolvedBackup = { schedule: string; keep: number } & BackupConfig;
 type ResolvedKeepalive = { enabled: boolean; schedule: string } & KeepaliveConfig;
 type ResolvedPaseoAutoResume = { enabled: boolean } & PaseoAutoResumeConfig;
 type ResolvedTfDeployer = { enabled: boolean } & TfDeployerConfig;
+type R2SecretResult = { r2SecretName: string; hasBackupSecrets: boolean };
 
 /** Build standard metadata labels for a resource in this workspace. */
 function buildLabels(name: string): Record<string, string> {
@@ -111,7 +118,7 @@ export class OpenShiftWorkspace extends Chart {
     return secretName;
   }
 
-  private createR2Secret(name: string, namespace: string, backup: ResolvedBackup): { r2SecretName: string; hasBackupSecrets: boolean } {
+  private createR2Secret(name: string, namespace: string, backup: ResolvedBackup): R2SecretResult {
     const r2SecretName = `${name}-r2-credentials`;
     const r2Fields = [backup.r2AccountId, backup.r2AccessKeyId, backup.r2SecretAccessKey, backup.r2BucketName, backup.resticPassword];
     const providedCount = r2Fields.filter(Boolean).length;
@@ -193,7 +200,7 @@ export class OpenShiftWorkspace extends Chart {
     };
   }
 
-  private buildLifecycle(paseoAutoResume: ResolvedPaseoAutoResume): Lifecycle | undefined {
+  private buildLifecycle(paseoAutoResume: ResolvedPaseoAutoResume): PodLifecycle | undefined {
     if (!paseoAutoResume.enabled) return undefined;
     return {
       postStart: { exec: { command: ['/bin/bash', '-c', [
@@ -223,7 +230,7 @@ export class OpenShiftWorkspace extends Chart {
     workspaceEnv: Record<string, string>; podAnnotations: Record<string, string>;
     extraVolumes: Array<{ name: string; [key: string]: unknown }>;
     extraVolumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }>;
-    oauthProxySidecar: SidecarContainer; lifecycle: Lifecycle | undefined;
+    oauthProxySidecar: SidecarContainer; lifecycle: PodLifecycle | undefined;
   }) {
     const { name, namespace, props, homeMountPath, workspaceEnv, podAnnotations, extraVolumes, extraVolumeMounts, oauthProxySidecar, lifecycle } = opts;
     return new Devcontainer(this, 'workspace', {
