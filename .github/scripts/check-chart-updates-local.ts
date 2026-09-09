@@ -15,48 +15,11 @@
  * Requires: helm on PATH (helm show chart / helm show chart oci://...).
  */
 
-import { execFileSync, type StdioOptions } from 'node:child_process';
 import { discoverCharts } from './lib/discover-charts.ts';
+import { helmLatestVersion, isNewer } from './lib/helm-utils.ts';
 
 const ONLY_OUTDATED = process.argv.includes('--outdated');
 const JSON_OUTPUT = process.argv.includes('--json');
-
-function run(cmd: string, args: string[], opts: { stdio?: StdioOptions } = {}) {
-  return execFileSync(cmd, args, {
-    encoding: 'utf8',
-    stdio: ['pipe', 'pipe', 'pipe'],
-    ...opts,
-  });
-}
-
-/** Query the latest published chart version via `helm show chart`. */
-function helmLatestVersion(chart: string, repo?: string): string {
-  const args = ['show', 'chart', chart];
-  if (repo) args.push('--repo', repo);
-  const output = run('helm', args, { stdio: ['pipe', 'pipe', 'ignore'] });
-  const match = output.match(/^version:\s*(.+)$/m);
-  if (!match) throw new Error('version not found in `helm show chart` output');
-  return match[1].trim();
-}
-
-/**
- * Compare two versions. Returns true when `latest` is newer than `current`.
- * Falls back to string inequality when either side is missing or non-semver.
- */
-function isNewer(current: string | undefined, latest: string): boolean {
-  if (!current) return true;
-  if (current === latest) return false;
-  const c = current.split('.').map((p) => Number.parseInt(p, 10));
-  const l = latest.split('.').map((p) => Number.parseInt(p, 10));
-  const len = Math.max(c.length, l.length);
-  for (let i = 0; i < len; i++) {
-    const ci = c[i] ?? 0;
-    const li = l[i] ?? 0;
-    if (li > ci) return true;
-    if (li < ci) return false;
-  }
-  return false; // equal numeric parts
-}
 
 interface ChartResult {
   name: string;
@@ -149,8 +112,8 @@ function main(): void {
     printTable(results);
   }
 
-  const outdatedCount = results.filter((r) => r.outdated).length;
-  process.exitCode = outdatedCount > 0 ? 0 : 0; // report only, never fail CI
+  // Report only — never fail CI regardless of outdated count.
+  process.exitCode = 0;
 }
 
 main();

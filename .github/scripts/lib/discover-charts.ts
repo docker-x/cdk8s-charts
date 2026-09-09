@@ -33,7 +33,9 @@ const CHARTS_DIR = join(REPO_ROOT, 'packages', 'charts');
 /** Build a symbol table of `const NAME = 'value'` declarations. */
 function buildSymbolTable(source: string): Map<string, string> {
   const symbols = new Map<string, string>();
-  const re = /const\s+([A-Z_][A-Z0-9_]*)\s*=\s*['"]([^'"]+)['"]/g;
+  // Matches `const NAME = 'value'`, `export const NAME = "value"`,
+  // and template-literal delimited values (backticks).
+  const re = /(?:export\s+)?const\s+([A-Z_][A-Z0-9_]*)\s*=\s*['"`]([^'"`]+)['"`]/g;
   for (const m of source.matchAll(re)) {
     symbols.set(m[1], m[2]);
   }
@@ -43,7 +45,7 @@ function buildSymbolTable(source: string): Map<string, string> {
 /** Resolve a token: either a quoted literal or a symbol-table reference. */
 function resolveToken(token: string, symbols: Map<string, string>): string | undefined {
   const trimmed = token.trim();
-  const literalMatch = trimmed.match(/^['"]([^'"]+)['"]$/);
+  const literalMatch = trimmed.match(/^['"`]([^'"`]+)['"`]$/);
   if (literalMatch) return literalMatch[1];
   if (symbols.has(trimmed)) return symbols.get(trimmed);
   return undefined;

@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type DiscoveredChart, discoverCharts } from './lib/discover-charts.ts';
+import { helmLatestVersion, isNewer } from './lib/helm-utils.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..');
@@ -35,34 +36,6 @@ function getRepoSlug() {
 function repoArgs() {
   const slug = getRepoSlug();
   return slug ? ['--repo', slug] : [];
-}
-
-function helmLatestVersion(chart: string, repo?: string) {
-  const args = ['show', 'chart', chart];
-  if (repo) args.push('--repo', repo);
-  const output = run('helm', args, { stdio: ['pipe', 'pipe', 'ignore'] });
-  const match = output.match(/^version:\s*(.+)$/m);
-  if (!match) throw new Error('version not found in helm show chart output');
-  return match[1].trim();
-}
-
-/**
- * Compare two versions. Returns true when `latest` is newer than `current`.
- * Falls back to string inequality when either side is missing or non-semver.
- */
-function isNewer(current: string | undefined, latest: string): boolean {
-  if (!current) return true;
-  if (current === latest) return false;
-  const c = current.split('.').map((p) => Number.parseInt(p, 10));
-  const l = latest.split('.').map((p) => Number.parseInt(p, 10));
-  const len = Math.max(c.length, l.length);
-  for (let i = 0; i < len; i++) {
-    const ci = c[i] ?? 0;
-    const li = l[i] ?? 0;
-    if (li > ci) return true;
-    if (li < ci) return false;
-  }
-  return false; // equal numeric parts
 }
 
 interface Issue {
