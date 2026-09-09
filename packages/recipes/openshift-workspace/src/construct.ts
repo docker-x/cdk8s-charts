@@ -242,7 +242,7 @@ export class OpenShiftWorkspace extends Chart {
       labels: { 'app.kubernetes.io/managed-by': 'cdk8s' }, annotations: podAnnotations,
       volumes: extraVolumes, volumeMounts: extraVolumeMounts, sidecars: [oauthProxySidecar], lifecycle,
       extraServicePorts: [{ name: 'oauth-proxy', port: 4180, targetPort: 'oauth-proxy' }],
-      values: { ...props.values, serviceAccountAnnotations: { 'serviceaccounts.openshift.io/oauth-redirecturi.primary': paseoRedirectUri } },
+      values: { ...props.values, serviceAccountAnnotations: { 'serviceaccounts.openshift.io/oauth-redirecturi.primary': paseoRedirectUri, ...props.values?.serviceAccountAnnotations } },
     });
   }
 

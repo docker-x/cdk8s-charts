@@ -68,6 +68,7 @@ export class Devcontainer extends HelmConstruct<Values> {
       lifecycle: props.lifecycle,
       extraServicePorts: props.extraServicePorts,
       serviceAccountName: props.serviceAccountName ?? `${name}-sa`,
+      serviceAccountAnnotations: props.serviceAccountAnnotations,
       automountServiceAccountToken: props.automountServiceAccountToken ?? true,
       runAsNonRoot: props.runAsNonRoot ?? true,
       fsGroup: props.fsGroup,
