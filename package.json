@@ -41,7 +41,7 @@
         "brace-expansion": "^2.1.4"
       }
     },
-    "fast-uri": "^3.1.5",
+    "fast-uri": "^3.1.7",
     "js-yaml": "^3.15.0",
     "nx": {
       "brace-expansion": "^5.0.9",
