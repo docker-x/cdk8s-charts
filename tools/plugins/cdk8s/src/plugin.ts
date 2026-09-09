@@ -1,12 +1,8 @@
 import { dirname, relative, resolve } from 'node:path';
 import { type CreateNodesV2, logger } from '@nx/devkit';
 
-export interface Cdk8sPluginOptions {
-  /** Override the synth command. Default: `npx cdk8s synth` */
-  synthCommand?: string;
-}
-
 const PLUGIN_SCOPE = 'cdk8s-charts/cdk8s';
+const SYNTH_COMMAND = 'npx cdk8s synth';
 
 function isVerbose(): boolean {
   return (
@@ -21,12 +17,11 @@ function logDebug(message: string): void {
   }
 }
 
-export const createNodesV2: CreateNodesV2<Cdk8sPluginOptions> = [
+export const createNodesV2: CreateNodesV2 = [
   '**/cdk8s.yaml',
-  (configFiles, options, context) => {
+  (configFiles, _options, context) => {
     const verbose = isVerbose();
     const workspaceRootAbs = context.workspaceRoot;
-    const synthCommand = options?.synthCommand ?? 'npx cdk8s synth';
 
     if (verbose) {
       logger.info(`[${PLUGIN_SCOPE}] Processing ${configFiles.length} cdk8s.yaml files`);
@@ -45,18 +40,16 @@ export const createNodesV2: CreateNodesV2<Cdk8sPluginOptions> = [
         const synthTarget = {
           executor: 'nx:run-commands',
           options: {
-            command: synthCommand,
+            command: SYNTH_COMMAND,
             cwd: projectRoot,
           },
           outputs: ['{projectRoot}/dist'],
-          cache: true,
           inputs: [
             '{projectRoot}/cdk8s.yaml',
             '{projectRoot}/main.ts',
             '{projectRoot}/**/*.ts',
             '{projectRoot}/package.json',
           ],
-          dependsOn: ['^build'],
         };
 
         return [

@@ -1169,7 +1169,7 @@ The submodule is pinned to a commit; bump it with `git -C vendor/nx.ts checkout 
 |--------|-------------|---------|
 | `synth` | `cdk8s.yaml` | `npx cdk8s synth` |
 
-Only `examples/*/cdk8s.yaml` files trigger it (the plugin skips workspace root). The `synth` target depends on `^build` so chart packages are compiled before synthesis.
+Only `examples/*/cdk8s.yaml` files trigger it (the plugin skips workspace root). The `synth` target depends on `^build` (via `targetDefaults`) so chart packages are compiled before synthesis. The `synth` target is **not cached** — `cdk8s synth` reads environment variables for secrets and image URLs, so caching would produce stale manifests when the environment changes.
 
 ### 7.3 nx.json plugin registration
 
@@ -1183,7 +1183,17 @@ Only `examples/*/cdk8s.yaml` files trigger it (the plugin skips workspace root).
 }
 ```
 
-### 7.4 Known environment limitation
+### 7.4 Submodule initialization
+
+The `vendor/nx.ts` submodule must be initialized before Nx can load the vendored plugins:
+
+```bash
+git submodule update --init --recursive
+```
+
+This is required after every fresh clone. CI workflows should include this step before `npm install`. Without it, Nx will fail to resolve the plugin path `./vendor/nx.ts/packages/typescript-preset/src/plugin.ts`.
+
+### 7.5 Known environment limitation
 
 The `nx` native binary (`@nx/nx-linux-x64-gnu`) can crash with **SIGBUS / "Bus error (core dumped)"** in some sandboxed container environments (observed on Linux 5.14 / glibc 2.39 under restricted seccomp). When this happens, `npx nx …` produces no output and exits non-zero.
 

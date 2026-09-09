@@ -13,6 +13,7 @@ Before implementing any feature or change:
 ## Build & verify
 
 ```bash
+git submodule update --init --recursive  # initialize vendor/nx.ts (required before nx)
 npm install          # install dependencies
 npm run build        # build all packages (NX)
 npm run lint         # type-check all packages
@@ -58,7 +59,7 @@ npx cdk8s synth      # synthesize K8s manifests to dist/
 
 ### NX plugins (inferred targets — no project.json)
 
-Targets are inferred by plugins registered in `nx.json`. **Never create `project.json` files.**
+Targets are inferred by plugins registered in `nx.json`. **Prefer inferred targets over `project.json` files — only create a `project.json` if a target genuinely cannot be inferred by existing plugins.**
 
 | Plugin | Source | Infers | Trigger |
 |--------|--------|--------|---------|
