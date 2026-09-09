@@ -117,7 +117,7 @@ export class Devcontainer extends HelmConstruct<Values> {
     if (d.shouldCreateSa) {
       new ApiObject(this, 'sa', {
         apiVersion: 'v1', kind: 'ServiceAccount',
-        metadata: { name: d.saName, namespace, labels: buildLabels(name) },
+        metadata: { name: d.saName, namespace, labels: buildLabels(name), annotations: values.serviceAccountAnnotations },
         automountServiceAccountToken: values.automountServiceAccountToken,
       });
     }
