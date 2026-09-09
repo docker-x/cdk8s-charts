@@ -476,7 +476,7 @@ for json_file in "$AGENTS_DIR"/*/*.json; do
   agent_id=$(node -e "
     try {
       const d = JSON.parse(require('fs').readFileSync('$json_file', 'utf8'));
-      if (d.lastStatus === 'closed' && !d.archived) {
+      if (d.lastStatus === 'closed' && !d.archivedAt) {
         process.stdout.write(d.id || '');
       }
     } catch (e) { /* skip invalid */ }
