@@ -1,25 +1,10 @@
 import { Devcontainer } from '@cdk8s-charts/devcontainer';
-import type { Lifecycle, SidecarContainer } from '@cdk8s-charts/devcontainer';
-import type { Volume, VolumeMount } from '@cdk8s-charts/utils';
 import { ApiObject, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
-import type {
-  BackupConfig,
-  KeepaliveConfig,
-  OpenShiftWorkspaceExports,
-  OpenShiftWorkspaceProps,
-  PaseoAutoResumeConfig,
-  TfDeployerConfig,
-} from './types';
+import type { OpenShiftWorkspaceExports, OpenShiftWorkspaceProps } from './types';
 
 const OAUTH_PROXY_IMAGE = 'quay.io/openshift/origin-oauth-proxy:4.18';
 const OC_CLI_IMAGE = 'quay.io/openshift/origin-cli:latest';
-
-/** Resolved sub-configs with defaults applied. */
-type ResolvedBackup = BackupConfig & { schedule: string; keep: number };
-type ResolvedKeepalive = KeepaliveConfig & { enabled: boolean; schedule: string };
-type ResolvedPaseoAutoResume = PaseoAutoResumeConfig & { enabled: boolean };
-type ResolvedTfDeployer = TfDeployerConfig & { enabled: boolean };
 
 /** Build standard metadata labels for a resource in this workspace. */
 function buildLabels(name: string): Record<string, string> {
@@ -36,50 +21,7 @@ export class OpenShiftWorkspace extends Chart {
     const namespace = props.namespace;
     const appsDomain = props.appsDomain;
 
-    this.validateDnsLabels(name, namespace);
-
-    const keepalive: ResolvedKeepalive = { enabled: true, schedule: '*/2 * * * *', ...props.keepalive };
-    const paseoAutoResume: ResolvedPaseoAutoResume = { enabled: true, ...props.paseoAutoResume };
-    const tfDeployer: ResolvedTfDeployer = { enabled: true, ...props.tfDeployer };
-    const backup: ResolvedBackup = { schedule: '0 2 * * *', keep: 3, ...props.backup };
-
-    const oauthCookieSecretName = this.createOAuthCookieSecret(name, namespace, props);
-    const saTokenSecretName = this.createSaTokenSecret(name, namespace);
-    const { r2SecretName, hasBackupSecrets } = this.createR2Secret(name, namespace, backup);
-    const autoResumeConfigMapName = this.createPaseoConfigMap(name, namespace, paseoAutoResume);
-    const { extraVolumes, extraVolumeMounts } = this.buildExtraVolumes(
-      name, hasBackupSecrets, r2SecretName, saTokenSecretName, oauthCookieSecretName, paseoAutoResume, autoResumeConfigMapName,
-    );
-    const oauthProxySidecar = this.buildOAuthProxySidecar(name, namespace, props, saTokenSecretName, oauthCookieSecretName);
-    const lifecycle = this.buildLifecycle(name, namespace, paseoAutoResume, autoResumeConfigMapName);
-    const homeMountPath = props.homeMountPath ?? '/home/vscode';
-    const devcontainer = this.createDevcontainer(
-      name, namespace, props, homeMountPath, extraVolumes, extraVolumeMounts, oauthProxySidecar, lifecycle, paseoAutoResume,
-    );
-    const { paseoRouteName, paseoRouteUrl, previewRouteName, previewRouteUrl } = this.createRoutes(
-      name, namespace, appsDomain, devcontainer.exports.serviceName,
-    );
-    this.createKeepaliveCronJob(name, namespace, keepalive);
-    this.createBackupCronJob(name, namespace, backup, homeMountPath, hasBackupSecrets, r2SecretName);
-    const tfDeployerSaName = this.createTfDeployer(name, namespace, tfDeployer);
-
-    this.exports = {
-      pvcName: devcontainer.exports.pvcName,
-      paseoRouteName,
-      paseoRouteUrl,
-      previewRouteName,
-      previewRouteUrl,
-      backupCronJobName: `${name}-backup`,
-      keepaliveCronJobName: `${name}-keepalive`,
-      tfDeployerSaName: tfDeployer.enabled ? tfDeployerSaName : '',
-    };
-  }
-
-  // -------------------------------------------------------------------------
-  // Resource creation helpers
-  // -------------------------------------------------------------------------
-
-  private validateDnsLabels(name: string, namespace: string): void {
+    // Validate name and namespace as DNS-label values (RFC 1123):
     // lowercase alphanumeric and hyphens, max 63 chars, no dots.
     // This prevents shell injection in embedded scripts and ensures
     // the values are valid as Kubernetes Service and Namespace names.
@@ -93,9 +35,17 @@ export class OpenShiftWorkspace extends Chart {
     if (!isDnsLabel(namespace)) {
       throw new Error(`Invalid namespace "${namespace}": must be a DNS-label value (lowercase alphanumeric with hyphens, max 63 chars, no dots)`);
     }
-  }
 
-  private createOAuthCookieSecret(name: string, namespace: string, props: OpenShiftWorkspaceProps): string {
+    const keepalive = { enabled: true, schedule: '*/2 * * * *', ...props.keepalive };
+    const paseoAutoResume = { enabled: true, ...props.paseoAutoResume };
+    const tfDeployer = { enabled: true, ...props.tfDeployer };
+    const backup = {
+      schedule: '0 2 * * *',
+      keep: 3,
+      ...props.backup,
+    };
+
+    // --- OAuth proxy cookie secret ---
     const oauthCookieSecretName = `${name}-oauth-cookie`;
     new ApiObject(this, 'oauth-cookie-secret', {
       apiVersion: 'v1',
@@ -108,10 +58,8 @@ export class OpenShiftWorkspace extends Chart {
       type: 'Opaque',
       data: { 'cookie-secret': Buffer.from(props.oauthCookieSecret, 'utf8').toString('base64') },
     });
-    return oauthCookieSecretName;
-  }
 
-  private createSaTokenSecret(name: string, namespace: string): string {
+    // --- SA token secret for OAuth proxy ---
     const saTokenSecretName = `${name}-sa-token`;
     new ApiObject(this, 'sa-token-secret', {
       apiVersion: 'v1',
@@ -124,10 +72,8 @@ export class OpenShiftWorkspace extends Chart {
       },
       type: 'kubernetes.io/service-account-token',
     });
-    return saTokenSecretName;
-  }
 
-  private createR2Secret(name: string, namespace: string, backup: ResolvedBackup): { r2SecretName: string; hasBackupSecrets: boolean } {
+    // --- R2 credentials secret (for backup + workspace pod) ---
     // NOTE: R2 credentials are mounted into the devcontainer pod because the
     // backup CronJob runs via `oc exec` inside the workspace pod. This is the
     // same pattern as the existing openshift-devsy stack. SSH users with pod
@@ -162,10 +108,8 @@ export class OpenShiftWorkspace extends Chart {
         },
       });
     }
-    return { r2SecretName, hasBackupSecrets };
-  }
 
-  private createPaseoConfigMap(name: string, namespace: string, paseoAutoResume: ResolvedPaseoAutoResume): string {
+    // --- Paseo auto-resume ConfigMap ---
     const autoResumeConfigMapName = `${name}-paseo-auto-resume`;
     if (paseoAutoResume.enabled) {
       new ApiObject(this, 'paseo-auto-resume-cm', {
@@ -183,18 +127,8 @@ export class OpenShiftWorkspace extends Chart {
         data: { 'auto-resume.sh': PASEO_AUTO_RESUME_SCRIPT },
       });
     }
-    return autoResumeConfigMapName;
-  }
 
-  private buildExtraVolumes(
-    name: string,
-    hasBackupSecrets: boolean,
-    r2SecretName: string,
-    saTokenSecretName: string,
-    oauthCookieSecretName: string,
-    paseoAutoResume: ResolvedPaseoAutoResume,
-    autoResumeConfigMapName: string,
-  ): { extraVolumes: Volume[]; extraVolumeMounts: VolumeMount[] } {
+    // --- Build extra volumes for the devcontainer pod ---
     const extraVolumes: Array<{ name: string; [key: string]: unknown }> = [];
     const extraVolumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }> = [];
 
@@ -237,17 +171,8 @@ export class OpenShiftWorkspace extends Chart {
       });
     }
 
-    return { extraVolumes, extraVolumeMounts };
-  }
-
-  private buildOAuthProxySidecar(
-    name: string,
-    namespace: string,
-    _props: OpenShiftWorkspaceProps,
-    _saTokenSecretName: string,
-    _oauthCookieSecretName: string,
-  ): SidecarContainer {
-    return {
+    // --- Build OAuth proxy sidecar ---
+    const oauthProxySidecar = {
       name: 'oauth-proxy',
       image: OAUTH_PROXY_IMAGE,
       securityContext: {
@@ -281,15 +206,9 @@ export class OpenShiftWorkspace extends Chart {
         limits: { cpu: '100m', memory: '128Mi' },
       },
     };
-  }
 
-  private buildLifecycle(
-    _name: string,
-    _namespace: string,
-    paseoAutoResume: ResolvedPaseoAutoResume,
-    _autoResumeConfigMapName: string,
-  ): Lifecycle | undefined {
-    return paseoAutoResume.enabled
+    // --- Build lifecycle hook for Paseo auto-resume ---
+    const lifecycle = paseoAutoResume.enabled
       ? {
           postStart: {
             exec: {
@@ -308,25 +227,13 @@ export class OpenShiftWorkspace extends Chart {
           },
         }
       : undefined;
-  }
 
-  private createDevcontainer(
-    name: string,
-    namespace: string,
-    props: OpenShiftWorkspaceProps,
-    homeMountPath: string,
-    extraVolumes: Array<{ name: string; [key: string]: unknown }>,
-    extraVolumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }>,
-    oauthProxySidecar: SidecarContainer,
-    lifecycle: Lifecycle | undefined,
-    paseoAutoResume: ResolvedPaseoAutoResume,
-  ): Devcontainer {
     // --- Build env for the workspace container ---
     const workspaceEnv: Record<string, string> = {
       TERM: 'xterm-256color',
       HUSKY: '0',
       DEVCONTAINER: 'true',
-      PASEO_HOSTNAMES: `${name}-paseo-${namespace}.${props.appsDomain}`,
+      PASEO_HOSTNAMES: `${name}-paseo-${namespace}.${appsDomain}`,
       PASEO_TRUSTED_PROXIES: 'loopback',
       ...props.env,
     };
@@ -337,7 +244,9 @@ export class OpenShiftWorkspace extends Chart {
       podAnnotations['paseo-auto-resume/checksum'] = simpleHash(PASEO_AUTO_RESUME_SCRIPT);
     }
 
-    return new Devcontainer(this, 'workspace', {
+    // --- Devcontainer workspace ---
+    const homeMountPath = props.homeMountPath ?? '/home/vscode';
+    const devcontainer = new Devcontainer(this, 'workspace', {
       namespace,
       image: props.image,
       imageDigest: props.imageDigest,
@@ -358,14 +267,8 @@ export class OpenShiftWorkspace extends Chart {
       extraServicePorts: [{ name: 'oauth-proxy', port: 4180, targetPort: 'oauth-proxy' }],
       values: props.values,
     });
-  }
 
-  private createRoutes(
-    name: string,
-    namespace: string,
-    appsDomain: string,
-    serviceName: string,
-  ): { paseoRouteName: string; paseoRouteUrl: string; previewRouteName: string; previewRouteUrl: string } {
+    // --- OpenShift Routes ---
     const paseoRouteName = `${name}-paseo`;
     const previewRouteName = `${name}-preview`;
     const paseoRouteUrl = `https://${paseoRouteName}-${namespace}.${appsDomain}`;
@@ -380,7 +283,7 @@ export class OpenShiftWorkspace extends Chart {
         labels: buildLabels(name),
       },
       spec: {
-        to: { kind: 'Service', name: serviceName, weight: 100 },
+        to: { kind: 'Service', name: devcontainer.exports.serviceName, weight: 100 },
         port: { targetPort: 'oauth-proxy' },
         tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' },
       },
@@ -395,343 +298,338 @@ export class OpenShiftWorkspace extends Chart {
         labels: buildLabels(name),
       },
       spec: {
-        to: { kind: 'Service', name: serviceName, weight: 100 },
+        to: { kind: 'Service', name: devcontainer.exports.serviceName, weight: 100 },
         port: { targetPort: 'preview' },
         tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' },
       },
     });
 
-    return { paseoRouteName, paseoRouteUrl, previewRouteName, previewRouteUrl };
-  }
-
-  private createKeepaliveCronJob(name: string, namespace: string, keepalive: ResolvedKeepalive): void {
+    // --- Keepalive CronJob ---
     const keepaliveCronJobName = `${name}-keepalive`;
-    if (!keepalive.enabled) {
-      return;
-    }
-    // Keepalive SA + RBAC
-    const keepaliveSaName = `${name}-keepalive`;
-    new ApiObject(this, 'keepalive-sa', {
-      apiVersion: 'v1',
-      kind: 'ServiceAccount',
-      metadata: {
-        name: keepaliveSaName,
-        namespace,
-        labels: {
-          'app.kubernetes.io/name': name,
-          'app.kubernetes.io/component': 'keepalive',
-          'app.kubernetes.io/managed-by': 'cdk8s',
-        },
-      },
-    });
-    new ApiObject(this, 'keepalive-role', {
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'Role',
-      metadata: {
-        name: keepaliveSaName,
-        namespace,
-        labels: {
-          'app.kubernetes.io/name': name,
-          'app.kubernetes.io/component': 'keepalive',
-          'app.kubernetes.io/managed-by': 'cdk8s',
-        },
-      },
-      rules: [
-        { apiGroups: [''], resources: ['pods'], verbs: ['get', 'list', 'delete'] },
-        { apiGroups: ['apps'], resources: ['deployments'], verbs: ['get', 'patch'] },
-      ],
-    });
-    new ApiObject(this, 'keepalive-rb', {
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'RoleBinding',
-      metadata: {
-        name: keepaliveSaName,
-        namespace,
-        labels: {
-          'app.kubernetes.io/name': name,
-          'app.kubernetes.io/component': 'keepalive',
-          'app.kubernetes.io/managed-by': 'cdk8s',
-        },
-      },
-      subjects: [{ kind: 'ServiceAccount', name: keepaliveSaName, namespace }],
-      roleRef: { kind: 'Role', name: keepaliveSaName, apiGroup: 'rbac.authorization.k8s.io' },
-    });
-
-    new ApiObject(this, 'keepalive-cronjob', {
-      apiVersion: 'batch/v1',
-      kind: 'CronJob',
-      metadata: {
-        name: keepaliveCronJobName,
-        namespace,
-        labels: {
-          'app.kubernetes.io/name': name,
-          'app.kubernetes.io/component': 'keepalive',
-          'app.kubernetes.io/managed-by': 'cdk8s',
-        },
-      },
-      spec: {
-        schedule: keepalive.schedule,
-        concurrencyPolicy: 'Forbid',
-        successfulJobsHistoryLimit: 1,
-        failedJobsHistoryLimit: 3,
-        jobTemplate: {
-          spec: {
-            backoffLimit: 1,
-            template: {
-              spec: {
-                serviceAccountName: keepaliveSaName,
-                restartPolicy: 'OnFailure',
-                containers: [
-                  {
-                    name: 'keepalive',
-                    image: OC_CLI_IMAGE,
-                    securityContext: {
-                      runAsNonRoot: true,
-                      allowPrivilegeEscalation: false,
-                      capabilities: { drop: ['ALL'] },
-                    },
-                    command: ['/bin/sh', '-ec', buildKeepaliveScript(name, namespace)],
-                  },
-                ],
-              },
-            },
+    if (keepalive.enabled) {
+      // Keepalive SA + RBAC
+      const keepaliveSaName = `${name}-keepalive`;
+      new ApiObject(this, 'keepalive-sa', {
+        apiVersion: 'v1',
+        kind: 'ServiceAccount',
+        metadata: {
+          name: keepaliveSaName,
+          namespace,
+          labels: {
+            'app.kubernetes.io/name': name,
+            'app.kubernetes.io/component': 'keepalive',
+            'app.kubernetes.io/managed-by': 'cdk8s',
           },
         },
-      },
-    });
-  }
-
-  private createBackupCronJob(
-    name: string,
-    namespace: string,
-    backup: ResolvedBackup,
-    homeMountPath: string,
-    hasBackupSecrets: boolean,
-    _r2SecretName: string,
-  ): void {
-    const backupCronJobName = `${name}-backup`;
-    if (!hasBackupSecrets) {
-      return;
-    }
-    // Backup SA + RBAC
-    const backupSaName = `${name}-backup`;
-    new ApiObject(this, 'backup-sa', {
-      apiVersion: 'v1',
-      kind: 'ServiceAccount',
-      metadata: {
-        name: backupSaName,
-        namespace,
-        labels: {
-          'app.kubernetes.io/name': name,
-          'app.kubernetes.io/component': 'backup',
-          'app.kubernetes.io/managed-by': 'cdk8s',
-        },
-      },
-    });
-    new ApiObject(this, 'backup-role', {
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'Role',
-      metadata: {
-        name: `${name}-backup-exec`,
-        namespace,
-        labels: {
-          'app.kubernetes.io/name': name,
-          'app.kubernetes.io/component': 'backup',
-          'app.kubernetes.io/managed-by': 'cdk8s',
-        },
-      },
-      rules: [
-        { apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] },
-        { apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] },
-      ],
-    });
-    new ApiObject(this, 'backup-rb', {
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'RoleBinding',
-      metadata: {
-        name: `${name}-backup-exec`,
-        namespace,
-        labels: {
-          'app.kubernetes.io/name': name,
-          'app.kubernetes.io/component': 'backup',
-          'app.kubernetes.io/managed-by': 'cdk8s',
-        },
-      },
-      subjects: [{ kind: 'ServiceAccount', name: backupSaName, namespace }],
-      roleRef: {
+      });
+      new ApiObject(this, 'keepalive-role', {
+        apiVersion: 'rbac.authorization.k8s.io/v1',
         kind: 'Role',
-        name: `${name}-backup-exec`,
-        apiGroup: 'rbac.authorization.k8s.io',
-      },
-    });
-
-    new ApiObject(this, 'backup-cronjob', {
-      apiVersion: 'batch/v1',
-      kind: 'CronJob',
-      metadata: {
-        name: backupCronJobName,
-        namespace,
-        labels: {
-          'app.kubernetes.io/name': name,
-          'app.kubernetes.io/component': 'backup',
-          'app.kubernetes.io/managed-by': 'cdk8s',
+        metadata: {
+          name: keepaliveSaName,
+          namespace,
+          labels: {
+            'app.kubernetes.io/name': name,
+            'app.kubernetes.io/component': 'keepalive',
+            'app.kubernetes.io/managed-by': 'cdk8s',
+          },
         },
-      },
-      spec: {
-        schedule: backup.schedule,
-        concurrencyPolicy: 'Forbid',
-        successfulJobsHistoryLimit: 3,
-        failedJobsHistoryLimit: 3,
-        jobTemplate: {
-          spec: {
-            backoffLimit: 2,
-            template: {
-              spec: {
-                serviceAccountName: backupSaName,
-                restartPolicy: 'OnFailure',
-                containers: [
-                  {
-                    name: 'r2-backup',
-                    image: OC_CLI_IMAGE,
-                    imagePullPolicy: 'IfNotPresent',
-                    securityContext: {
-                      runAsNonRoot: true,
-                      allowPrivilegeEscalation: false,
-                      capabilities: { drop: ['ALL'] },
+        rules: [
+          { apiGroups: [''], resources: ['pods'], verbs: ['get', 'list', 'delete'] },
+          { apiGroups: ['apps'], resources: ['deployments'], verbs: ['get', 'patch'] },
+        ],
+      });
+      new ApiObject(this, 'keepalive-rb', {
+        apiVersion: 'rbac.authorization.k8s.io/v1',
+        kind: 'RoleBinding',
+        metadata: {
+          name: keepaliveSaName,
+          namespace,
+          labels: {
+            'app.kubernetes.io/name': name,
+            'app.kubernetes.io/component': 'keepalive',
+            'app.kubernetes.io/managed-by': 'cdk8s',
+          },
+        },
+        subjects: [{ kind: 'ServiceAccount', name: keepaliveSaName, namespace }],
+        roleRef: { kind: 'Role', name: keepaliveSaName, apiGroup: 'rbac.authorization.k8s.io' },
+      });
+
+      new ApiObject(this, 'keepalive-cronjob', {
+        apiVersion: 'batch/v1',
+        kind: 'CronJob',
+        metadata: {
+          name: keepaliveCronJobName,
+          namespace,
+          labels: {
+            'app.kubernetes.io/name': name,
+            'app.kubernetes.io/component': 'keepalive',
+            'app.kubernetes.io/managed-by': 'cdk8s',
+          },
+        },
+        spec: {
+          schedule: keepalive.schedule,
+          concurrencyPolicy: 'Forbid',
+          successfulJobsHistoryLimit: 1,
+          failedJobsHistoryLimit: 3,
+          jobTemplate: {
+            spec: {
+              backoffLimit: 1,
+              template: {
+                spec: {
+                  serviceAccountName: keepaliveSaName,
+                  restartPolicy: 'OnFailure',
+                  containers: [
+                    {
+                      name: 'keepalive',
+                      image: OC_CLI_IMAGE,
+                      securityContext: {
+                        runAsNonRoot: true,
+                        allowPrivilegeEscalation: false,
+                        capabilities: { drop: ['ALL'] },
+                      },
+                      command: ['/bin/sh', '-ec', buildKeepaliveScript(name, namespace)],
                     },
-                    env: [
-                      { name: 'WORKSPACE_POD_LABEL', value: `app.kubernetes.io/name=${name}` },
-                      { name: 'NAMESPACE', value: namespace },
-                    ],
-                    command: ['/bin/sh', '-ec', buildBackupScript(backup.keep, homeMountPath)],
-                  },
-                ],
+                  ],
+                },
               },
             },
           },
         },
-      },
-    });
-  }
-
-  private createTfDeployer(name: string, namespace: string, tfDeployer: ResolvedTfDeployer): string {
-    const tfDeployerSaName = `${name}-tf-deployer`;
-    if (!tfDeployer.enabled) {
-      return tfDeployerSaName;
+      });
     }
-    new ApiObject(this, 'tf-deployer-sa', {
-      apiVersion: 'v1',
-      kind: 'ServiceAccount',
-      metadata: {
-        name: tfDeployerSaName,
-        namespace,
-        labels: {
-          'app.kubernetes.io/name': name,
-          'app.kubernetes.io/component': 'tf-deployer',
-          'app.kubernetes.io/managed-by': 'cdk8s',
+
+    // --- Backup CronJob ---
+    const backupCronJobName = `${name}-backup`;
+    if (hasBackupSecrets) {
+      // Backup SA + RBAC
+      const backupSaName = `${name}-backup`;
+      new ApiObject(this, 'backup-sa', {
+        apiVersion: 'v1',
+        kind: 'ServiceAccount',
+        metadata: {
+          name: backupSaName,
+          namespace,
+          labels: {
+            'app.kubernetes.io/name': name,
+            'app.kubernetes.io/component': 'backup',
+            'app.kubernetes.io/managed-by': 'cdk8s',
+          },
         },
-      },
-    });
-    new ApiObject(this, 'tf-deployer-token', {
-      apiVersion: 'v1',
-      kind: 'Secret',
-      metadata: {
-        name: `${tfDeployerSaName}-token`,
-        namespace,
-        labels: {
-          'app.kubernetes.io/name': name,
-          'app.kubernetes.io/component': 'tf-deployer',
-          'app.kubernetes.io/managed-by': 'cdk8s',
+      });
+      new ApiObject(this, 'backup-role', {
+        apiVersion: 'rbac.authorization.k8s.io/v1',
+        kind: 'Role',
+        metadata: {
+          name: `${name}-backup-exec`,
+          namespace,
+          labels: {
+            'app.kubernetes.io/name': name,
+            'app.kubernetes.io/component': 'backup',
+            'app.kubernetes.io/managed-by': 'cdk8s',
+          },
         },
-        annotations: { 'kubernetes.io/service-account.name': tfDeployerSaName },
-      },
-      type: 'kubernetes.io/service-account-token',
-    });
-    new ApiObject(this, 'tf-deployer-role', {
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'Role',
-      metadata: {
-        name: tfDeployerSaName,
-        namespace,
-        labels: {
-          'app.kubernetes.io/name': name,
-          'app.kubernetes.io/component': 'tf-deployer',
-          'app.kubernetes.io/managed-by': 'cdk8s',
+        rules: [
+          { apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] },
+          { apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] },
+        ],
+      });
+      new ApiObject(this, 'backup-rb', {
+        apiVersion: 'rbac.authorization.k8s.io/v1',
+        kind: 'RoleBinding',
+        metadata: {
+          name: `${name}-backup-exec`,
+          namespace,
+          labels: {
+            'app.kubernetes.io/name': name,
+            'app.kubernetes.io/component': 'backup',
+            'app.kubernetes.io/managed-by': 'cdk8s',
+          },
         },
-      },
-      rules: [
-        {
-          apiGroups: [''],
-          resources: [
-            'pods',
-            'serviceaccounts',
-            'persistentvolumeclaims',
-            'services',
-            'configmaps',
-          ],
-          verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+        subjects: [{ kind: 'ServiceAccount', name: backupSaName, namespace }],
+        roleRef: {
+          kind: 'Role',
+          name: `${name}-backup-exec`,
+          apiGroup: 'rbac.authorization.k8s.io',
         },
-        // Secrets: allow management (create/update/delete) but not reading
-        // values, to prevent credential exfiltration via the deployer token.
-        // The deployer can create/update secrets with data but cannot get
-        // (read) existing secret values.
-        {
-          apiGroups: [''],
-          resources: ['secrets'],
-          verbs: ['create', 'delete', 'list', 'patch', 'update', 'watch'],
+      });
+
+      new ApiObject(this, 'backup-cronjob', {
+        apiVersion: 'batch/v1',
+        kind: 'CronJob',
+        metadata: {
+          name: backupCronJobName,
+          namespace,
+          labels: {
+            'app.kubernetes.io/name': name,
+            'app.kubernetes.io/component': 'backup',
+            'app.kubernetes.io/managed-by': 'cdk8s',
+          },
         },
-        // Allow reading only its own token secret.
-        {
-          apiGroups: [''],
-          resources: ['secrets'],
-          resourceNames: [`${tfDeployerSaName}-token`],
-          verbs: ['get'],
+        spec: {
+          schedule: backup.schedule,
+          concurrencyPolicy: 'Forbid',
+          successfulJobsHistoryLimit: 3,
+          failedJobsHistoryLimit: 3,
+          jobTemplate: {
+            spec: {
+              backoffLimit: 2,
+              template: {
+                spec: {
+                  serviceAccountName: backupSaName,
+                  restartPolicy: 'OnFailure',
+                  containers: [
+                    {
+                      name: 'r2-backup',
+                      image: OC_CLI_IMAGE,
+                      imagePullPolicy: 'IfNotPresent',
+                      securityContext: {
+                        runAsNonRoot: true,
+                        allowPrivilegeEscalation: false,
+                        capabilities: { drop: ['ALL'] },
+                      },
+                      env: [
+                        { name: 'WORKSPACE_POD_LABEL', value: `app.kubernetes.io/name=${name}` },
+                        { name: 'NAMESPACE', value: namespace },
+                      ],
+                      command: ['/bin/sh', '-ec', buildBackupScript(backup.keep, homeMountPath)],
+                    },
+                  ],
+                },
+              },
+            },
+          },
         },
-        { apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] },
-        {
-          apiGroups: ['apps'],
-          resources: [
-            'deployments',
-            'deployments/scale',
-            'replicasets',
-            'daemonsets',
-            'statefulsets',
-          ],
-          verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+      });
+    }
+
+    // --- TF Deployer SA + RBAC ---
+    const tfDeployerSaName = `${name}-tf-deployer`;
+    if (tfDeployer.enabled) {
+      new ApiObject(this, 'tf-deployer-sa', {
+        apiVersion: 'v1',
+        kind: 'ServiceAccount',
+        metadata: {
+          name: tfDeployerSaName,
+          namespace,
+          labels: {
+            'app.kubernetes.io/name': name,
+            'app.kubernetes.io/component': 'tf-deployer',
+            'app.kubernetes.io/managed-by': 'cdk8s',
+          },
         },
-        {
-          apiGroups: ['batch'],
-          resources: ['cronjobs', 'jobs'],
-          verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+      });
+      new ApiObject(this, 'tf-deployer-token', {
+        apiVersion: 'v1',
+        kind: 'Secret',
+        metadata: {
+          name: `${tfDeployerSaName}-token`,
+          namespace,
+          labels: {
+            'app.kubernetes.io/name': name,
+            'app.kubernetes.io/component': 'tf-deployer',
+            'app.kubernetes.io/managed-by': 'cdk8s',
+          },
+          annotations: { 'kubernetes.io/service-account.name': tfDeployerSaName },
         },
-        {
-          apiGroups: ['rbac.authorization.k8s.io'],
-          resources: ['roles', 'rolebindings'],
-          verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+        type: 'kubernetes.io/service-account-token',
+      });
+      new ApiObject(this, 'tf-deployer-role', {
+        apiVersion: 'rbac.authorization.k8s.io/v1',
+        kind: 'Role',
+        metadata: {
+          name: tfDeployerSaName,
+          namespace,
+          labels: {
+            'app.kubernetes.io/name': name,
+            'app.kubernetes.io/component': 'tf-deployer',
+            'app.kubernetes.io/managed-by': 'cdk8s',
+          },
         },
-        {
-          apiGroups: ['route.openshift.io'],
-          resources: ['routes'],
-          verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+        rules: [
+          {
+            apiGroups: [''],
+            resources: [
+              'pods',
+              'serviceaccounts',
+              'persistentvolumeclaims',
+              'services',
+              'configmaps',
+            ],
+            verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+          },
+          // Secrets: allow management (create/update/delete) but not reading
+          // values, to prevent credential exfiltration via the deployer token.
+          // The deployer can create/update secrets with data but cannot get
+          // (read) existing secret values.
+          {
+            apiGroups: [''],
+            resources: ['secrets'],
+            verbs: ['create', 'delete', 'list', 'patch', 'update', 'watch'],
+          },
+          // Allow reading only its own token secret.
+          {
+            apiGroups: [''],
+            resources: ['secrets'],
+            resourceNames: [`${tfDeployerSaName}-token`],
+            verbs: ['get'],
+          },
+          { apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] },
+          {
+            apiGroups: ['apps'],
+            resources: [
+              'deployments',
+              'deployments/scale',
+              'replicasets',
+              'daemonsets',
+              'statefulsets',
+            ],
+            verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+          },
+          {
+            apiGroups: ['batch'],
+            resources: ['cronjobs', 'jobs'],
+            verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+          },
+          {
+            apiGroups: ['rbac.authorization.k8s.io'],
+            resources: ['roles', 'rolebindings'],
+            verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+          },
+          {
+            apiGroups: ['route.openshift.io'],
+            resources: ['routes'],
+            verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+          },
+        ],
+      });
+      new ApiObject(this, 'tf-deployer-rb', {
+        apiVersion: 'rbac.authorization.k8s.io/v1',
+        kind: 'RoleBinding',
+        metadata: {
+          name: tfDeployerSaName,
+          namespace,
+          labels: {
+            'app.kubernetes.io/name': name,
+            'app.kubernetes.io/component': 'tf-deployer',
+            'app.kubernetes.io/managed-by': 'cdk8s',
+          },
         },
-      ],
-    });
-    new ApiObject(this, 'tf-deployer-rb', {
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'RoleBinding',
-      metadata: {
-        name: tfDeployerSaName,
-        namespace,
-        labels: {
-          'app.kubernetes.io/name': name,
-          'app.kubernetes.io/component': 'tf-deployer',
-          'app.kubernetes.io/managed-by': 'cdk8s',
-        },
-      },
-      subjects: [{ kind: 'ServiceAccount', name: tfDeployerSaName, namespace }],
-      roleRef: { kind: 'Role', name: tfDeployerSaName, apiGroup: 'rbac.authorization.k8s.io' },
-    });
-    return tfDeployerSaName;
+        subjects: [{ kind: 'ServiceAccount', name: tfDeployerSaName, namespace }],
+        roleRef: { kind: 'Role', name: tfDeployerSaName, apiGroup: 'rbac.authorization.k8s.io' },
+      });
+    }
+
+    this.exports = {
+      pvcName: devcontainer.exports.pvcName,
+      paseoRouteName,
+      paseoRouteUrl,
+      previewRouteName,
+      previewRouteUrl,
+      backupCronJobName,
+      keepaliveCronJobName,
+      tfDeployerSaName: tfDeployer.enabled ? tfDeployerSaName : '',
+    };
   }
 }
 

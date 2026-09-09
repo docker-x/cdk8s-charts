@@ -21,7 +21,7 @@ export class Devcontainer extends HelmConstruct<Values> {
     const derived = this.deriveState(values, name, props);
     const pvcName = `${name}-state`;
 
-    this.createSecrets(values, name, props.namespace, derived, pvcName);
+    this.createSecrets(values, name, props.namespace, derived);
     this.createPvc(name, props.namespace, values);
     const containerEnv = this.buildContainerEnv(values, name);
     const volumeMounts = this.buildVolumeMounts(values, derived.hasSshKeys, props);
@@ -83,7 +83,7 @@ export class Devcontainer extends HelmConstruct<Values> {
     };
   }
 
-  private createSecrets(values: Values, name: string, namespace: string, d: ReturnType<Devcontainer['deriveState']>, pvcName: string) {
+  private createSecrets(values: Values, name: string, namespace: string, d: ReturnType<Devcontainer['deriveState']>) {
     if (values.sshAuthorizedKeys) {
       new ApiObject(this, 'ssh-secret', {
         apiVersion: 'v1', kind: 'Secret',
