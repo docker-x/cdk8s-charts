@@ -19,10 +19,10 @@ export class Devcontainer extends HelmConstruct<Values> {
     const name = props.values?.name ?? props.name ?? id;
     const values = this.computeValues(props, name);
     const derived = this.deriveState(values, name, props);
-    const pvcName = `${name}-state`;
+    const pvcName = values.existingPvcName ?? `${name}-state`;
 
     this.createSecrets(values, name, props.namespace, derived);
-    this.createPvc(name, props.namespace, values);
+    if (!values.existingPvcName) this.createPvc(name, props.namespace, values);
     const containerEnv = this.buildContainerEnv(values, name);
     const volumeMounts = this.buildVolumeMounts(values, derived.hasSshKeys, props);
     const volumes = this.buildVolumes(values, derived.hasSshKeys, derived.sshSecretName, pvcName, props);
@@ -47,6 +47,7 @@ export class Devcontainer extends HelmConstruct<Values> {
       command: props.command ?? DEFAULT_COMMAND,
       storageSize: props.storageSize ?? '30Gi',
       storageClass: props.storageClass ?? 'gp3',
+      existingPvcName: props.existingPvcName,
       homeMountPath: props.homeMountPath ?? '/home/vscode',
       sshPort: props.sshPort ?? 2222,
       previewPort: props.previewPort ?? 3000,
