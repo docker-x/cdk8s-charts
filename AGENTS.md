@@ -63,8 +63,10 @@ Targets are inferred by plugins registered in `nx.json`. **Prefer inferred targe
 
 | Plugin | Source | Infers | Trigger |
 |--------|--------|--------|---------|
-| `@nx-devkit/typescript-preset` | `vendor/nx.ts` (submodule) | `build`, `typecheck`, `format`, `format-check`, `lint` | `tsdown.config.ts`, `tsconfig.json`, `biome.json` |
+| `@nx-devkit/typescript-preset` | `vendor/nx.ts` (submodule) | `build`, `typecheck` | `tsdown.config.ts`, `tsconfig.json` |
 | `@cdk8s-charts/nx-plugin-cdk8s` | `tools/plugins/cdk8s/` (local) | `synth` | `cdk8s.yaml` |
+
+Lint/format remain root-level via `npm run lint` (`biome check .`) — no per-package `biome.json` files exist, so biome inference is disabled (`biome: false`).
 
 - `vendor/nx.ts` is a git submodule — bump with `git -C vendor/nx.ts checkout <ref> && git add vendor/nx.ts`.
 - The local cdk8s plugin lives at `tools/plugins/cdk8s/src/plugin.ts`.

@@ -1151,12 +1151,11 @@ Targets are **inferred** — no `project.json` files exist anywhere in the repo.
 |--------|-------------|---------|
 | `build` | `tsdown.config.ts` | `npx tsdown` |
 | `typecheck` | `tsconfig.json` | `npx tsc --build tsconfig.json` |
-| `format` / `format-check` / `lint` | `biome.json` (non-root) | `npx biome …` |
 
 Plugin options in `nx.json`:
 - `tsgo: false` — use stock `tsc`, not the experimental native compiler
 - `tsdown: true` — infer `build` from `tsdown.config.ts`
-- `biome: true` — infer format/lint from `biome.json`
+- `biome: false` — no per-package `biome.json` files exist; lint/format stay root-level via `npm run lint` (`biome check .`)
 - `oxlint: false` — we use biome for lint, not oxlint
 
 The submodule is pinned to a commit; bump it with `git -C vendor/nx.ts checkout <ref> && git add vendor/nx.ts`.
@@ -1169,7 +1168,7 @@ The submodule is pinned to a commit; bump it with `git -C vendor/nx.ts checkout 
 |--------|-------------|---------|
 | `synth` | `cdk8s.yaml` | `npx cdk8s synth` |
 
-Only `examples/*/cdk8s.yaml` files trigger it (the plugin skips workspace root). The `synth` target depends on `^build` (via `targetDefaults`) so chart packages are compiled before synthesis. The `synth` target is **not cached** — `cdk8s synth` reads environment variables for secrets and image URLs, so caching would produce stale manifests when the environment changes.
+Any non-root `cdk8s.yaml` file triggers it (the plugin skips the workspace root). The `synth` target depends on `^build` (via `targetDefaults`) so chart packages are compiled before synthesis. The `synth` target is **not cached** — `cdk8s synth` reads environment variables for secrets and image URLs, so caching would produce stale manifests when the environment changes.
 
 ### 7.3 nx.json plugin registration
 

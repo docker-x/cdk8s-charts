@@ -7,7 +7,7 @@
       "options": {
         "tsgo": false,
         "tsdown": true,
-        "biome": true,
+        "biome": false,
         "oxlint": false
       }
     },
