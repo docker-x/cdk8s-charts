@@ -73,7 +73,7 @@ export class Devcontainer extends HelmConstruct<Values> {
 
   private deriveState(values: Values, name: string, props: Props) {
     return {
-      hasSshKeys: Boolean(values.sshAuthorizedKeys || values.sshSecretName),
+      hasSshKeys: Boolean(values.sshAuthorizedKeys ?? values.sshSecretName),
       sshSecretName: values.sshSecretName ?? `${name}-ssh-keys`,
       hasPullSecretData: Boolean(values.imagePullSecret),
       hasPullSecretRef: Boolean(values.imagePullSecretName),
@@ -142,7 +142,7 @@ export class Devcontainer extends HelmConstruct<Values> {
     const mounts: Array<{ name: string; mountPath: string; readOnly?: boolean; subPath?: string }> = [
       { name: 'workspace-state', mountPath: values.homeMountPath ?? '/home/vscode' },
     ];
-    if (values.sshAuthorizedKeys || hasSshKeys) mounts.push({ name: 'ssh-keys', mountPath: '/ssh-keys', readOnly: true });
+    if (hasSshKeys) mounts.push({ name: 'ssh-keys', mountPath: '/ssh-keys', readOnly: true });
     if (props.volumeMounts) mounts.push(...props.volumeMounts);
     if (props.values?.volumeMounts) mounts.push(...props.values.volumeMounts);
     return mounts;
@@ -152,7 +152,7 @@ export class Devcontainer extends HelmConstruct<Values> {
     const vols: Array<{ name: string; [key: string]: unknown }> = [
       { name: 'workspace-state', persistentVolumeClaim: { claimName: pvcName } },
     ];
-    if (values.sshAuthorizedKeys || hasSshKeys) {
+    if (hasSshKeys) {
       vols.push({ name: 'ssh-keys', secret: { secretName: sshSecretName, items: [{ key: 'authorized_keys', path: 'authorized_keys' }] } });
     }
     if (props.volumes) vols.push(...props.volumes);
