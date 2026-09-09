@@ -48,7 +48,7 @@ export class OpenShiftWorkspace extends Chart {
 
   constructor(scope: Construct, id: string, props: OpenShiftWorkspaceProps) {
     super(scope, id);
-    const name = props.name ?? 'workspace';
+    const name = props.values?.name ?? props.name ?? 'workspace';
     const namespace = props.namespace;
     const appsDomain = props.appsDomain;
 
@@ -269,7 +269,7 @@ export class OpenShiftWorkspace extends Chart {
     new ApiObject(this, 'keepalive-role', {
       apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'Role',
       metadata: { name: saName, namespace, labels: componentLabels(name, 'keepalive') },
-      rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get', 'list', 'delete'] }, { apiGroups: ['apps'], resources: ['deployments'], verbs: ['get', 'patch'] }],
+      rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get', 'list', 'delete'] }, { apiGroups: ['apps'], resources: ['deployments', 'deployments/scale'], verbs: ['get', 'patch'] }],
     });
     new ApiObject(this, 'keepalive-rb', {
       apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'RoleBinding',
@@ -443,39 +443,68 @@ const PASEO_AUTO_RESUME_SCRIPT = `#!/bin/bash
 set -euo pipefail
 
 PASEO_HOME="\${PASEO_HOME:-/home/vscode/.paseo}"
-DAEMON="\${PASEO_HOME}/daemon"
-AGENTS_DIR="\${PASEO_HOME}/agents"
+AGENTS_DIR="$PASEO_HOME/agents"
+RESUME_PROMPT="\${PASEO_AUTO_RESUME_PROMPT:-Continue working on your last task. Pick up where you left off.}"
+MAX_AGENTS="\${PASEO_AUTO_RESUME_MAX:-10}"
 
-if [ ! -d "\${AGENTS_DIR}" ]; then
-  echo "No agents directory at \${AGENTS_DIR}. Nothing to resume."
-  exit 0
-fi
+log() { echo "[auto-resume] $*"; }
 
-if [ ! -f "\${DAEMON}" ]; then
-  echo "Paseo daemon not found at \${DAEMON}. Skipping auto-resume."
-  exit 0
-fi
-
-# Start daemon if not running
-if ! pgrep -f "\${DAEMON}" >/dev/null 2>&1; then
-  echo "Starting Paseo daemon..."
-  nohup "\${DAEMON}" >> "\${PASEO_HOME}/daemon.log" 2>&1 &
+log "waiting for Paseo daemon on 127.0.0.1:6767..."
+daemon_ready=false
+for i in $(seq 1 60); do
+  if curl -sf http://127.0.0.1:6767/api/health >/dev/null 2>&1; then
+    daemon_ready=true
+    break
+  fi
   sleep 2
+done
+if [[ "$daemon_ready" != "true" ]]; then
+  log "ERROR: Paseo daemon not healthy after 120s, aborting auto-resume"
+  exit 1
+fi
+log "Paseo daemon is healthy"
+sleep 5
+
+if [[ ! -d "$AGENTS_DIR" ]]; then
+  log "no agents directory found, nothing to resume"
+  exit 0
 fi
 
-# Resume any agents that have a state file but are not currently running
-for agent_dir in "\${AGENTS_DIR}"/*; do
-  [ -d "\${agent_dir}" ] || continue
-  agent_name=\$(basename "\${agent_dir}")
-  state_file="\${agent_dir}/state.json"
-  if [ ! -f "\${state_file}" ]; then
-    continue
+CLOSED_AGENTS=()
+for json_file in "$AGENTS_DIR"/*/*.json; do
+  [[ -f "$json_file" ]] || continue
+  agent_id=$(node -e "
+    try {
+      const d = JSON.parse(require('fs').readFileSync('$json_file', 'utf8'));
+      if (d.lastStatus === 'closed' && !d.archived) {
+        process.stdout.write(d.id || '');
+      }
+    } catch (e) { /* skip invalid */ }
+  " 2>/dev/null || true)
+  if [[ -n "$agent_id" ]]; then
+    CLOSED_AGENTS+=("$agent_id")
   fi
-  if pgrep -f "paseo.*\${agent_name}" >/dev/null 2>&1; then
-    echo "Agent \${agent_name} is already running."
-    continue
-  fi
-  echo "Resuming agent \${agent_name}..."
-  nohup "\${DAEMON}" resume "\${agent_name}" >> "\${PASEO_HOME}/\${agent_name}-daemon.log" 2>&1 &
 done
-`;
+
+if [[ \${#CLOSED_AGENTS[@]} -eq 0 ]]; then
+  log "no closed agents found, nothing to resume"
+  exit 0
+fi
+
+log "found \${#CLOSED_AGENTS[@]} closed agent(s) to resume"
+resumed=0
+for agent_id in "\${CLOSED_AGENTS[@]}"; do
+  if [[ $resumed -ge $MAX_AGENTS ]]; then
+    log "reached max agents limit ($MAX_AGENTS), stopping"
+    break
+  fi
+  log "resuming agent $agent_id..."
+  if paseo send "$agent_id" "$RESUME_PROMPT" --no-wait 2>/dev/null; then
+    log "agent $agent_id resumed successfully"
+    resumed=$((resumed + 1))
+  else
+    log "WARNING: failed to resume agent $agent_id"
+  fi
+  sleep 2
+done
+log "auto-resume complete: $resumed agent(s) resumed"`;
