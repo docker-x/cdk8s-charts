@@ -13,6 +13,7 @@ Before implementing any feature or change:
 ## Build & verify
 
 ```bash
+git submodule update --init --recursive  # initialize vendor/nx.ts (required before nx)
 npm install          # install dependencies
 npm run build        # build all packages (NX)
 npm run lint         # type-check all packages
@@ -55,6 +56,21 @@ npx cdk8s synth      # synthesize K8s manifests to dist/
 - Path aliases are defined in `tsconfig.base.json`.
 - NX handles dependency ordering, caching, and parallel builds.
 - Each package has its own `package.json` and `tsconfig.json`.
+
+### NX plugins (inferred targets — no project.json)
+
+Targets are inferred by plugins registered in `nx.json`. **Prefer inferred targets over `project.json` files — only create a `project.json` if a target genuinely cannot be inferred by existing plugins.**
+
+| Plugin | Source | Infers | Trigger |
+|--------|--------|--------|---------|
+| `@nx-devkit/typescript-preset` | `vendor/nx.ts` (submodule) | `build`, `typecheck` | `tsdown.config.ts`, `tsconfig.json` |
+| `@cdk8s-charts/nx-plugin-cdk8s` | `tools/plugins/cdk8s/` (local) | `synth` | `cdk8s.yaml` |
+
+Lint/format remain root-level via `npm run lint` (`biome check .`) — no per-package `biome.json` files exist, so biome inference is disabled (`biome: false`).
+
+- `vendor/nx.ts` is a git submodule — bump with `git -C vendor/nx.ts checkout <ref> && git add vendor/nx.ts`.
+- The local cdk8s plugin lives at `tools/plugins/cdk8s/src/plugin.ts`.
+- See DESIGN.md §7 for full architecture and the known nx native SIGBUS limitation.
 
 ## Skills
 

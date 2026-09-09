@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.10",
+    "@nx/devkit": "^22.7.10",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "nx": "^22.7.2",

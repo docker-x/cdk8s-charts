@@ -1,6 +1,18 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "defaultBase": "main",
+  "plugins": [
+    {
+      "plugin": "./vendor/nx.ts/packages/typescript-preset/src/plugin.ts",
+      "options": {
+        "tsgo": false,
+        "tsdown": true,
+        "biome": false,
+        "oxlint": false
+      }
+    },
+    "./tools/plugins/cdk8s/src/plugin.ts"
+  ],
   "targetDefaults": {
     "build": {
       "dependsOn": ["^build"],
@@ -13,8 +25,7 @@
       "cache": true
     },
     "synth": {
-      "dependsOn": ["^build"],
-      "cache": true
+      "dependsOn": ["^build"]
     }
   },
   "namedInputs": {
