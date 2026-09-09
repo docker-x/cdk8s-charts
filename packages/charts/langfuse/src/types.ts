@@ -190,7 +190,7 @@ export interface LangfuseClickhouseClusterValues extends LangfuseClickhouseCompo
   profileSettings?: Record<string, unknown>;
 }
 
-export interface LangfuseClickhouseKeeperValues extends LangfuseClickhouseComponentValues {}
+export type LangfuseClickhouseKeeperValues = LangfuseClickhouseComponentValues;
 
 export interface LangfuseRedisValues {
   deploy?: boolean;

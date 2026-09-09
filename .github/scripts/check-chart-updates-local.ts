@@ -32,7 +32,7 @@ interface ChartResult {
 }
 
 function pad(s: string, n: number): string {
-  return s.length >= n ? s : s + ' '.repeat(n - s.length);
+  return s.padEnd(n);
 }
 
 function printTable(results: ChartResult[]): void {

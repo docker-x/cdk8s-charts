@@ -59,7 +59,7 @@ function resolveToken(token: string, symbols: Map<string, string>): string | und
  */
 function extractChartRef(source: string, symbols: Map<string, string>): string | undefined {
   // Match renderChart( or renderChartOn( then capture up to the first comma.
-  const callRe = /render(?:Chart|ChartOn)\(\s*([^,]+)/g;
+  const callRe = /render(?:Chart|ChartOn)\s*\(\s*([^,]+)/g;
   const m = callRe.exec(source);
   if (!m) return undefined;
   const arg = m[1].trim();
