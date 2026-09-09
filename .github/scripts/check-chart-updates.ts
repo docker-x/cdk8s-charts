@@ -221,11 +221,9 @@ function warnAboutUnindexedCharts(discovered: DiscoveredChart[]): void {
       continue;
     }
     const content = readFileSync(construct, 'utf8');
-    if (content.includes('renderChart(') && !discoveredNames.has(dir)) {
-      console.warn(`Warning: ${dir} uses renderChart but was not discovered`);
-    }
-    if (content.includes('renderChartOn(') && !discoveredNames.has(dir)) {
-      console.warn(`Warning: ${dir} uses renderChartOn but was not discovered`);
+    const usesRender = content.includes('renderChart(') || content.includes('renderChartOn(');
+    if (usesRender && !discoveredNames.has(dir)) {
+      console.warn(`Warning: ${dir} uses renderChart/renderChartOn but was not discovered`);
     }
   }
 

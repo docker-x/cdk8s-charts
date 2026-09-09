@@ -30,6 +30,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..', '..');
 const CHARTS_DIR = join(REPO_ROOT, 'packages', 'charts');
 
+const SYMBOL_RE =
+  /(?:export\s+)?const\s+([A-Z_][A-Z0-9_]*)\s*(?::\s*[\w<>[\]|, ]+)?\s*=\s*(['"`])([^'"`]+)\2/g;
+
 /** Build a symbol table of `const NAME = 'value'` declarations. */
 function buildSymbolTable(source: string): Map<string, string> {
   const symbols = new Map<string, string>();
@@ -39,9 +42,7 @@ function buildSymbolTable(source: string): Map<string, string> {
   // Uses a backreference (\2) to match the closing quote type so values
   // containing the other quote type (e.g. "It's fine") are captured fully.
   // Limitation: single-line only; multi-line declarations are not supported.
-  const re =
-    /(?:export\s+)?const\s+([A-Z_][A-Z0-9_]*)\s*(?::\s*[\w<>[\]|, ]+)?\s*=\s*(['"`])([^'"`]+)\2/g;
-  for (const m of source.matchAll(re)) {
+  for (const m of source.matchAll(SYMBOL_RE)) {
     symbols.set(m[1], m[3]);
   }
   return symbols;
