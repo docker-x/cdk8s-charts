@@ -113,7 +113,8 @@ function issueBody(
   return lines.join('\n');
 }
 
-function createIssue(
+function upsertIssue(
+  number: number | undefined,
   name: string,
   version: string,
   chart: string,
@@ -124,32 +125,18 @@ function createIssue(
   const body = issueBody(name, version, chart, repo, currentVersion);
 
   if (DRY_RUN) {
-    console.log(`[dry-run] would create issue: ${title}`);
+    const action = number ? `update issue #${number}` : 'create issue';
+    console.log(`[dry-run] would ${action}: ${title}`);
     return;
   }
 
-  const output = run('gh', ['issue', 'create', '--title', title, '--body', body, ...repoArgs()]);
-  console.log(`  created issue: ${title} (${output.trim()})`);
-}
-
-function updateIssue(
-  number: number,
-  name: string,
-  version: string,
-  chart: string,
-  repo?: string,
-  currentVersion?: string,
-) {
-  const title = `Update ${name} to ${version}`;
-  const body = issueBody(name, version, chart, repo, currentVersion);
-
-  if (DRY_RUN) {
-    console.log(`[dry-run] would update issue #${number}: ${title}`);
-    return;
+  if (number) {
+    run('gh', ['issue', 'edit', String(number), '--title', title, '--body', body, ...repoArgs()]);
+    console.log(`  updated issue #${number}: ${title}`);
+  } else {
+    const output = run('gh', ['issue', 'create', '--title', title, '--body', body, ...repoArgs()]);
+    console.log(`  created issue: ${title} (${output.trim()})`);
   }
-
-  run('gh', ['issue', 'edit', String(number), '--title', title, '--body', body, ...repoArgs()]);
-  console.log(`  updated issue #${number}: ${title}`);
 }
 
 function closeStaleIssue(number: number, name: string) {
@@ -185,7 +172,14 @@ function processChart(chart: DiscoveredChart, latestVersion: string) {
 
   // No open issue -> create one.
   if (issues.length === 0) {
-    createIssue(chart.name, latestVersion, chart.chart, chart.repo, chart.currentVersion);
+    upsertIssue(
+      undefined,
+      chart.name,
+      latestVersion,
+      chart.chart,
+      chart.repo,
+      chart.currentVersion,
+    );
     return;
   }
 
@@ -202,7 +196,7 @@ function processChart(chart: DiscoveredChart, latestVersion: string) {
     return;
   }
 
-  updateIssue(
+  upsertIssue(
     primary.number,
     chart.name,
     latestVersion,
@@ -229,6 +223,9 @@ function warnAboutUnindexedCharts(discovered: DiscoveredChart[]): void {
     const content = readFileSync(construct, 'utf8');
     if (content.includes('renderChart(') && !discoveredNames.has(dir)) {
       console.warn(`Warning: ${dir} uses renderChart but was not discovered`);
+    }
+    if (content.includes('renderChartOn(') && !discoveredNames.has(dir)) {
+      console.warn(`Warning: ${dir} uses renderChartOn but was not discovered`);
     }
   }
 

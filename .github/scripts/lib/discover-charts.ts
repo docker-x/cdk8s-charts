@@ -35,9 +35,11 @@ function buildSymbolTable(source: string): Map<string, string> {
   const symbols = new Map<string, string>();
   // Matches `const NAME = 'value'`, `export const NAME = "value"`,
   // and template-literal delimited values (backticks).
-  const re = /(?:export\s+)?const\s+([A-Z_][A-Z0-9_]*)\s*=\s*['"`]([^'"`]+)['"`]/g;
+  // Uses a backreference (\2) to match the closing quote type so values
+  // containing the other quote type (e.g. "It's fine") are captured fully.
+  const re = /(?:export\s+)?const\s+([A-Z_][A-Z0-9_]*)\s*=\s*(['"`])([^'"`]+)\2/g;
   for (const m of source.matchAll(re)) {
-    symbols.set(m[1], m[2]);
+    symbols.set(m[1], m[3]);
   }
   return symbols;
 }
@@ -71,7 +73,10 @@ function extractChartRef(source: string, symbols: Map<string, string>): string |
 
 /** Extract the repo url from `repo: ...` inside a renderChart options object. */
 function extractRepo(source: string, symbols: Map<string, string>): string | undefined {
-  const re = /repo:\s*(?:props\.repo\s*\?\?\s*)?(['"][^'"]+['"]|[A-Z_][A-Z0-9_]*)/g;
+  // Constrain to the first renderChart/renderChartOn call's options object
+  // so we don't match `repo:` in comments or interface definitions.
+  const re =
+    /render(?:Chart|ChartOn)\s*\([\s\S]*?repo:\s*(?:props\.repo\s*\?\?\s*)?(['"][^'"]+['"]|[A-Z_][A-Z0-9_]*)/g;
   const m = re.exec(source);
   if (!m) return undefined;
   return resolveToken(m[1], symbols);

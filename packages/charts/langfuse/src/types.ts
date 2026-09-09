@@ -167,33 +167,30 @@ export interface LangfuseClickhouseValues {
     existingSecretKey?: string;
   };
   crdCheck?: boolean;
-  cluster?: {
-    enabled?: boolean;
-    replicas?: number;
-    image?: { repository?: string; tag?: string };
-    storage?: { size?: string; className?: string; accessModes?: string[] };
-    resources?: ResourceRequirements;
-    nodeSelector?: Record<string, string>;
-    tolerations?: unknown[];
-    affinity?: unknown;
-    settings?: Record<string, unknown>;
-    profileSettings?: Record<string, unknown>;
-    /** PriorityClass for ClickHouse pods. */
-    priorityClassName?: string;
-  };
-  keeper?: {
-    enabled?: boolean;
-    replicas?: number;
-    image?: { repository?: string; tag?: string };
-    storage?: { size?: string; className?: string; accessModes?: string[] };
-    resources?: ResourceRequirements;
-    nodeSelector?: Record<string, string>;
-    tolerations?: unknown[];
-    affinity?: unknown;
-    /** PriorityClass for Keeper pods. */
-    priorityClassName?: string;
-  };
+  cluster?: LangfuseClickhouseClusterValues;
+  keeper?: LangfuseClickhouseKeeperValues;
 }
+
+/** Shared shape for ClickHouse cluster and keeper sub-component config. */
+export interface LangfuseClickhouseComponentValues {
+  enabled?: boolean;
+  replicas?: number;
+  image?: { repository?: string; tag?: string };
+  storage?: { size?: string; className?: string; accessModes?: string[] };
+  resources?: ResourceRequirements;
+  nodeSelector?: Record<string, string>;
+  tolerations?: unknown[];
+  affinity?: unknown;
+  /** PriorityClass for pods. */
+  priorityClassName?: string;
+}
+
+export interface LangfuseClickhouseClusterValues extends LangfuseClickhouseComponentValues {
+  settings?: Record<string, unknown>;
+  profileSettings?: Record<string, unknown>;
+}
+
+export interface LangfuseClickhouseKeeperValues extends LangfuseClickhouseComponentValues {}
 
 export interface LangfuseRedisValues {
   deploy?: boolean;
