@@ -1176,7 +1176,7 @@ Any non-root `cdk8s.yaml` file triggers it (the plugin skips the workspace root)
 {
   "plugins": [
     { "plugin": "./vendor/nx.ts/packages/typescript-preset/src/plugin.ts",
-      "options": { "tsgo": false, "tsdown": true, "biome": true, "oxlint": false } },
+      "options": { "tsgo": false, "tsdown": true, "biome": false, "oxlint": false } },
     "./tools/plugins/cdk8s/src/plugin.ts"
   ]
 }
