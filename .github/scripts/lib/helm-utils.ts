@@ -6,7 +6,6 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import semver from 'semver';
 
 /** Query the latest published chart version via `helm show chart`. */
 export function helmLatestVersion(chart: string, repo?: string): string {
@@ -22,31 +21,65 @@ export function helmLatestVersion(chart: string, repo?: string): string {
 }
 
 /**
- * Parse a version string, returning a SemVer or null.
- * Uses semver.parse first (preserves pre-release), then falls back to
- * semver.coerce only for partial versions like "1.0" or "1.2".
- * Guards against coercing arbitrary digit-bearing strings like "latest-2024".
- */
-function parseVersion(v: string): semver.SemVer | null {
-  const parsed = semver.parse(v);
-  if (parsed) return parsed;
-  // Only coerce strings that look like partial versions (optional v prefix,
-  // 1-3 numeric segments separated by dots) — rejects malformed input like 1..2
-  if (/^v?\d+(?:\.\d+){0,2}$/.test(v)) return semver.coerce(v);
-  return null;
-}
-
-/**
  * Compare two semver-ish versions. Returns true when `latest` is newer
  * than `current`.
  *
- * Uses the `semver` package for full SemVer 2.0.0 compliance, including
- * pre-release precedence and optional `v` prefix handling.
+ * Handles:
+ *  - Optional `v` prefix (e.g. `v1.2.3` → `1.2.3`)
+ *  - Pre-release suffixes (e.g. `1.2.3-alpha`) per semver spec: a version
+ *    with a pre-release suffix is older than the same version without one
+ *  - Numeric pre-release sub-segments (e.g. `rc.10` > `rc.2`)
  */
 export function isNewer(current: string | undefined, latest: string): boolean {
   if (!current) return true;
-  const c = parseVersion(current);
-  const l = parseVersion(latest);
-  if (!c || !l) return false;
-  return semver.gt(l, c);
+  // Strip optional `v` prefix.
+  const c = current.replace(/^v/, '');
+  const l = latest.replace(/^v/, '');
+  if (c === l) return false;
+
+  // Split into numeric core and pre-release suffix.
+  const cCore = c
+    .split('-')[0]
+    .split('.')
+    .map((p) => Number.parseInt(p, 10));
+  const lCore = l
+    .split('-')[0]
+    .split('.')
+    .map((p) => Number.parseInt(p, 10));
+  const len = Math.max(cCore.length, lCore.length);
+  for (let i = 0; i < len; i++) {
+    const ci = cCore[i] ?? 0;
+    const li = lCore[i] ?? 0;
+    if (li > ci) return true;
+    if (li < ci) return false;
+  }
+
+  // Numeric cores are equal — compare pre-release suffixes.
+  // A version WITHOUT a pre-release suffix is newer than one WITH it.
+  const cPre = c.includes('-') ? c.split('-').slice(1).join('-') : '';
+  const lPre = l.includes('-') ? l.split('-').slice(1).join('-') : '';
+  if (!cPre && lPre) return false; // current is release, latest is pre-release
+  if (cPre && !lPre) return true; // current is pre-release, latest is release
+  if (cPre && lPre) {
+    // Both pre-release: compare dot-separated sub-segments.
+    // Numeric segments compared numerically, non-numeric lexicographically.
+    const cParts = cPre.split('.');
+    const lParts = lPre.split('.');
+    const plen = Math.max(cParts.length, lParts.length);
+    for (let i = 0; i < plen; i++) {
+      const cp = cParts[i] ?? '';
+      const lp = lParts[i] ?? '';
+      const cn = Number.parseInt(cp, 10);
+      const ln = Number.parseInt(lp, 10);
+      if (!Number.isNaN(cn) && !Number.isNaN(ln)) {
+        if (ln > cn) return true;
+        if (ln < cn) return false;
+      } else {
+        if (lp > cp) return true;
+        if (lp < cp) return false;
+      }
+    }
+  }
+
+  return false; // fully equal
 }
