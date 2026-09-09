@@ -25,7 +25,8 @@ export class OpenShiftWorkspace extends Chart {
     // lowercase alphanumeric and hyphens, max 63 chars, no dots.
     // This prevents shell injection in embedded scripts and ensures
     // the values are valid as Kubernetes Service and Namespace names.
-    const dnsLabelRe = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+    // noinspection RegExpRedundantEscape
+    const dnsLabelRe = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
     if (!dnsLabelRe.test(name) || name.length > 63) {
       throw new Error(`Invalid workspace name "${name}": must be a DNS-label value (lowercase alphanumeric with hyphens, max 63 chars, no dots)`);
     }
@@ -365,7 +366,7 @@ export class OpenShiftWorkspace extends Chart {
           },
         },
         spec: {
-          schedule: keepalive.schedule ?? '*/2 * * * *',
+          schedule: keepalive.schedule,
           concurrencyPolicy: 'Forbid',
           successfulJobsHistoryLimit: 1,
           failedJobsHistoryLimit: 3,
@@ -464,7 +465,7 @@ export class OpenShiftWorkspace extends Chart {
           },
         },
         spec: {
-          schedule: backup.schedule ?? '0 2 * * *',
+          schedule: backup.schedule,
           concurrencyPolicy: 'Forbid',
           successfulJobsHistoryLimit: 3,
           failedJobsHistoryLimit: 3,
@@ -489,7 +490,7 @@ export class OpenShiftWorkspace extends Chart {
                         { name: 'WORKSPACE_POD_LABEL', value: `app.kubernetes.io/name=${name}` },
                         { name: 'NAMESPACE', value: namespace },
                       ],
-                      command: ['/bin/sh', '-ec', buildBackupScript(backup.keep ?? 3, homeMountPath)],
+                      command: ['/bin/sh', '-ec', buildBackupScript(backup.keep, homeMountPath)],
                     },
                   ],
                 },
