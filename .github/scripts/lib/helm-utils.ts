@@ -34,6 +34,6 @@ export function isNewer(current: string | undefined, latest: string): boolean {
   if (!current) return true;
   const c = semver.parse(current) ?? semver.coerce(current);
   const l = semver.parse(latest) ?? semver.coerce(latest);
-  if (!c || !l) return current !== latest;
+  if (!c || !l) return false;
   return semver.gt(l, c);
 }

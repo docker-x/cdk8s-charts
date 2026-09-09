@@ -35,8 +35,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..', '..');
 const CHARTS_DIR = join(REPO_ROOT, 'packages', 'charts');
 
+/** Map of const NAME = 'value' declarations extracted from the source. */
+type ConstMap = Map<string, string>;
+
 /** Extract the string value from a TypeScript expression node. */
-function getStringValue(node: ts.Expression | undefined): string | undefined {
+function getStringValue(node: ts.Expression | undefined, consts: ConstMap): string | undefined {
   if (!node) return undefined;
   // String literal: 'foo' or "foo"
   if (ts.isStringLiteral(node)) return node.text;
@@ -44,23 +47,21 @@ function getStringValue(node: ts.Expression | undefined): string | undefined {
   if (ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
   // Identifier referencing a const: look up its initializer
   if (ts.isIdentifier(node)) {
-    return CONST_VALUES.get(node.text);
+    return consts.get(node.text);
   }
   // Binary expression: props.chart ?? 'fallback' → return the right side
   if (
     ts.isBinaryExpression(node) &&
     node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken
   ) {
-    return getStringValue(node.right);
+    return getStringValue(node.right, consts);
   }
   return undefined;
 }
 
-/** Map of const NAME = 'value' declarations extracted from the source. */
-const CONST_VALUES = new Map<string, string>();
-
 /** Collect all top-level const declarations with string-like initializers. */
-function collectConstDeclarations(sourceFile: ts.SourceFile): void {
+function collectConstDeclarations(sourceFile: ts.SourceFile): ConstMap {
+  const consts: ConstMap = new Map();
   for (const stmt of sourceFile.statements) {
     // Handle `export const NAME = 'value'` and `const NAME = 'value'`
     let declList: ts.VariableDeclarationList | undefined;
@@ -70,12 +71,13 @@ function collectConstDeclarations(sourceFile: ts.SourceFile): void {
     if (!declList) continue;
     for (const decl of declList.declarations) {
       if (!ts.isIdentifier(decl.name)) continue;
-      const value = getStringValue(decl.initializer);
+      const value = getStringValue(decl.initializer, consts);
       if (value !== undefined) {
-        CONST_VALUES.set(decl.name.text, value);
+        consts.set(decl.name.text, value);
       }
     }
   }
+  return consts;
 }
 
 /** Find the first renderChart() or renderChartOn() call expression. */
@@ -101,13 +103,13 @@ function findRenderChartCall(sourceFile: ts.SourceFile): ts.CallExpression | und
 }
 
 /** Extract the chart ref from the first argument of a renderChart call. */
-function extractChartRef(call: ts.CallExpression): string | undefined {
+function extractChartRef(call: ts.CallExpression, consts: ConstMap): string | undefined {
   const arg = call.arguments[0];
-  return getStringValue(arg);
+  return getStringValue(arg, consts);
 }
 
-/** Extract the repo url from the options object (3rd arg) of a renderChart call. */
-function extractRepo(call: ts.CallExpression): string | undefined {
+/** Extract the repo url from the options object of a renderChart call. */
+function extractRepo(call: ts.CallExpression, consts: ConstMap): string | undefined {
   // renderChart(chart, id, namespace, computed, overrides, options)
   // The options object is the last argument containing `repo:` and `version:`
   for (let i = call.arguments.length - 1; i >= 0; i--) {
@@ -115,21 +117,25 @@ function extractRepo(call: ts.CallExpression): string | undefined {
     if (!arg || !ts.isObjectLiteralExpression(arg)) continue;
     for (const prop of arg.properties) {
       if (!ts.isPropertyAssignment(prop)) continue;
-      if (!ts.isIdentifier(prop.name) || prop.name.text !== 'repo') continue;
+      // Support both identifier keys ({ repo: ... }) and string literal keys ({ 'repo': ... })
+      let keyName: string | undefined;
+      if (ts.isIdentifier(prop.name)) keyName = prop.name.text;
+      else if (ts.isStringLiteral(prop.name)) keyName = prop.name.text;
+      if (keyName !== 'repo') continue;
       // repo: props.repo ?? 'url' or repo: 'url' or repo: CONST
-      return getStringValue(prop.initializer);
+      return getStringValue(prop.initializer, consts);
     }
   }
   return undefined;
 }
 
 /** Extract the pinned version from DEFAULT_VERSION / DEFAULT_CHART_VERSION. */
-function extractCurrentVersion(): string | undefined {
-  return CONST_VALUES.get('DEFAULT_VERSION') ?? CONST_VALUES.get('DEFAULT_CHART_VERSION');
+function extractCurrentVersion(consts: ConstMap): string | undefined {
+  return consts.get('DEFAULT_VERSION') ?? consts.get('DEFAULT_CHART_VERSION');
 }
 
 /** Parse a TypeScript source file. */
-function parseSource(filePath: string): ts.SourceFile | undefined {
+function parseSource(filePath: string): ts.SourceFile {
   const content = readFileSync(filePath, 'utf8');
   return ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
 }
@@ -144,26 +150,23 @@ export function discoverCharts(): DiscoveredChart[] {
     if (!statSync(pkgDir).isDirectory()) continue;
     let sourceFile: ts.SourceFile;
     try {
-      sourceFile = parseSource(construct) as ts.SourceFile;
+      sourceFile = parseSource(construct);
     } catch {
       continue;
     }
 
-    // Reset const map per file
-    CONST_VALUES.clear();
-    collectConstDeclarations(sourceFile);
-
+    const consts = collectConstDeclarations(sourceFile);
     const call = findRenderChartCall(sourceFile);
     if (!call) continue;
 
-    const chart = extractChartRef(call);
+    const chart = extractChartRef(call, consts);
     if (!chart) {
       console.warn(`discover: ${dir} uses renderChart but chart ref could not be extracted`);
       continue;
     }
     const isOci = chart.startsWith('oci://');
-    const repo = isOci ? undefined : extractRepo(call);
-    const currentVersion = extractCurrentVersion();
+    const repo = isOci ? undefined : extractRepo(call, consts);
+    const currentVersion = extractCurrentVersion(consts);
 
     discovered.push({
       name: dir,
