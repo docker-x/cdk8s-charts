@@ -25,12 +25,14 @@ export class OpenShiftWorkspace extends Chart {
     // lowercase alphanumeric and hyphens, max 63 chars, no dots.
     // This prevents shell injection in embedded scripts and ensures
     // the values are valid as Kubernetes Service and Namespace names.
-    // noinspection RegExpRedundantEscape
-    const dnsLabelRe = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
-    if (!dnsLabelRe.test(name) || name.length > 63) {
+    const isDnsLabel = (s: string) =>
+      s.length > 0 && s.length <= 63 &&
+      /^[a-z0-9-]+$/.test(s) &&
+      !s.startsWith('-') && !s.endsWith('-');
+    if (!isDnsLabel(name)) {
       throw new Error(`Invalid workspace name "${name}": must be a DNS-label value (lowercase alphanumeric with hyphens, max 63 chars, no dots)`);
     }
-    if (!dnsLabelRe.test(namespace) || namespace.length > 63) {
+    if (!isDnsLabel(namespace)) {
       throw new Error(`Invalid namespace "${namespace}": must be a DNS-label value (lowercase alphanumeric with hyphens, max 63 chars, no dots)`);
     }
 
@@ -680,21 +682,15 @@ function buildBackupScript(keep: number, homeMountPath: string): string {
     '  for f in /etc/r2-credentials/AWS_ACCESS_KEY_ID /etc/r2-credentials/AWS_SECRET_ACCESS_KEY /etc/r2-credentials/R2_ACCOUNT_ID /etc/r2-credentials/R2_BUCKET /etc/r2-credentials/BACKUP_PASSWORD; do',
     '    if [ ! -f "$f" ]; then echo "Fatal: missing R2 credential file $f"; exit 1; fi',
     '  done',
-    '  for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET BACKUP_PASSWORD; do',
-    '    export "$f=$(cat /etc/r2-credentials/$f)"',
-    '  done',
+    '  for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET BACKUP_PASSWORD; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
     '  cd -- "$HOME_MOUNT_PATH"',
-    '  tar czf /tmp/backup.tar.gz \\',
-    '    --exclude=".ssh" --exclude=".aws" --exclude=".kube" --exclude=".gnupg" \\',
-    '    --exclude=".env" --exclude=".env.*" --exclude="*_history" --exclude="node_modules" \\',
-    '    --exclude=".bun" --exclude=".nix-profile" --exclude=".local/bin" \\',
-    '    --exclude=".local/share/devin" --exclude=".local/share/terminal-browser" \\',
-    '    --exclude=".cache" --exclude=".npm" --exclude=".turbo" --exclude=".nx" \\',
-    '    --exclude=".astro" --exclude="dist" --exclude="build" --exclude=".next" \\',
-    '    --exclude="models" --exclude="worktrees" --exclude="daemon.log" \\',
-    '    --exclude=".paseo/*-daemon.log" --exclude="logs" --exclude=".gc/cache" \\',
-    '    --exclude=".gc/supervisor.log" --exclude="lost+found" \\',
-    '    . || tar_rc=$?',
+    '  EXCLUDES="--exclude=.ssh --exclude=.aws --exclude=.kube --exclude=.gnupg --exclude=.env --exclude=.env.*"',
+    '  EXCLUDES="$EXCLUDES --exclude=*_history --exclude=node_modules --exclude=.bun --exclude=.nix-profile --exclude=.local/bin"',
+    '  EXCLUDES="$EXCLUDES --exclude=.local/share/devin --exclude=.local/share/terminal-browser --exclude=.cache --exclude=.npm"',
+    '  EXCLUDES="$EXCLUDES --exclude=.turbo --exclude=.nx --exclude=.astro --exclude=dist --exclude=build --exclude=.next"',
+    '  EXCLUDES="$EXCLUDES --exclude=models --exclude=worktrees --exclude=daemon.log --exclude=.paseo/*-daemon.log --exclude=logs"',
+    '  EXCLUDES="$EXCLUDES --exclude=.gc/cache --exclude=.gc/supervisor.log --exclude=lost+found"',
+    '  tar czf /tmp/backup.tar.gz $EXCLUDES . || tar_rc=$?',
     '  if [ "${tar_rc:-0}" -ge 2 ]; then echo "Fatal: tar failed with exit code ${tar_rc}"; exit "${tar_rc}"; fi',
     '  if [ "${tar_rc:-0}" -eq 1 ]; then echo "Warning: tar exit code 1 (non-fatal)"; fi',
     '  openssl enc -aes-256-cbc -salt -pbkdf2 -in /tmp/backup.tar.gz -out /tmp/backup.tar.gz.enc -pass env:BACKUP_PASSWORD',
