@@ -16,7 +16,7 @@ export class Devcontainer extends HelmConstruct<Values> {
   constructor(scope: Construct, id: string, props: Props) {
     super(scope, id);
 
-    const name = props.name ?? id;
+    const name = props.values?.name ?? props.name ?? id;
     const values = this.computeValues(props, name);
     const derived = this.deriveState(values, name, props);
     const pvcName = `${name}-state`;
@@ -36,7 +36,7 @@ export class Devcontainer extends HelmConstruct<Values> {
       pvcName,
       serviceName: name,
       deploymentName: name,
-      secretName: derived.sshSecretName,
+      secretName: derived.sshSecretName ?? '',
     };
   }
 
@@ -51,9 +51,13 @@ export class Devcontainer extends HelmConstruct<Values> {
       sshPort: props.sshPort ?? 2222,
       previewPort: props.previewPort ?? 3000,
       sshAuthorizedKeys: props.sshAuthorizedKeys,
-      sshSecretName: props.sshSecretName ?? `${name}-ssh-keys`,
+      // sshSecretName and imagePullSecretName are NOT defaulted here —
+      // deriveState sets them only when the corresponding data is present,
+      // so hasSshKeys/hasPullSecretRef are false when no SSH keys or pull
+      // secret are configured.
+      sshSecretName: props.sshSecretName,
       imagePullSecret: props.imagePullSecret,
-      imagePullSecretName: props.imagePullSecretName ?? 'ghcr-pull-secret',
+      imagePullSecretName: props.imagePullSecretName,
       env: props.env,
       secretEnv: props.secretEnv,
       secretRefs: props.secretRefs,
@@ -73,12 +77,16 @@ export class Devcontainer extends HelmConstruct<Values> {
   }
 
   private deriveState(values: Values, name: string, props: Props) {
+    const hasSshData = Boolean(values.sshAuthorizedKeys);
+    const hasSshRef = Boolean(values.sshSecretName);
+    const hasPullData = Boolean(values.imagePullSecret);
+    const hasPullRef = Boolean(values.imagePullSecretName);
     return {
-      hasSshKeys: Boolean(values.sshAuthorizedKeys ?? values.sshSecretName),
-      sshSecretName: values.sshSecretName ?? `${name}-ssh-keys`,
-      hasPullSecretData: Boolean(values.imagePullSecret),
-      hasPullSecretRef: Boolean(values.imagePullSecretName),
-      pullSecretName: values.imagePullSecretName ?? 'ghcr-pull-secret',
+      hasSshKeys: hasSshData || hasSshRef,
+      sshSecretName: hasSshData || hasSshRef ? (values.sshSecretName ?? `${name}-ssh-keys`) : undefined,
+      hasPullSecretData: hasPullData,
+      hasPullSecretRef: hasPullRef,
+      pullSecretName: hasPullData || hasPullRef ? (values.imagePullSecretName ?? 'ghcr-pull-secret') : undefined,
       saName: values.serviceAccountName ?? `${name}-sa`,
       shouldCreateSa: !props.serviceAccountName && !props.values?.serviceAccountName,
     };
@@ -133,9 +141,16 @@ export class Devcontainer extends HelmConstruct<Values> {
 
   private buildContainerEnv(values: Values, name: string) {
     const env: Array<{ name: string; value?: string; valueFrom?: { secretKeyRef?: { name: string; key: string } } }> = [];
-    if (values.env) for (const [k, v] of Object.entries(values.env)) env.push({ name: k, value: v });
-    if (values.secretEnv) for (const k of Object.keys(values.secretEnv)) env.push({ name: k, valueFrom: { secretKeyRef: { name: `${name}-secret-env`, key: k } } });
-    if (values.secretRefs) for (const [k, r] of Object.entries(values.secretRefs)) env.push({ name: k, valueFrom: { secretKeyRef: { name: r.name, key: r.key } } });
+    const seen = new Set<string>();
+    if (values.env) for (const [k, v] of Object.entries(values.env)) { seen.add(k); env.push({ name: k, value: v }); }
+    if (values.secretEnv) for (const k of Object.keys(values.secretEnv)) {
+      if (seen.has(k)) throw new Error(`Duplicate env var "${k}": defined in both env and secretEnv`);
+      seen.add(k); env.push({ name: k, valueFrom: { secretKeyRef: { name: `${name}-secret-env`, key: k } } });
+    }
+    if (values.secretRefs) for (const [k, r] of Object.entries(values.secretRefs)) {
+      if (seen.has(k)) throw new Error(`Duplicate env var "${k}": defined in multiple sources`);
+      seen.add(k); env.push({ name: k, valueFrom: { secretKeyRef: { name: r.name, key: r.key } } });
+    }
     return env;
   }
 
@@ -149,7 +164,7 @@ export class Devcontainer extends HelmConstruct<Values> {
     return mounts;
   }
 
-  private buildVolumes(values: Values, hasSshKeys: boolean, sshSecretName: string, pvcName: string, props: Props) {
+  private buildVolumes(values: Values, hasSshKeys: boolean, sshSecretName: string | undefined, pvcName: string, props: Props) {
     const vols: Array<{ name: string; [key: string]: unknown }> = [
       { name: 'workspace-state', persistentVolumeClaim: { claimName: pvcName } },
     ];

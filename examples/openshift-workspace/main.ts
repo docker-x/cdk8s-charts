@@ -48,7 +48,7 @@ const chart = new OpenShiftWorkspace(app, 'workspace', {
       r2AccountId: env.R2_ACCOUNT_ID,
       r2AccessKeyId: env.R2_ACCESS_KEY_ID,
       r2SecretAccessKey: env.R2_SECRET_ACCESS_KEY,
-      r2BucketName: env.R2_BUCKET_NAME ?? 'workspace-backups',
+      r2BucketName: env.R2_BUCKET_NAME || 'workspace-backups',
       resticPassword: env.RESTIC_PASSWORD,
     } : {}),
   },

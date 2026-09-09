@@ -33,7 +33,7 @@ function componentLabels(name: string, component: string): Record<string, string
 function buildTfDeployerRules(saName: string) {
   return [
     { apiGroups: [''], resources: ['pods', 'serviceaccounts', 'persistentvolumeclaims', 'services', 'configmaps'], verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'] },
-    { apiGroups: [''], resources: ['secrets'], verbs: ['create', 'delete', 'list', 'patch', 'update', 'watch'] },
+    { apiGroups: [''], resources: ['secrets'], verbs: ['create', 'delete', 'patch', 'update'] },
     { apiGroups: [''], resources: ['secrets'], resourceNames: [`${saName}-token`], verbs: ['get'] },
     { apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] },
     { apiGroups: ['apps'], resources: ['deployments', 'deployments/scale', 'replicasets', 'daemonsets', 'statefulsets'], verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'] },
@@ -70,7 +70,7 @@ export class OpenShiftWorkspace extends Chart {
     const lifecycle = this.buildLifecycle(paseoAutoResume);
     const workspaceEnv = this.buildWorkspaceEnv(name, namespace, appsDomain, props.env);
     const podAnnotations = this.buildPodAnnotations(paseoAutoResume);
-    const homeMountPath = props.homeMountPath ?? '/home/vscode';
+    const homeMountPath = props.values?.homeMountPath ?? props.homeMountPath ?? '/home/vscode';
     const devcontainer = this.createDevcontainer({
       name, namespace, props, homeMountPath, workspaceEnv, podAnnotations, extraVolumes, extraVolumeMounts, oauthProxySidecar, lifecycle,
     });
@@ -419,8 +419,8 @@ function buildBackupScript(keep: number, homeMountPath: string): string {
     '  if command -v aws >/dev/null 2>&1; then',
     '    echo "Using aws-cli for upload..."',
     '    R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"',
-    '    aws s3 cp /tmp/backup.tar.gz.enc "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto',
-    '    UPLOAD_EXIT=$?',
+    '    aws s3 cp /tmp/backup.tar.gz.enc "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || UPLOAD_EXIT=$?',
+    '    UPLOAD_EXIT=${UPLOAD_EXIT:-0}',
     '    if [ "${UPLOAD_EXIT}" -ne 0 ]; then echo "Fatal: upload failed"; rm -f /tmp/backup.tar.gz.enc; exit "${UPLOAD_EXIT}"; fi',
     '    echo "Cleaning up old backups (keeping last ${BACKUP_KEEP})..."',
     '    aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "workspace-state-" --endpoint-url "${R2_ENDPOINT}" --region auto --output json --query "Contents[*].Key" | jq -r ".[]" | sort -r > /tmp/all.txt',
