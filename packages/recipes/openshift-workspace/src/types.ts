@@ -63,6 +63,8 @@ export interface OpenShiftWorkspaceProps {
   pvcSize?: string;
   /** Storage class (default: gp3). */
   pvcStorageClass?: string;
+  /** Use an existing PVC instead of creating a new one. */
+  existingPvcName?: string;
   /** Home mount path (default: /home/vscode). Must match the devcontainer PVC mount. */
   homeMountPath?: string;
   /** Resource name prefix (default: "workspace"). */

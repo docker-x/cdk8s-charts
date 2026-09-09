@@ -237,6 +237,7 @@ export class OpenShiftWorkspace extends Chart {
     return new Devcontainer(this, 'workspace', {
       namespace, image: props.image, imageDigest: props.imageDigest, name,
       storageSize: props.pvcSize ?? '30Gi', storageClass: props.pvcStorageClass ?? 'gp3',
+      existingPvcName: props.existingPvcName,
       homeMountPath, sshAuthorizedKeys: props.sshAuthorizedKeys, imagePullSecret: props.ghcrPullSecret,
       env: workspaceEnv, resources: props.resources,
       labels: { 'app.kubernetes.io/managed-by': 'cdk8s' }, annotations: podAnnotations,
