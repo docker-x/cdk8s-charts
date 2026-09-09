@@ -44,6 +44,8 @@ export interface Values {
   storageSize?: string;
   /** Storage class for PVC (default: gp3). */
   storageClass?: string;
+  /** Use an existing PVC instead of creating a new one. Skips PVC creation. */
+  existingPvcName?: string;
   /** Where the PVC is mounted (default: /home/vscode). */
   homeMountPath?: string;
   /** SSH port (default: 2222). */
