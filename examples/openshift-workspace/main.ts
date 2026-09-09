@@ -15,7 +15,7 @@ const app = new App();
 
 // Validate BACKUP_KEEP is a positive integer.
 const backupKeepRaw = env.BACKUP_KEEP ?? '3';
-const backupKeep = parseInt(backupKeepRaw, 10);
+const backupKeep = Number.parseInt(backupKeepRaw, 10);
 if (!Number.isInteger(backupKeep) || backupKeep < 1) {
   throw new Error(`BACKUP_KEEP must be a positive integer, got: "${backupKeepRaw}"`);
 }
@@ -27,7 +27,7 @@ if (r2Provided > 0 && r2Provided < r2Fields.length) {
   throw new Error('Partial R2 credentials: provide all of R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, RESTIC_PASSWORD — or none to disable backup.');
 }
 
-new OpenShiftWorkspace(app, 'workspace', {
+const chart = new OpenShiftWorkspace(app, 'workspace', {
   namespace: env.NAMESPACE ?? 'theplenkov-dev',
   image: env.WORKSPACE_IMAGE ?? 'ghcr.io/theplenkov-infra/devcontainer/workspace:latest',
   imageDigest: env.WORKSPACE_IMAGE_DIGEST ?? 'unknown',
@@ -58,3 +58,4 @@ new OpenShiftWorkspace(app, 'workspace', {
 });
 
 app.synth();
+void chart;

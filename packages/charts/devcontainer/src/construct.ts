@@ -26,7 +26,7 @@ export class Devcontainer extends HelmConstruct<Values> {
     const containerEnv = this.buildContainerEnv(values, name);
     const volumeMounts = this.buildVolumeMounts(values, derived.hasSshKeys, props);
     const volumes = this.buildVolumes(values, derived.hasSshKeys, derived.sshSecretName, pvcName, props);
-    this.createDeployment(name, props.namespace, values, derived, containerEnv, volumeMounts, volumes, props);
+    this.createDeployment({ name, namespace: props.namespace, values, d: derived, containerEnv, volumeMounts, volumes, props });
     this.createService(name, props.namespace, values);
 
     this.exports = {
@@ -41,7 +41,7 @@ export class Devcontainer extends HelmConstruct<Values> {
   }
 
   private computeValues(props: Props, name: string): Values {
-    return deepMerge({
+    const computed: Values = {
       image: props.image,
       imageDigest: props.imageDigest ?? 'unknown',
       command: props.command ?? DEFAULT_COMMAND,
@@ -68,7 +68,8 @@ export class Devcontainer extends HelmConstruct<Values> {
       runAsNonRoot: props.runAsNonRoot ?? true,
       fsGroup: props.fsGroup,
       name,
-    } as Values, props.values ?? {});
+    };
+    return props.values ? deepMerge(computed, props.values) : computed;
   }
 
   private deriveState(values: Values, name: string, props: Props) {
@@ -160,14 +161,15 @@ export class Devcontainer extends HelmConstruct<Values> {
     return vols;
   }
 
-  private createDeployment(
-    name: string, namespace: string, values: Values,
-    d: ReturnType<Devcontainer['deriveState']>,
-    containerEnv: ReturnType<Devcontainer['buildContainerEnv']>,
-    volumeMounts: ReturnType<Devcontainer['buildVolumeMounts']>,
-    volumes: ReturnType<Devcontainer['buildVolumes']>,
-    props: Props,
-  ) {
+  private createDeployment(opts: {
+    name: string; namespace: string; values: Values;
+    d: ReturnType<Devcontainer['deriveState']>;
+    containerEnv: ReturnType<Devcontainer['buildContainerEnv']>;
+    volumeMounts: ReturnType<Devcontainer['buildVolumeMounts']>;
+    volumes: ReturnType<Devcontainer['buildVolumes']>;
+    props: Props;
+  }) {
+    const { name, namespace, values, d, containerEnv, volumeMounts, volumes, props } = opts;
     const podAnnotations = { 'rollouts.dev/image-digest': values.imageDigest ?? 'unknown', ...(values.annotations ?? {}) };
     const podLabels = { ...(values.labels ?? {}), 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' };
     new ApiObject(this, 'deployment', {
@@ -179,31 +181,40 @@ export class Devcontainer extends HelmConstruct<Values> {
         selector: { matchLabels: { 'app.kubernetes.io/name': name } },
         template: {
           metadata: { labels: podLabels, annotations: podAnnotations },
-          spec: {
-            serviceAccountName: d.saName,
-            automountServiceAccountToken: values.automountServiceAccountToken,
-            ...(values.fsGroup ? { securityContext: { fsGroup: values.fsGroup } } : {}),
-            ...(d.hasPullSecretData || d.hasPullSecretRef ? { imagePullSecrets: [{ name: d.pullSecretName }] } : {}),
-            containers: [
-              {
-                name: 'devcontainer', image: values.image, command: values.command,
-                securityContext: { runAsNonRoot: values.runAsNonRoot, allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } },
-                env: containerEnv,
-                ports: [
-                  { containerPort: values.sshPort ?? 2222, name: 'ssh' },
-                  { containerPort: values.previewPort ?? 3000, name: 'preview' },
-                ],
-                volumeMounts, resources: values.resources,
-                ...(values.lifecycle ? { lifecycle: values.lifecycle } : {}),
-              },
-              ...(props.sidecars ?? []),
-              ...(props.values?.sidecars ?? []),
-            ],
-            volumes,
-          },
+          spec: this.buildPodSpec(name, values, d, containerEnv, volumeMounts, volumes, props),
         },
       },
     });
+  }
+
+  private buildPodSpec(
+    name: string, values: Values, d: ReturnType<Devcontainer['deriveState']>,
+    containerEnv: ReturnType<Devcontainer['buildContainerEnv']>,
+    volumeMounts: ReturnType<Devcontainer['buildVolumeMounts']>,
+    volumes: ReturnType<Devcontainer['buildVolumes']>, props: Props,
+  ) {
+    return {
+      serviceAccountName: d.saName,
+      automountServiceAccountToken: values.automountServiceAccountToken,
+      ...(values.fsGroup ? { securityContext: { fsGroup: values.fsGroup } } : {}),
+      ...(d.hasPullSecretData || d.hasPullSecretRef ? { imagePullSecrets: [{ name: d.pullSecretName }] } : {}),
+      containers: [
+        {
+          name: 'devcontainer', image: values.image, command: values.command,
+          securityContext: { runAsNonRoot: values.runAsNonRoot, allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } },
+          env: containerEnv,
+          ports: [
+            { containerPort: values.sshPort ?? 2222, name: 'ssh' },
+            { containerPort: values.previewPort ?? 3000, name: 'preview' },
+          ],
+          volumeMounts, resources: values.resources,
+          ...(values.lifecycle ? { lifecycle: values.lifecycle } : {}),
+        },
+        ...(props.sidecars ?? []),
+        ...(props.values?.sidecars ?? []),
+      ],
+      volumes,
+    };
   }
 
   private createService(name: string, namespace: string, values: Values) {

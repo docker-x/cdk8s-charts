@@ -34,45 +34,8 @@ export interface ServicePort {
 }
 
 export interface Values {
-  image?: string;
-  imageDigest?: string;
-  command?: string[];
-  storageSize?: string;
-  storageClass?: string;
-  homeMountPath?: string;
-  sshPort?: number;
-  previewPort?: number;
-  sshAuthorizedKeys?: string;
-  sshSecretName?: string;
-  imagePullSecret?: string;
-  imagePullSecretName?: string;
-  env?: Record<string, string>;
-  secretEnv?: Record<string, string>;
-  secretRefs?: SecretRefs;
-  resources?: ResourceValues;
-  replicas?: number;
-  labels?: Record<string, string>;
-  annotations?: Record<string, string>;
-  volumes?: Volume[];
-  volumeMounts?: VolumeMount[];
-  sidecars?: SidecarContainer[];
-  lifecycle?: Lifecycle;
-  extraServicePorts?: ServicePort[];
-  serviceAccountName?: string;
-  automountServiceAccountToken?: boolean;
-  runAsNonRoot?: boolean;
-  fsGroup?: number;
-  name?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Construct props & exports
-// ---------------------------------------------------------------------------
-
-export interface Props {
-  namespace: string;
   /** Devcontainer image (e.g. ghcr.io/org/workspace:latest). */
-  image: string;
+  image?: string;
   /** Image digest for rollout annotation (default: "unknown"). */
   imageDigest?: string;
   /** Container command override (default: ["/usr/local/bin/entrypoint.sh"]). */
@@ -129,6 +92,18 @@ export interface Props {
   fsGroup?: number;
   /** Resource name prefix (default: {id}). */
   name?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Construct props & exports
+// ---------------------------------------------------------------------------
+
+/** Construct props. Extends Values with required fields and raw overrides. */
+export interface Props extends Omit<Values, 'image'> {
+  /** Kubernetes namespace. */
+  namespace: string;
+  /** Devcontainer image — required in Props (optional in Values). */
+  image: string;
   /** Raw value overrides (deep-merged into computed defaults). */
   values?: DeepPartial<Values>;
 }
