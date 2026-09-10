@@ -63,7 +63,7 @@ export class Devenv extends HelmConstruct<Values> {
       storageSize: props.storageSize ?? '30Gi',
       storageClass: props.storageClass ?? 'gp3',
       existingPvcName: props.existingPvcName,
-      homeMountPath: props.homeMountPath ?? '/home/devenv',
+      homeMountPath: props.homeMountPath ?? '/env',
       sshPort: props.sshPort ?? 2222,
       paseoPort: props.paseoPort ?? 6767,
       caddyPort: props.caddyPort ?? 8080,
@@ -215,7 +215,7 @@ export class Devenv extends HelmConstruct<Values> {
 
   private buildVolumeMounts(values: Values, hasSshKeys: boolean, props: Props) {
     const mounts: Array<{ name: string; mountPath: string; readOnly?: boolean; subPath?: string }> =
-      [{ name: 'workspace-state', mountPath: values.homeMountPath ?? '/home/devenv' }];
+      [{ name: 'workspace-state', mountPath: values.homeMountPath ?? '/env' }];
     if (hasSshKeys) mounts.push({ name: 'ssh-keys', mountPath: '/ssh-keys', readOnly: true });
     if (props.volumeMounts) mounts.push(...props.volumeMounts);
     if (props.values?.volumeMounts) mounts.push(...props.values.volumeMounts);
