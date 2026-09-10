@@ -1,5 +1,5 @@
-import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
-import { ApiObject } from 'cdk8s';
+import { deepMerge } from '@cdk8s-charts/utils';
+import { ApiObject, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { Exports, Props, Values } from './types';
 
@@ -87,7 +87,7 @@ function buildLabels(name: string): Record<string, string> {
   return { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' };
 }
 
-export class GhaRunner extends HelmConstruct<Values> {
+export class GhaRunner extends Chart {
   readonly exports: Exports;
 
   constructor(scope: Construct, id: string, props: Props) {
