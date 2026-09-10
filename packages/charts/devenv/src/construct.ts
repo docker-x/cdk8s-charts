@@ -3,8 +3,6 @@ import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { Exports, Props, Values } from './types';
 
-const DEFAULT_COMMAND = ['devenv', 'up'];
-
 /** Build standard metadata labels for this devenv workspace. */
 function buildLabels(name: string): Record<string, string> {
   return { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' };
@@ -61,7 +59,7 @@ export class Devenv extends HelmConstruct<Values> {
     const computed: Values = {
       image: props.image,
       imageDigest: props.imageDigest ?? 'unknown',
-      command: props.command ?? DEFAULT_COMMAND,
+      command: props.command,
       storageSize: props.storageSize ?? '30Gi',
       storageClass: props.storageClass ?? 'gp3',
       existingPvcName: props.existingPvcName,
@@ -304,7 +302,7 @@ export class Devenv extends HelmConstruct<Values> {
         {
           name: 'devenv',
           image: values.image,
-          command: values.command,
+          ...(values.command ? { command: values.command } : {}),
           securityContext: {
             runAsNonRoot: values.runAsNonRoot,
             allowPrivilegeEscalation: false,
