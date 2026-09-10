@@ -1,0 +1,46 @@
+{
+  "name": "@cdk8s-charts/gha-runner",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "cdk8s",
+    "kubernetes",
+    "github-actions",
+    "runner",
+    "self-hosted",
+    "nix",
+    "devenv",
+    "openshift"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@cdk8s-charts/utils": "*"
+  },
+  "peerDependencies": {
+    "cdk8s": "^2",
+    "constructs": "^10"
+  },
+  "devDependencies": {
+    "cdk8s": "^2",
+    "constructs": "^10.3.0",
+    "typescript": "^5.6.0"
+  }
+}
