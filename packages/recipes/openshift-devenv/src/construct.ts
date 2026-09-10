@@ -110,7 +110,7 @@ export class OpenShiftDevenv extends Chart {
     const lifecycle = this.buildLifecycle(paseoAutoResume);
     const workspaceEnv = this.buildWorkspaceEnv(name, namespace, appsDomain, props.env);
     const podAnnotations = this.buildPodAnnotations(paseoAutoResume);
-    const homeMountPath = props.values?.homeMountPath ?? props.homeMountPath ?? '/home/devenv';
+    const homeMountPath = props.values?.homeMountPath ?? props.homeMountPath ?? '/env';
     const devenv = this.createDevenv({
       name,
       namespace,
@@ -339,9 +339,9 @@ export class OpenShiftDevenv extends Chart {
             '/bin/bash',
             '-c',
             [
-              'export PASEO_HOME=/home/devenv/.paseo',
-              'export HOME=/home/devenv',
-              'nohup /bin/bash /usr/local/share/paseo-auto-resume/auto-resume.sh >> /home/devenv/.paseo/auto-resume.log 2>&1 &',
+              'export PASEO_HOME=/env/.paseo',
+              'export HOME=/env',
+              'nohup /bin/bash /usr/local/share/paseo-auto-resume/auto-resume.sh >> /env/.paseo/auto-resume.log 2>&1 &',
             ].join('\n'),
           ],
         },
@@ -730,7 +730,7 @@ const PASEO_AUTO_RESUME_SCRIPT = `#!/bin/bash
 # Auto-resume closed Paseo agents after daemon restart.
 set -euo pipefail
 
-PASEO_HOME="\${PASEO_HOME:-/home/devenv/.paseo}"
+PASEO_HOME="\${PASEO_HOME:-/env/.paseo}"
 AGENTS_DIR="$PASEO_HOME/agents"
 RESUME_PROMPT="\${PASEO_AUTO_RESUME_PROMPT:-Continue working on your last task. Pick up where you left off.}"
 MAX_AGENTS="\${PASEO_AUTO_RESUME_MAX:-10}"
