@@ -71,6 +71,9 @@ cdk8s-charts/
       devcontainer/                 @cdk8s-charts/devcontainer
         src/types.ts                Devcontainer raw-deployment values + Props/Exports
         src/construct.ts            Devcontainer construct (ApiObject based)
+      devenv/                       @cdk8s-charts/devenv
+        src/types.ts                Devenv raw-deployment values + Props/Exports
+        src/construct.ts            Devenv construct (ApiObject based, devenv up)
     features/                       @cdk8s-charts/features
       src/types.ts                  FeatureDefinition, FeatureMap, FeatureProps, FeatureSetOutput
       src/agents/registry.ts        Registry of all CLI agent features (14 agents)
@@ -90,6 +93,9 @@ cdk8s-charts/
       openshift-workspace/          @cdk8s-charts/openshift-workspace
         src/types.ts                OpenShiftWorkspaceProps + Exports
         src/construct.ts            OpenShiftWorkspace recipe (devcontainer + Routes + OAuth + keepalive + backup)
+      openshift-devenv/             @cdk8s-charts/openshift-devenv
+        src/types.ts                OpenShiftDevenvProps + Exports
+        src/construct.ts            OpenShiftDevenv recipe (devenv + Routes + OAuth + keepalive + backup)
   examples/
     coding-agent-memory/            Full working example
     gascity-stack/                  Gascity stack example (all subcharts + features)
@@ -114,6 +120,7 @@ utils  <--  otel-lgtm
 utils  <--  omniroute
 utils  <--  solace
 utils  <--  devcontainer
+utils  <--  devenv
 features  <--  omniroute
 features  <--  gascity
 utils + litellm + hindsight  <--  hindsight-litellm
@@ -123,6 +130,7 @@ utils + litellm + plane-ce   <--  litellm-plane
 devpod + gascity + nginx  <--  devspace
 features + gascity + omniroute + hindsight  <--  gascity-stack
 devcontainer  <--  openshift-workspace
+devenv  <--  openshift-devenv
 hindsight-litellm  <--  examples/coding-agent-memory
 hindsight-omniroute  <--  examples/hindsight-omniroute
 gascity-hindsight-omniroute  <--  examples/gascity-hindsight-omniroute
@@ -1085,6 +1093,150 @@ production remote workspace:
 | `values` | `DeepPartial<Values>` | no | Raw devcontainer value overrides |
 
 **Exports (`OpenShiftWorkspaceExports`):**
+
+| Export | Type | Description |
+|--------|------|-------------|
+| `pvcName` | `string` | Durable PVC name |
+| `paseoRouteName` | `string` | OpenShift Route name for Paseo |
+| `paseoRouteUrl` | `string` | Full Paseo Route URL |
+| `previewRouteName` | `string` | OpenShift Route name for preview |
+| `previewRouteUrl` | `string` | Full preview Route URL |
+| `backupCronJobName` | `string` | Backup CronJob name |
+| `keepaliveCronJobName` | `string` | Keepalive CronJob name |
+| `tfDeployerSaName` | `string` | TF deployer ServiceAccount name |
+
+### 3.19 Devenv Construct
+
+**Package**: `@cdk8s-charts/devenv`
+
+Deploys a devenv.sh workspace as raw K8s ApiObjects. The container image is
+built by `devenv container build processes` (Nix/nix2container) and pushed to
+a registry. This construct deploys that image as a Kubernetes Deployment with
+a durable PVC, SSH access, and devenv process ports (sshd, paseo, caddy).
+
+The container runs `devenv up` by default, which starts all configured
+processes via devenv's native process manager — no entrypoint scripts needed.
+
+There is no upstream Helm chart — the construct renders K8s resources directly,
+following the same pattern as `@cdk8s-charts/devcontainer`.
+
+**Props (`Props`):**
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `image` | `string` | yes | Devenv container image (e.g. `ghcr.io/org/devenv-workspace:latest`) |
+| `imageDigest` | `string` | no | Image digest for rollout annotation (default: `unknown`) |
+| `command` | `string[]` | no | Container command override (default: `["devenv", "up"]`) |
+| `storageSize` | `string` | no | PVC size (default: `30Gi`) |
+| `storageClass` | `string` | no | Storage class for PVC (default: `gp3`) |
+| `existingPvcName` | `string` | no | Use an existing PVC instead of creating one |
+| `homeMountPath` | `string` | no | Where the PVC is mounted (default: `/home/devenv`) |
+| `sshPort` | `number` | no | SSH port — devenv sshd process (default: `2222`) |
+| `paseoPort` | `number` | no | Paseo port — devenv paseo process (default: `6767`) |
+| `caddyPort` | `number` | no | Caddy proxy port — devenv caddy process (default: `8080`) |
+| `previewPort` | `number` | no | Preview port for web UIs (default: `3000`) |
+| `sshAuthorizedKeys` | `string` | no | SSH authorized_keys content (creates a Secret) |
+| `sshSecretName` | `string` | no | Existing Secret name with `authorized_keys` key |
+| `imagePullSecret` | `string` | no | Base64 docker config JSON for private registry auth |
+| `imagePullSecretName` | `string` | no | Existing pull secret name (default: `ghcr-pull-secret`) |
+| `env` | `Record<string, string>` | no | Extra env vars |
+| `secretEnv` | `Record<string, string>` | no | Secret env vars (placed in a Secret) |
+| `secretRefs` | `SecretRefs` | no | K8s Secret references for env vars |
+| `resources` | `ResourceValues` | no | CPU/memory requests/limits |
+| `replicas` | `number` | no | Replica count (default: `1`) |
+| `labels` | `Record<string, string>` | no | Extra pod labels |
+| `annotations` | `Record<string, string>` | no | Extra pod annotations |
+| `volumes` | `Volume[]` | no | Extra volumes (secrets, configmaps, etc.) |
+| `volumeMounts` | `VolumeMount[]` | no | Extra volume mounts |
+| `sidecars` | `SidecarContainer[]` | no | Sidecar containers to add to the pod |
+| `lifecycle` | `Lifecycle` | no | Pod lifecycle hooks (postStart, preStop) |
+| `extraServicePorts` | `ServicePort[]` | no | Extra service ports (in addition to ssh, paseo, caddy, preview) |
+| `serviceAccountName` | `string` | no | SA name (default: `{id}-sa`) |
+| `serviceAccountAnnotations` | `Record<string, string>` | no | SA annotations (e.g. OpenShift OAuth redirect URIs) |
+| `automountServiceAccountToken` | `boolean` | no | Automount SA token (default: `true`) |
+| `runAsNonRoot` | `boolean` | no | Security context (default: `true`) |
+| `fsGroup` | `number` | no | Pod security context fsGroup for PVC ownership |
+| `name` | `string` | no | Resource name prefix (default: `{id}`) |
+| `values` | `DeepPartial<Values>` | no | Raw value overrides |
+
+**Exports (`Exports`):**
+
+| Export | Value | Description |
+|--------|-------|-------------|
+| `host` | `{name}` | Service DNS name |
+| `sshPort` | `sshPort` | SSH port |
+| `paseoPort` | `paseoPort` | Paseo port |
+| `caddyPort` | `caddyPort` | Caddy proxy port |
+| `previewPort` | `previewPort` | Preview port |
+| `pvcName` | `{name}-state` | PVC name |
+| `serviceName` | `{name}` | Service name |
+| `deploymentName` | `{name}` | Deployment name |
+| `secretName` | `{name}-ssh-keys` or supplied | SSH keys Secret name |
+
+**Resources created:**
+
+1. `Secret` (`{name}-ssh-keys`) — SSH authorized keys (when `sshAuthorizedKeys` is provided)
+2. `Secret` (`{name}-secret-env`) — secret env vars (when `secretEnv` is non-empty)
+3. `Secret` (`ghcr-pull-secret`) — image pull secret (when `imagePullSecret` is provided)
+4. `ServiceAccount` (`{name}-sa`) — when `serviceAccountName` is not supplied
+5. `PersistentVolumeClaim` (`{name}-state`) — durable home directory
+6. `Deployment` (`{name}`) — devenv with PVC, SSH, env, process ports, extra volumes
+7. `Service` (`{name}`) — exposes sshPort, paseoPort, caddyPort, previewPort
+
+**Differences from Devcontainer:**
+
+| Aspect | Devcontainer | Devenv |
+|--------|-------------|--------|
+| Default command | `/usr/local/bin/entrypoint.sh` | `devenv up` |
+| Home mount | `/home/vscode` | `/home/devenv` |
+| Process management | lifecycle hooks / entrypoint | devenv native process manager |
+| Ports | ssh, preview | ssh, paseo, caddy, preview |
+| Env | `DEVCONTAINER=true` | `DEVENV=true` |
+| Container build | `devcontainer build` | `devenv container build processes` |
+
+### 3.20 OpenShiftDevenv Recipe
+
+**Package**: `@cdk8s-charts/openshift-devenv`
+
+Composes the Devenv construct with OpenShift-specific resources for a
+production remote workspace — identical structure to OpenShiftWorkspace
+but using the Devenv chart:
+
+1. **Devenv workspace** — the base Deployment + PVC + SSH + process ports
+2. **OAuth proxy sidecar** — OpenShift OAuth proxy for SSO-protected web access
+3. **OpenShift Routes** — edge-terminated TLS routes for Paseo web UI and preview
+4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
+5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2
+6. **Paseo auto-resume** — postStart hook to resume closed Paseo agents after restart
+7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform deployments
+8. **All secrets** — R2 credentials, SSH keys, OAuth cookie, GHCR pull secret
+
+**Props (`OpenShiftDevenvProps`):**
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `image` | `string` | yes | Devenv container image |
+| `imageDigest` | `string` | no | Image digest for rollout annotation |
+| `appsDomain` | `string` | yes | OpenShift apps domain for Route URLs |
+| `sshAuthorizedKeys` | `string` | yes | SSH authorized_keys content |
+| `oauthCookieSecret` | `string` | yes | OAuth proxy cookie secret (base64) |
+| `ghcrPullSecret` | `string` | no | Base64 docker config JSON |
+| `pvcSize` | `string` | no | PVC size (default: `30Gi`) |
+| `pvcStorageClass` | `string` | no | Storage class (default: `gp3`) |
+| `existingPvcName` | `string` | no | Use an existing PVC |
+| `homeMountPath` | `string` | no | Home mount path (default: `/home/devenv`) |
+| `name` | `string` | no | Resource name prefix (default: `devenv`) |
+| `env` | `Record<string, string>` | no | Extra env vars for the workspace container |
+| `resources` | `ResourceValues` | no | Workspace container resources |
+| `backup` | `BackupConfig` | no | R2 backup configuration |
+| `keepalive` | `{ enabled, schedule }` | no | Keepalive CronJob config |
+| `paseoAutoResume` | `{ enabled }` | no | Paseo auto-resume hook |
+| `tfDeployer` | `{ enabled }` | no | TF deployer SA + RBAC |
+| `values` | `DeepPartial<DevenvValues>` | no | Raw devenv value overrides |
+
+**Exports (`OpenShiftDevenvExports`):**
 
 | Export | Type | Description |
 |--------|------|-------------|
