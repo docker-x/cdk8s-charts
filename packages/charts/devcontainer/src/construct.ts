@@ -1,4 +1,5 @@
 import {
+  buildWorkspaceComputedValues,
   buildWorkspaceContainerEnv,
   buildWorkspaceVolumeMounts,
   buildWorkspaceVolumes,
@@ -6,7 +7,6 @@ import {
   createWorkspacePvc,
   createWorkspaceSecrets,
   createWorkspaceService,
-  deepMerge,
   deriveWorkspaceState,
   HelmConstruct,
   validateHomeMountPath,
@@ -24,7 +24,10 @@ export class Devcontainer extends HelmConstruct<Values> {
     super(scope, id);
 
     const name = props.values?.name ?? props.name ?? id;
-    const values = this.computeValues(props, name);
+    const values = buildWorkspaceComputedValues(props, name, {
+      command: DEFAULT_COMMAND,
+      homeMountPath: '/home/vscode',
+    }) as Values;
     validateHomeMountPath(values.homeMountPath ?? '/home/vscode');
     const derived = deriveWorkspaceState(values, name, props);
     const pvcName = values.existingPvcName ?? `${name}-state`;
@@ -78,42 +81,5 @@ export class Devcontainer extends HelmConstruct<Values> {
       deploymentName: name,
       secretName: derived.sshSecretName ?? '',
     };
-  }
-
-  private computeValues(props: Props, name: string): Values {
-    const computed: Values = {
-      image: props.image,
-      imageDigest: props.imageDigest ?? 'unknown',
-      command: props.command ?? DEFAULT_COMMAND,
-      storageSize: props.storageSize ?? '30Gi',
-      storageClass: props.storageClass ?? 'gp3',
-      existingPvcName: props.existingPvcName,
-      homeMountPath: props.homeMountPath ?? '/home/vscode',
-      sshPort: props.sshPort ?? 2222,
-      previewPort: props.previewPort ?? 3000,
-      sshAuthorizedKeys: props.sshAuthorizedKeys,
-      sshSecretName: props.sshSecretName,
-      imagePullSecret: props.imagePullSecret,
-      imagePullSecretName: props.imagePullSecretName,
-      env: props.env,
-      secretEnv: props.secretEnv,
-      secretRefs: props.secretRefs,
-      resources: props.resources ?? {
-        requests: { cpu: '500m', memory: '2Gi' },
-        limits: { cpu: '1', memory: '8Gi' },
-      },
-      replicas: props.replicas ?? 1,
-      labels: props.labels,
-      annotations: props.annotations,
-      lifecycle: props.lifecycle,
-      extraServicePorts: props.extraServicePorts,
-      serviceAccountName: props.serviceAccountName ?? `${name}-sa`,
-      serviceAccountAnnotations: props.serviceAccountAnnotations,
-      automountServiceAccountToken: props.automountServiceAccountToken ?? true,
-      runAsNonRoot: props.runAsNonRoot ?? true,
-      fsGroup: props.fsGroup,
-      name,
-    };
-    return props.values ? deepMerge(computed, props.values) : computed;
   }
 }

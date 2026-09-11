@@ -1,5 +1,6 @@
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
+import { deepMerge } from './helm-construct';
 
 /** Build standard metadata labels for a workspace resource. */
 export function buildWorkspaceLabels(name: string): Record<string, string> {
@@ -297,7 +298,7 @@ export function createWorkspaceDeployment(
 }
 
 function buildWorkspacePodSpec(
-  name: string,
+  _name: string,
   values: WorkspaceValues,
   d: DerivedWorkspaceState,
   containerEnv: ReturnType<typeof buildWorkspaceContainerEnv>,
@@ -359,4 +360,91 @@ export function createWorkspaceService(
       type: 'ClusterIP',
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// computeValues factory
+// ---------------------------------------------------------------------------
+
+export interface WorkspaceValuesDefaults {
+  command?: string[];
+  homeMountPath: string;
+  extraPorts?: Record<string, number>;
+}
+
+export interface WorkspaceValuesProps {
+  image: string;
+  imageDigest?: string;
+  command?: string[];
+  storageSize?: string;
+  storageClass?: string;
+  existingPvcName?: string;
+  homeMountPath?: string;
+  sshPort?: number;
+  previewPort?: number;
+  sshAuthorizedKeys?: string;
+  sshSecretName?: string;
+  imagePullSecret?: string;
+  imagePullSecretName?: string;
+  env?: Record<string, string>;
+  secretEnv?: Record<string, string>;
+  secretRefs?: Record<string, { name: string; key: string }>;
+  resources?: Record<string, unknown>;
+  replicas?: number;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
+  lifecycle?: Record<string, unknown>;
+  extraServicePorts?: Array<{ port: number; targetPort: string | number; name: string }>;
+  serviceAccountName?: string;
+  serviceAccountAnnotations?: Record<string, string>;
+  automountServiceAccountToken?: boolean;
+  runAsNonRoot?: boolean;
+  fsGroup?: number;
+  values?: Record<string, unknown>;
+}
+
+export function buildWorkspaceComputedValues(
+  props: WorkspaceValuesProps,
+  name: string,
+  defaults: WorkspaceValuesDefaults,
+): Record<string, unknown> {
+  const computed: Record<string, unknown> = {
+    image: props.image,
+    imageDigest: props.imageDigest ?? 'unknown',
+    command: props.command ?? defaults.command,
+    storageSize: props.storageSize ?? '30Gi',
+    storageClass: props.storageClass ?? 'gp3',
+    existingPvcName: props.existingPvcName,
+    homeMountPath: props.homeMountPath ?? defaults.homeMountPath,
+    sshPort: props.sshPort ?? 2222,
+    previewPort: props.previewPort ?? 3000,
+    sshAuthorizedKeys: props.sshAuthorizedKeys,
+    sshSecretName: props.sshSecretName,
+    imagePullSecret: props.imagePullSecret,
+    imagePullSecretName: props.imagePullSecretName,
+    env: props.env,
+    secretEnv: props.secretEnv,
+    secretRefs: props.secretRefs,
+    resources: props.resources ?? {
+      requests: { cpu: '500m', memory: '2Gi' },
+      limits: { cpu: '1', memory: '8Gi' },
+    },
+    replicas: props.replicas ?? 1,
+    labels: props.labels,
+    annotations: props.annotations,
+    lifecycle: props.lifecycle,
+    extraServicePorts: props.extraServicePorts,
+    serviceAccountName: props.serviceAccountName ?? `${name}-sa`,
+    serviceAccountAnnotations: props.serviceAccountAnnotations,
+    automountServiceAccountToken: props.automountServiceAccountToken ?? true,
+    runAsNonRoot: props.runAsNonRoot ?? true,
+    fsGroup: props.fsGroup,
+    name,
+  };
+  if (defaults.extraPorts) {
+    for (const [key, value] of Object.entries(defaults.extraPorts)) {
+      computed[key] = props[key as keyof WorkspaceValuesProps] ?? value;
+    }
+  }
+  return props.values ? deepMerge(computed, props.values) : computed;
 }
