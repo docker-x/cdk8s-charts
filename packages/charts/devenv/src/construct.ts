@@ -16,7 +16,7 @@ export class Devenv extends HelmConstruct<Values> {
 
     const name = props.values?.name ?? props.name ?? id;
     const values = this.computeValues(props, name);
-    this.validateHomeMountPath(values.homeMountPath ?? '/env');
+    this.validateHomeMountPath(values.homeMountPath!);
     const derived = this.deriveState(values, name, props);
     const pvcName = values.existingPvcName ?? `${name}-state`;
 
@@ -59,11 +59,15 @@ export class Devenv extends HelmConstruct<Values> {
   private validateHomeMountPath(homeMountPath: string) {
     if (!homeMountPath.startsWith('/'))
       throw new Error(`Invalid homeMountPath "${homeMountPath}": must be an absolute path`);
-    if (homeMountPath.includes('..'))
-      throw new Error(`Invalid homeMountPath "${homeMountPath}": must not contain ".."`);
-    if (!/^[a-zA-Z0-9._/-]+$/.test(homeMountPath))
+    if (homeMountPath === '/')
+      throw new Error(`Invalid homeMountPath "/": must not be the filesystem root`);
+    if (homeMountPath.split('/').includes('..'))
       throw new Error(
-        `Invalid homeMountPath "${homeMountPath}": must contain only alphanumeric, dots, hyphens, underscores, and slashes`,
+        `Invalid homeMountPath "${homeMountPath}": must not contain ".." path segments`,
+      );
+    if (!/^[a-zA-Z0-9._/+@~-]+$/.test(homeMountPath))
+      throw new Error(
+        `Invalid homeMountPath "${homeMountPath}": must contain only alphanumeric, dots, hyphens, underscores, slashes, colons, plus, at-sign, or tilde`,
       );
   }
 

@@ -82,8 +82,10 @@ export class OpenShiftWorkspace extends Chart {
     const name = props.values?.name ?? props.name ?? 'workspace';
     const namespace = props.namespace;
     const appsDomain = props.appsDomain;
+    const homeMountPath = props.values?.homeMountPath ?? props.homeMountPath ?? '/home/vscode';
 
     this.validateDnsLabels(name, namespace);
+    this.validateHomeMountPath(homeMountPath);
 
     const keepalive: ResolvedKeepalive = {
       enabled: true,
@@ -106,8 +108,11 @@ export class OpenShiftWorkspace extends Chart {
       paseoAutoResume,
       autoResumeConfigMapName,
     });
-    const oauthProxySidecar = this.buildOauthProxySidecar(name, namespace);
-    const homeMountPath = props.values?.homeMountPath ?? props.homeMountPath ?? '/home/vscode';
+    const oauthProxySidecar = this.buildOauthProxySidecar(
+      name,
+      namespace,
+      props.values?.serviceAccountName ?? `${name}-sa`,
+    );
     const lifecycle = this.buildLifecycle(paseoAutoResume, homeMountPath);
     const workspaceEnv = this.buildWorkspaceEnv(name, namespace, appsDomain, props.env);
     const podAnnotations = this.buildPodAnnotations(paseoAutoResume);
@@ -141,6 +146,21 @@ export class OpenShiftWorkspace extends Chart {
       keepaliveCronJobName: keepalive.enabled ? `${name}-keepalive` : '',
       tfDeployerSaName: tfDeployer.enabled ? tfDeployerSaName : '',
     };
+  }
+
+  private validateHomeMountPath(homeMountPath: string) {
+    if (!homeMountPath.startsWith('/'))
+      throw new Error(`Invalid homeMountPath "${homeMountPath}": must be an absolute path`);
+    if (homeMountPath === '/')
+      throw new Error(`Invalid homeMountPath "/": must not be the filesystem root`);
+    if (homeMountPath.split('/').includes('..'))
+      throw new Error(
+        `Invalid homeMountPath "${homeMountPath}": must not contain ".." path segments`,
+      );
+    if (!/^[a-zA-Z0-9._/+@~-]+$/.test(homeMountPath))
+      throw new Error(
+        `Invalid homeMountPath "${homeMountPath}": must contain only alphanumeric, dots, hyphens, underscores, slashes, colons, plus, at-sign, or tilde`,
+      );
   }
 
   private validateDnsLabels(name: string, namespace: string) {
@@ -293,7 +313,11 @@ export class OpenShiftWorkspace extends Chart {
     return { extraVolumes, extraVolumeMounts };
   }
 
-  private buildOauthProxySidecar(name: string, namespace: string): SidecarContainer {
+  private buildOauthProxySidecar(
+    name: string,
+    namespace: string,
+    saName: string,
+  ): SidecarContainer {
     return {
       name: 'oauth-proxy',
       image: OAUTH_PROXY_IMAGE,
@@ -311,7 +335,7 @@ export class OpenShiftWorkspace extends Chart {
         '--cookie-secure=true',
         '--cookie-samesite=none',
         '--skip-auth-regex=^/healthz|^/ws',
-        `--client-id=system:serviceaccount:${namespace}:${name}-sa`,
+        `--client-id=system:serviceaccount:${namespace}:${saName}`,
         '--client-secret-file=/var/run/secrets/openshift/serviceaccount/token',
       ],
       ports: [{ containerPort: 4180, name: 'oauth-proxy' }],
@@ -347,7 +371,7 @@ export class OpenShiftWorkspace extends Chart {
               `mkdir -p "${homeMountPath}/.paseo"`,
               '[[ -f /etc/profile.d/nvm-path.sh ]] && . /etc/profile.d/nvm-path.sh',
               'export PATH="/usr/local/share/runtime-bin:$PATH"',
-              `nohup /bin/bash /usr/local/share/paseo-auto-resume/auto-resume.sh >> ${homeMountPath}/.paseo/auto-resume.log 2>&1 &`,
+              `nohup /bin/bash /usr/local/share/paseo-auto-resume/auto-resume.sh >> "${homeMountPath}/.paseo/auto-resume.log" 2>&1 &`,
             ].join('\n'),
           ],
         },
@@ -679,11 +703,13 @@ function buildKeepaliveScript(): string {
     '  exit 0',
     'fi',
     `STATUS=$(oc get pod "$POD" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || true)`,
-    'if [ "$STATUS" != "Running" ]; then',
-    '  echo "Pod $POD is not Running (status: $STATUS). Deleting so Deployment recreates it."',
+    'if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Succeeded" ] || [ "$STATUS" = "Unknown" ]; then',
+    '  echo "Pod $POD is in terminal state ($STATUS). Deleting so Deployment recreates it."',
     '  oc delete pod "$POD" -n "$NAMESPACE" || true',
-    'else',
+    'elif [ "$STATUS" = "Running" ]; then',
     '  echo "Pod $POD is Running. All good."',
+    'else',
+    '  echo "Pod $POD is $STATUS — leaving it to finish starting."',
     'fi',
   ].join('\n');
 }

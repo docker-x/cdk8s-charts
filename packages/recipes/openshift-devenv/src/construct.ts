@@ -84,6 +84,8 @@ export class OpenShiftDevenv extends Chart {
     const appsDomain = props.appsDomain;
 
     this.validateDnsLabels(name, namespace);
+    const homeMountPath = props.values?.homeMountPath ?? props.homeMountPath ?? '/env';
+    this.validateHomeMountPath(homeMountPath);
 
     const keepalive: ResolvedKeepalive = {
       enabled: true,
@@ -107,7 +109,6 @@ export class OpenShiftDevenv extends Chart {
       autoResumeConfigMapName,
     });
     const oauthProxySidecar = this.buildOauthProxySidecar(name, namespace);
-    const homeMountPath = props.values?.homeMountPath ?? props.homeMountPath ?? '/env';
     const lifecycle = this.buildLifecycle(paseoAutoResume, homeMountPath);
     const workspaceEnv = this.buildWorkspaceEnv(name, namespace, appsDomain, props.env);
     const podAnnotations = this.buildPodAnnotations(paseoAutoResume);
@@ -141,6 +142,21 @@ export class OpenShiftDevenv extends Chart {
       keepaliveCronJobName: keepalive.enabled ? `${name}-keepalive` : '',
       tfDeployerSaName: tfDeployer.enabled ? tfDeployerSaName : '',
     };
+  }
+
+  private validateHomeMountPath(homeMountPath: string) {
+    if (!homeMountPath.startsWith('/'))
+      throw new Error(`Invalid homeMountPath "${homeMountPath}": must be an absolute path`);
+    if (homeMountPath === '/')
+      throw new Error(`Invalid homeMountPath "/": must not be the filesystem root`);
+    if (homeMountPath.split('/').includes('..'))
+      throw new Error(
+        `Invalid homeMountPath "${homeMountPath}": must not contain ".." path segments`,
+      );
+    if (!/^[a-zA-Z0-9._/+@~-]+$/.test(homeMountPath))
+      throw new Error(
+        `Invalid homeMountPath "${homeMountPath}": must contain only alphanumeric, dots, hyphens, underscores, slashes, colons, plus, at-sign, or tilde`,
+      );
   }
 
   private validateDnsLabels(name: string, namespace: string) {
@@ -345,7 +361,7 @@ export class OpenShiftDevenv extends Chart {
               `export PASEO_HOME=${homeMountPath}/.paseo`,
               `export HOME=${homeMountPath}`,
               `mkdir -p "${homeMountPath}/.paseo"`,
-              `nohup /bin/bash /usr/local/share/paseo-auto-resume/auto-resume.sh >> ${homeMountPath}/.paseo/auto-resume.log 2>&1 &`,
+              `nohup /bin/bash /usr/local/share/paseo-auto-resume/auto-resume.sh >> "${homeMountPath}/.paseo/auto-resume.log" 2>&1 &`,
             ].join('\n'),
           ],
         },
@@ -677,11 +693,13 @@ function buildKeepaliveScript(): string {
     '  exit 0',
     'fi',
     `STATUS=$(oc get pod "$POD" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || true)`,
-    'if [ "$STATUS" != "Running" ]; then',
-    '  echo "Pod $POD is not Running (status: $STATUS). Deleting so Deployment recreates it."',
+    'if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Succeeded" ] || [ "$STATUS" = "Unknown" ]; then',
+    '  echo "Pod $POD is in terminal state ($STATUS). Deleting so Deployment recreates it."',
     '  oc delete pod "$POD" -n "$NAMESPACE" || true',
-    'else',
+    'elif [ "$STATUS" = "Running" ]; then',
     '  echo "Pod $POD is Running. All good."',
+    'else',
+    '  echo "Pod $POD is $STATUS — leaving it to finish starting."',
     'fi',
   ].join('\n');
 }

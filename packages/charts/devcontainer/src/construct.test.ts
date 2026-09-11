@@ -9,8 +9,10 @@ function synth(props: ConstructorParameters<typeof Devcontainer>[2]) {
   return Testing.synth(chart);
 }
 
-function find(manifests: object[], kind: string, name?: string): any {
-  return manifests.find((m: any) => m.kind === kind && (!name || m.metadata?.name === name));
+function find(manifests: object[], kind: string, name?: string): Record<string, any> {
+  const found = manifests.find((m: any) => m.kind === kind && (!name || m.metadata?.name === name));
+  if (!found) throw new Error(`Expected ${kind}${name ? ` named ${name}` : ''} not found`);
+  return found as Record<string, any>;
 }
 
 describe('Devcontainer construct', () => {
@@ -46,8 +48,8 @@ describe('Devcontainer construct', () => {
 
   it('does not create a ServiceAccount when serviceAccountName is provided', () => {
     const m = synth({ ...baseProps, serviceAccountName: 'custom-sa' });
-    const sa = find(m, 'ServiceAccount', 'custom-sa');
-    expect(sa).toBeUndefined();
+    const sas = m.filter((o: any) => o.kind === 'ServiceAccount');
+    expect(sas).toHaveLength(0);
     const dep = find(m, 'Deployment', 'dev');
     expect(dep.spec.template.spec.serviceAccountName).toBe('custom-sa');
   });
@@ -60,8 +62,8 @@ describe('Devcontainer construct', () => {
 
   it('skips PVC creation when existingPvcName is provided and uses it', () => {
     const m = synth({ ...baseProps, existingPvcName: 'existing-pvc' });
-    const pvc = find(m, 'PersistentVolumeClaim', 'dev-state');
-    expect(pvc).toBeUndefined();
+    const pvcs = m.filter((o: any) => o.kind === 'PersistentVolumeClaim');
+    expect(pvcs).toHaveLength(0);
     const dep = find(m, 'Deployment', 'dev');
     const vol = dep.spec.template.spec.volumes.find((v: any) => v.name === 'workspace-state');
     expect(vol.persistentVolumeClaim.claimName).toBe('existing-pvc');

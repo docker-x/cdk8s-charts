@@ -9,8 +9,10 @@ function synth(props: ConstructorParameters<typeof GhaRunner>[2]) {
   return Testing.synth(chart);
 }
 
-function find(manifests: object[], kind: string, name?: string): any {
-  return manifests.find((m: any) => m.kind === kind && (!name || m.metadata?.name === name));
+function find(manifests: object[], kind: string, name?: string): Record<string, any> {
+  const found = manifests.find((m: any) => m.kind === kind && (!name || m.metadata?.name === name));
+  if (!found) throw new Error(`Expected ${kind}${name ? ` named ${name}` : ''} not found`);
+  return found as Record<string, any>;
 }
 
 const baseProps = {
@@ -20,7 +22,7 @@ const baseProps = {
   githubOwner: 'my-org',
   githubAppId: '123456',
   githubAppInstallationId: '789',
-  githubAppPem: '-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----',
+  githubAppPem: 'test-fake-key-not-a-real-pem-just-a-placeholder-string',
 };
 
 describe('GhaRunner construct', () => {

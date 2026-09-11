@@ -183,6 +183,9 @@ export class GhaRunner extends HelmConstruct<Values> {
           metadata: { labels, annotations: props.annotations },
           spec: {
             serviceAccountName: values.serviceAccountName ?? `${name}-sa`,
+            securityContext: {
+              fsGroup: 1000,
+            },
             initContainers: [
               {
                 name: 'init-nix',
