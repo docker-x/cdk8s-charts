@@ -274,10 +274,10 @@ export class Devcontainer extends HelmConstruct<Values> {
     const { name, namespace, values, d, containerEnv, volumeMounts, volumes, props } = opts;
     const podAnnotations = {
       'rollouts.dev/image-digest': values.imageDigest ?? 'unknown',
-      ...(values.annotations ?? {}),
+      ...values.annotations,
     };
     const podLabels = {
-      ...(values.labels ?? {}),
+      ...values.labels,
       'app.kubernetes.io/name': name,
       'app.kubernetes.io/managed-by': 'cdk8s',
     };
@@ -341,7 +341,7 @@ export class Devcontainer extends HelmConstruct<Values> {
 
   private createService(name: string, namespace: string, values: Values) {
     const podLabels = {
-      ...(values.labels ?? {}),
+      ...values.labels,
       'app.kubernetes.io/name': name,
       'app.kubernetes.io/managed-by': 'cdk8s',
     };
