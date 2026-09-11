@@ -134,7 +134,8 @@ export class OpenShiftWorkspace extends Chart {
     if (keepalive.enabled) this.createKeepaliveCronJob(name, namespace, keepalive);
     if (hasBackupSecrets) this.createBackupRbac(name, namespace);
     if (hasBackupSecrets) this.createBackupCronJob(name, namespace, backup, homeMountPath);
-    const tfDeployerSaName = this.createTfDeployer(name, namespace, tfDeployer);
+    const tfDeployerSaName = `${name}-tf-deployer`;
+    if (tfDeployer.enabled) this.createTfDeployer(name, namespace, tfDeployer);
 
     this.exports = {
       pvcName: devcontainer.exports.pvcName,
@@ -635,13 +636,8 @@ export class OpenShiftWorkspace extends Chart {
     });
   }
 
-  private createTfDeployer(
-    name: string,
-    namespace: string,
-    tfDeployer: ResolvedTfDeployer,
-  ): string {
+  private createTfDeployer(name: string, namespace: string, tfDeployer: ResolvedTfDeployer): void {
     const saName = `${name}-tf-deployer`;
-    if (!tfDeployer.enabled) return saName;
     new ApiObject(this, 'tf-deployer-sa', {
       apiVersion: 'v1',
       kind: 'ServiceAccount',
@@ -671,7 +667,6 @@ export class OpenShiftWorkspace extends Chart {
       subjects: [{ kind: 'ServiceAccount', name: saName, namespace }],
       roleRef: { kind: 'Role', name: saName, apiGroup: 'rbac.authorization.k8s.io' },
     });
-    return saName;
   }
 }
 
