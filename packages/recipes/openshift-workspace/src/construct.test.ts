@@ -1,26 +1,13 @@
+import { findManifest, type Manifest } from '@cdk8s-charts/utils';
 import { Testing } from 'cdk8s';
 import { describe, expect, it } from 'vitest';
 import { OpenShiftWorkspace } from './construct';
 
 /** Synthesize an OpenShiftWorkspace chart for assertions. */
-function synth(props: ConstructorParameters<typeof OpenShiftWorkspace>[2]) {
+function synth(props: ConstructorParameters<typeof OpenShiftWorkspace>[2]): Manifest[] {
   const app = Testing.app();
   const chart = new OpenShiftWorkspace(app, 'test', props);
   return Testing.synth(chart);
-}
-
-type Obj = Record<string, unknown>;
-
-/** Find a synthesized Kubernetes manifest by kind and optional name. */
-function find(manifests: object[], kind: string, name?: string): Obj {
-  const found = manifests.find((m): boolean => {
-    const obj = m as Obj;
-    return (
-      obj.kind === kind && (!name || (obj.metadata as { name?: string } | undefined)?.name === name)
-    );
-  });
-  if (!found) throw new Error(`Expected ${kind}${name ? ` named ${name}` : ''} not found`);
-  return found as Obj;
 }
 
 const baseProps = {
@@ -48,7 +35,7 @@ describe('OpenShiftWorkspace recipe', () => {
 
   it('writes oauthCookieSecret directly to Secret data without double-encoding', () => {
     const m = synth(baseProps);
-    const secret = find(m, 'Secret', 'workspace-oauth-cookie');
+    const secret = findManifest(m, 'Secret', 'workspace-oauth-cookie');
     expect(secret).toBeDefined();
     // The value should be the raw base64 input, NOT base64-encoded again
     expect((secret.data as Record<string, string>)['cookie-secret']).toBe(
@@ -58,7 +45,7 @@ describe('OpenShiftWorkspace recipe', () => {
 
   it('injects OAuth proxy sidecar into the Deployment', () => {
     const m = synth(baseProps);
-    const dep = find(m, 'Deployment', 'workspace');
+    const dep = findManifest(m, 'Deployment', 'workspace');
     const spec = dep.spec as {
       template: {
         spec: {
@@ -79,7 +66,7 @@ describe('OpenShiftWorkspace recipe', () => {
 
   it('sets OAuth redirect URI annotation on the ServiceAccount', () => {
     const m = synth(baseProps);
-    const sa = find(m, 'ServiceAccount', 'workspace-sa');
+    const sa = findManifest(m, 'ServiceAccount', 'workspace-sa');
     expect(sa).toBeDefined();
     const ann = (sa.metadata as { annotations: Record<string, string> }).annotations[
       'serviceaccounts.openshift.io/oauth-redirecturi.primary'
@@ -92,7 +79,7 @@ describe('OpenShiftWorkspace recipe', () => {
       ...baseProps,
       values: { serviceAccountAnnotations: { 'custom.annotation/foo': 'bar' } },
     });
-    const sa = find(m, 'ServiceAccount', 'workspace-sa');
+    const sa = findManifest(m, 'ServiceAccount', 'workspace-sa');
     const ann = (sa.metadata as { annotations: Record<string, string> }).annotations;
     expect(ann['custom.annotation/foo']).toBe('bar');
     expect(ann['serviceaccounts.openshift.io/oauth-redirecturi.primary']).toBeDefined();
@@ -100,8 +87,8 @@ describe('OpenShiftWorkspace recipe', () => {
 
   it('creates OpenShift Routes for Paseo and preview', () => {
     const m = synth(baseProps);
-    const paseoRoute = find(m, 'Route', 'workspace-paseo');
-    const previewRoute = find(m, 'Route', 'workspace-preview');
+    const paseoRoute = findManifest(m, 'Route', 'workspace-paseo');
+    const previewRoute = findManifest(m, 'Route', 'workspace-preview');
     expect(paseoRoute).toBeDefined();
     expect(previewRoute).toBeDefined();
     expect((paseoRoute.spec as { tls: { termination: string } }).tls.termination).toBe('edge');
@@ -109,7 +96,7 @@ describe('OpenShiftWorkspace recipe', () => {
 
   it('lifecycle postStart hook includes mkdir -p for .paseo directory', () => {
     const m = synth(baseProps);
-    const dep = find(m, 'Deployment', 'workspace');
+    const dep = findManifest(m, 'Deployment', 'workspace');
     const spec = dep.spec as {
       template: {
         spec: { containers: { lifecycle: { postStart: { exec: { command: string[] } } } }[] };
@@ -124,7 +111,7 @@ describe('OpenShiftWorkspace recipe', () => {
 
   it('lifecycle hook uses configured homeMountPath instead of hardcoded /home/vscode', () => {
     const m = synth({ ...baseProps, homeMountPath: '/home/custom' });
-    const dep = find(m, 'Deployment', 'workspace');
+    const dep = findManifest(m, 'Deployment', 'workspace');
     const spec = dep.spec as {
       template: {
         spec: { containers: { lifecycle: { postStart: { exec: { command: string[] } } } }[] };
@@ -137,7 +124,7 @@ describe('OpenShiftWorkspace recipe', () => {
 
   it('keepalive CronJob uses env vars instead of string interpolation', () => {
     const m = synth(baseProps);
-    const cj = find(m, 'CronJob', 'workspace-keepalive');
+    const cj = findManifest(m, 'CronJob', 'workspace-keepalive');
     expect(cj).toBeDefined();
     const spec = cj.spec as {
       jobTemplate: {
@@ -165,7 +152,7 @@ describe('OpenShiftWorkspace recipe', () => {
         resticPassword: 'pass',
       },
     });
-    const cj = find(m, 'CronJob', 'workspace-backup');
+    const cj = findManifest(m, 'CronJob', 'workspace-backup');
     expect(cj).toBeDefined();
     const spec = cj.spec as {
       jobTemplate: {
@@ -187,7 +174,7 @@ describe('OpenShiftWorkspace recipe', () => {
 
   it('tf-deployer Role does not grant list/watch on Secrets', () => {
     const m = synth(baseProps);
-    const role = find(m, 'Role', 'workspace-tf-deployer');
+    const role = findManifest(m, 'Role', 'workspace-tf-deployer');
     expect(role).toBeDefined();
     const rules = role.rules as { resources?: string[]; verbs: string[] }[];
     const secretRules = rules.filter((r) => r.resources?.includes('secrets'));

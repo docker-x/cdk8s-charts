@@ -1,27 +1,14 @@
+import { findManifest, type Manifest } from '@cdk8s-charts/utils';
 import { Chart, Testing } from 'cdk8s';
 import { describe, expect, it } from 'vitest';
 import { GhaRunner } from './construct';
 
 /** Synthesize a GhaRunner chart for assertions. */
-function synth(props: ConstructorParameters<typeof GhaRunner>[2]) {
+function synth(props: ConstructorParameters<typeof GhaRunner>[2]): Manifest[] {
   const app = Testing.app();
   const chart = new Chart(app, 'test-chart');
   new GhaRunner(chart, 'runner', props);
   return Testing.synth(chart);
-}
-
-type Obj = Record<string, unknown>;
-
-/** Find a synthesized Kubernetes manifest by kind and optional name. */
-function find(manifests: object[], kind: string, name?: string): Obj {
-  const found = manifests.find((m): boolean => {
-    const obj = m as Obj;
-    return (
-      obj.kind === kind && (!name || (obj.metadata as { name?: string } | undefined)?.name === name)
-    );
-  });
-  if (!found) throw new Error(`Expected ${kind}${name ? ` named ${name}` : ''} not found`);
-  return found as Obj;
 }
 
 const baseProps = {
@@ -48,16 +35,16 @@ type Container = {
 describe('GhaRunner construct', () => {
   it('renders Deployment, ConfigMap, Secret, and two PVCs', () => {
     const m = synth(baseProps);
-    expect(find(m, 'Deployment', 'runner')).toBeDefined();
-    expect(find(m, 'ConfigMap', 'runner-scripts')).toBeDefined();
-    expect(find(m, 'Secret', 'runner-github-app')).toBeDefined();
-    expect(find(m, 'PersistentVolumeClaim', 'runner-nix-store')).toBeDefined();
-    expect(find(m, 'PersistentVolumeClaim', 'runner-runner-home')).toBeDefined();
+    expect(findManifest(m, 'Deployment', 'runner')).toBeDefined();
+    expect(findManifest(m, 'ConfigMap', 'runner-scripts')).toBeDefined();
+    expect(findManifest(m, 'Secret', 'runner-github-app')).toBeDefined();
+    expect(findManifest(m, 'PersistentVolumeClaim', 'runner-nix-store')).toBeDefined();
+    expect(findManifest(m, 'PersistentVolumeClaim', 'runner-runner-home')).toBeDefined();
   });
 
   it('sets securityContext on the main runner container', () => {
     const m = synth(baseProps);
-    const dep = find(m, 'Deployment', 'runner');
+    const dep = findManifest(m, 'Deployment', 'runner');
     const spec = dep.spec as { template: { spec: { containers: Container[] } } };
     const runner = spec.template.spec.containers.find((c) => c.name === 'runner')!;
     expect(runner.securityContext.runAsNonRoot).toBe(true);
@@ -67,7 +54,7 @@ describe('GhaRunner construct', () => {
 
   it('sets securityContext on the init-nix container', () => {
     const m = synth(baseProps);
-    const dep = find(m, 'Deployment', 'runner');
+    const dep = findManifest(m, 'Deployment', 'runner');
     const spec = dep.spec as { template: { spec: { initContainers: Container[] } } };
     const init = spec.template.spec.initContainers.find((c) => c.name === 'init-nix')!;
     expect(init.securityContext).toBeDefined();
@@ -78,7 +65,7 @@ describe('GhaRunner construct', () => {
 
   it('mounts GitHub App secret read-only at /secrets', () => {
     const m = synth(baseProps);
-    const dep = find(m, 'Deployment', 'runner');
+    const dep = findManifest(m, 'Deployment', 'runner');
     const spec = dep.spec as {
       template: {
         spec: {
@@ -98,7 +85,7 @@ describe('GhaRunner construct', () => {
 
   it('sets resource requests and limits on the runner container', () => {
     const m = synth(baseProps);
-    const dep = find(m, 'Deployment', 'runner');
+    const dep = findManifest(m, 'Deployment', 'runner');
     const spec = dep.spec as { template: { spec: { containers: Container[] } } };
     const runner = spec.template.spec.containers[0];
     expect(runner.resources.requests.memory).toBeDefined();

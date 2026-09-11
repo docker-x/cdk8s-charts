@@ -1,27 +1,14 @@
+import { filterByKind, findManifest, type Manifest } from '@cdk8s-charts/utils';
 import { Chart, Testing } from 'cdk8s';
 import { describe, expect, it } from 'vitest';
 import { Devcontainer } from './construct';
 
 /** Synthesize a Devcontainer chart for assertions. */
-function synth(props: ConstructorParameters<typeof Devcontainer>[2]) {
+function synth(props: ConstructorParameters<typeof Devcontainer>[2]): Manifest[] {
   const app = Testing.app();
   const chart = new Chart(app, 'test-chart');
   new Devcontainer(chart, 'dev', props);
   return Testing.synth(chart);
-}
-
-type Obj = Record<string, unknown>;
-
-/** Find a synthesized Kubernetes manifest by kind and optional name. */
-function find(manifests: object[], kind: string, name?: string): Obj {
-  const found = manifests.find((m): boolean => {
-    const obj = m as Obj;
-    return (
-      obj.kind === kind && (!name || (obj.metadata as { name?: string } | undefined)?.name === name)
-    );
-  });
-  if (!found) throw new Error(`Expected ${kind}${name ? ` named ${name}` : ''} not found`);
-  return found as Obj;
 }
 
 describe('Devcontainer construct', () => {
@@ -29,9 +16,9 @@ describe('Devcontainer construct', () => {
 
   it('renders Deployment, PVC, and Service with correct labels', () => {
     const m = synth(baseProps);
-    const dep = find(m, 'Deployment', 'dev');
-    const pvc = find(m, 'PersistentVolumeClaim', 'dev-state');
-    const svc = find(m, 'Service', 'dev');
+    const dep = findManifest(m, 'Deployment', 'dev');
+    const pvc = findManifest(m, 'PersistentVolumeClaim', 'dev-state');
+    const svc = findManifest(m, 'Service', 'dev');
     expect(dep).toBeDefined();
     expect(pvc).toBeDefined();
     expect(svc).toBeDefined();
@@ -48,8 +35,8 @@ describe('Devcontainer construct', () => {
 
   it('sets security context with runAsNonRoot and dropped capabilities', () => {
     const m = synth(baseProps);
-    const dep = find(m, 'Deployment', 'dev');
-    const spec = dep.spec as { template: { spec: { containers: Obj[] } } };
+    const dep = findManifest(m, 'Deployment', 'dev');
+    const spec = dep.spec as { template: { spec: { containers: Manifest[] } } };
     const c = spec.template.spec.containers[0];
     const sc = c.securityContext as {
       runAsNonRoot: boolean;
@@ -63,31 +50,29 @@ describe('Devcontainer construct', () => {
 
   it('creates a ServiceAccount by default', () => {
     const m = synth(baseProps);
-    const sa = find(m, 'ServiceAccount', 'dev-sa');
+    const sa = findManifest(m, 'ServiceAccount', 'dev-sa');
     expect(sa).toBeDefined();
   });
 
   it('does not create a ServiceAccount when serviceAccountName is provided', () => {
     const m = synth({ ...baseProps, serviceAccountName: 'custom-sa' });
-    const sas = m.filter((o) => (o as Obj).kind === 'ServiceAccount');
-    expect(sas).toHaveLength(0);
-    const dep = find(m, 'Deployment', 'dev');
+    expect(filterByKind(m, 'ServiceAccount')).toHaveLength(0);
+    const dep = findManifest(m, 'Deployment', 'dev');
     const spec = dep.spec as { template: { spec: { serviceAccountName: string } } };
     expect(spec.template.spec.serviceAccountName).toBe('custom-sa');
   });
 
   it('respects serviceAccountName override via values deep-merge', () => {
     const m = synth({ ...baseProps, values: { serviceAccountName: 'merged-sa' } });
-    const dep = find(m, 'Deployment', 'dev');
+    const dep = findManifest(m, 'Deployment', 'dev');
     const spec = dep.spec as { template: { spec: { serviceAccountName: string } } };
     expect(spec.template.spec.serviceAccountName).toBe('merged-sa');
   });
 
   it('skips PVC creation when existingPvcName is provided and uses it', () => {
     const m = synth({ ...baseProps, existingPvcName: 'existing-pvc' });
-    const pvcs = m.filter((o) => (o as Obj).kind === 'PersistentVolumeClaim');
-    expect(pvcs).toHaveLength(0);
-    const dep = find(m, 'Deployment', 'dev');
+    expect(filterByKind(m, 'PersistentVolumeClaim')).toHaveLength(0);
+    const dep = findManifest(m, 'Deployment', 'dev');
     const spec = dep.spec as {
       template: {
         spec: { volumes: { name: string; persistentVolumeClaim: { claimName: string } }[] };
@@ -99,7 +84,7 @@ describe('Devcontainer construct', () => {
 
   it('creates PVC with correct storage size and class', () => {
     const m = synth({ ...baseProps, storageSize: '50Gi', storageClass: 'fast' });
-    const pvc = find(m, 'PersistentVolumeClaim', 'dev-state');
+    const pvc = findManifest(m, 'PersistentVolumeClaim', 'dev-state');
     const spec = pvc.spec as {
       resources: { requests: { storage: string } };
       storageClassName: string;
@@ -110,7 +95,7 @@ describe('Devcontainer construct', () => {
 
   it('mounts PVC at homeMountPath', () => {
     const m = synth({ ...baseProps, homeMountPath: '/home/custom' });
-    const dep = find(m, 'Deployment', 'dev');
+    const dep = findManifest(m, 'Deployment', 'dev');
     const spec = dep.spec as {
       template: { spec: { containers: { volumeMounts: { name: string; mountPath: string }[] }[] } };
     };
@@ -122,7 +107,7 @@ describe('Devcontainer construct', () => {
 
   it('exposes ssh and preview ports', () => {
     const m = synth(baseProps);
-    const svc = find(m, 'Service', 'dev');
+    const svc = findManifest(m, 'Service', 'dev');
     const spec = svc.spec as { ports: { name: string }[] };
     const portNames = spec.ports.map((p) => p.name);
     expect(portNames).toContain('ssh');
@@ -131,7 +116,7 @@ describe('Devcontainer construct', () => {
 
   it('creates SSH secret when sshAuthorizedKeys is provided', () => {
     const m = synth({ ...baseProps, sshAuthorizedKeys: 'ssh-ed25519 AAAA test' });
-    const secret = find(m, 'Secret', 'dev-ssh-keys');
+    const secret = findManifest(m, 'Secret', 'dev-ssh-keys');
     expect(secret).toBeDefined();
     expect((secret.stringData as { authorized_keys: string }).authorized_keys).toBe(
       'ssh-ed25519 AAAA test',
@@ -144,7 +129,7 @@ describe('Devcontainer construct', () => {
       sshAuthorizedKeys: 'key',
       values: { sshSecretName: 'custom-ssh' },
     });
-    const secret = find(m, 'Secret', 'custom-ssh');
+    const secret = findManifest(m, 'Secret', 'custom-ssh');
     expect(secret).toBeDefined();
   });
 
