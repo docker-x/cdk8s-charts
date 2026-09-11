@@ -514,17 +514,17 @@ export function initWorkspaceChart(
     values.homeMountPath as string,
     derived.hasSshKeys,
     [
-      ...((props.volumeMounts as Array<unknown>) ?? []),
-      ...(((props.values as Record<string, unknown> | undefined)?.volumeMounts as
-        | Array<unknown>
-        | undefined) ?? []),
-    ] as Array<{ name: string; mountPath: string; readOnly?: boolean }>,
+      ...(Array.isArray(props.volumeMounts) ? props.volumeMounts : []),
+      ...((Array.isArray((props.values as Record<string, unknown> | undefined)?.volumeMounts)
+        ? (props.values as Record<string, unknown>).volumeMounts
+        : []) as Array<{ name: string; mountPath: string; readOnly?: boolean }>),
+    ],
   );
   const volumes = buildWorkspaceVolumes(derived.hasSshKeys, derived.sshSecretName, pvcName, [
-    ...((props.volumes as Array<unknown>) ?? []),
-    ...(((props.values as Record<string, unknown> | undefined)?.volumes as
-      | Array<unknown>
-      | undefined) ?? []),
-  ] as Array<{ name: string; [key: string]: unknown }>);
+    ...(Array.isArray(props.volumes) ? props.volumes : []),
+    ...((Array.isArray((props.values as Record<string, unknown> | undefined)?.volumes)
+      ? (props.values as Record<string, unknown>).volumes
+      : []) as Array<{ name: string; [key: string]: unknown }>),
+  ]);
   return { values, derived, pvcName, containerEnv, volumeMounts, volumes };
 }
