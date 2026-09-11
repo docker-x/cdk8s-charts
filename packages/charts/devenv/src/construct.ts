@@ -1,15 +1,8 @@
 import {
-  buildWorkspaceComputedValues,
-  buildWorkspaceContainerEnv,
-  buildWorkspaceVolumeMounts,
-  buildWorkspaceVolumes,
   createWorkspaceDeployment,
-  createWorkspacePvc,
-  createWorkspaceSecrets,
   createWorkspaceService,
-  deriveWorkspaceState,
   HelmConstruct,
-  validateHomeMountPath,
+  initWorkspaceChart,
 } from '@cdk8s-charts/utils';
 import type { Construct } from 'constructs';
 import type { Exports, Props, Values } from './types';
@@ -21,33 +14,17 @@ export class Devenv extends HelmConstruct<Values> {
   constructor(scope: Construct, id: string, props: Props) {
     super(scope, id);
 
-    const name = props.values?.name ?? props.name ?? id;
-    const values = buildWorkspaceComputedValues(props, name, {
-      homeMountPath: '/env',
-      extraPorts: { paseoPort: 6767, caddyPort: 8080 },
-    }) as Values;
-    validateHomeMountPath(values.homeMountPath ?? '/env');
-    const derived = deriveWorkspaceState(values, name, props);
-    const pvcName = values.existingPvcName ?? `${name}-state`;
-
-    createWorkspaceSecrets(this, values, name, props.namespace, derived);
-    if (!values.existingPvcName) createWorkspacePvc(this, name, props.namespace, values);
-    const containerEnv = buildWorkspaceContainerEnv(values, name, [
-      { name: 'DEVENV', value: 'true' },
-    ]);
-    const volumeMounts = buildWorkspaceVolumeMounts(
-      values.homeMountPath ?? '/env',
-      derived.hasSshKeys,
-      [...(props.volumeMounts ?? []), ...(props.values?.volumeMounts ?? [])],
+    const { values, derived, pvcName, containerEnv, volumeMounts, volumes } = initWorkspaceChart(
+      this,
+      id,
+      props as unknown as Record<string, unknown>,
+      { homeMountPath: '/env', extraPorts: { paseoPort: 6767, caddyPort: 8080 } },
+      [{ name: 'DEVENV', value: 'true' }],
     );
-    const volumes = buildWorkspaceVolumes(derived.hasSshKeys, derived.sshSecretName, pvcName, [
-      ...(props.volumes ?? []),
-      ...(props.values?.volumes ?? []),
-    ]);
     createWorkspaceDeployment(this, {
-      name,
+      name: values.name as string,
       namespace: props.namespace,
-      values,
+      values: values as Values,
       d: derived,
       containerEnv,
       volumeMounts,
@@ -56,10 +33,10 @@ export class Devenv extends HelmConstruct<Values> {
         name: 'devenv',
         optionalCommand: true,
         ports: [
-          { containerPort: values.sshPort ?? 2222, name: 'ssh' },
-          { containerPort: values.paseoPort ?? 6767, name: 'paseo' },
-          { containerPort: values.caddyPort ?? 8080, name: 'caddy' },
-          { containerPort: values.previewPort ?? 3000, name: 'preview' },
+          { containerPort: values.sshPort as number, name: 'ssh' },
+          { containerPort: values.paseoPort as number, name: 'paseo' },
+          { containerPort: values.caddyPort as number, name: 'caddy' },
+          { containerPort: values.previewPort as number, name: 'preview' },
         ],
       },
       sidecars: {
@@ -67,24 +44,24 @@ export class Devenv extends HelmConstruct<Values> {
         valuesSidecars: props.values?.sidecars as Array<Record<string, unknown>> | undefined,
       },
     });
-    createWorkspaceService(this, name, props.namespace, values, {
+    createWorkspaceService(this, values.name as string, props.namespace, values as Values, {
       ports: [
-        { port: values.sshPort ?? 2222, targetPort: 'ssh', name: 'ssh' },
-        { port: values.paseoPort ?? 6767, targetPort: 'paseo', name: 'paseo' },
-        { port: values.caddyPort ?? 8080, targetPort: 'caddy', name: 'caddy' },
-        { port: values.previewPort ?? 3000, targetPort: 'preview', name: 'preview' },
+        { port: values.sshPort as number, targetPort: 'ssh', name: 'ssh' },
+        { port: values.paseoPort as number, targetPort: 'paseo', name: 'paseo' },
+        { port: values.caddyPort as number, targetPort: 'caddy', name: 'caddy' },
+        { port: values.previewPort as number, targetPort: 'preview', name: 'preview' },
       ],
     });
 
     this.exports = {
-      host: name,
-      sshPort: values.sshPort ?? 2222,
-      paseoPort: values.paseoPort ?? 6767,
-      caddyPort: values.caddyPort ?? 8080,
-      previewPort: values.previewPort ?? 3000,
+      host: values.name as string,
+      sshPort: values.sshPort as number,
+      paseoPort: values.paseoPort as number,
+      caddyPort: values.caddyPort as number,
+      previewPort: values.previewPort as number,
       pvcName,
-      serviceName: name,
-      deploymentName: name,
+      serviceName: values.name as string,
+      deploymentName: values.name as string,
       secretName: derived.sshSecretName ?? '',
     };
   }

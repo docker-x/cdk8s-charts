@@ -1,6 +1,7 @@
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import { deepMerge } from './helm-construct';
+import { validateHomeMountPath } from './openshift-recipe';
 
 /** Build standard metadata labels for a workspace resource. */
 export function buildWorkspaceLabels(name: string): Record<string, string> {
@@ -468,4 +469,57 @@ export function buildWorkspaceComputedValues(
     }
   }
   return props.values ? deepMerge(computed, props.values) : computed;
+}
+
+// ---------------------------------------------------------------------------
+// Workspace chart initialization (shared between devcontainer and devenv)
+// ---------------------------------------------------------------------------
+
+export interface WorkspaceChartInit {
+  values: Record<string, unknown>;
+  derived: DerivedWorkspaceState;
+  pvcName: string;
+  containerEnv: ReturnType<typeof buildWorkspaceContainerEnv>;
+  volumeMounts: ReturnType<typeof buildWorkspaceVolumeMounts>;
+  volumes: ReturnType<typeof buildWorkspaceVolumes>;
+}
+
+export function initWorkspaceChart(
+  scope: Construct,
+  id: string,
+  props: Record<string, unknown>,
+  defaults: WorkspaceValuesDefaults,
+  extraEnv: Array<{ name: string; value: string }> = [],
+): WorkspaceChartInit {
+  const name =
+    ((props.values as Record<string, unknown> | undefined)?.name as string | undefined) ??
+    (props.name as string | undefined) ??
+    id;
+  const values = buildWorkspaceComputedValues(
+    props as unknown as WorkspaceValuesProps,
+    name,
+    defaults,
+  );
+  validateHomeMountPath((values.homeMountPath as string) ?? defaults.homeMountPath);
+  const derived = deriveWorkspaceState(values as WorkspaceValues, name, props);
+  const pvcName = (values.existingPvcName as string | undefined) ?? `${name}-state`;
+
+  const namespace = props.namespace as string;
+  createWorkspaceSecrets(scope, values as WorkspaceValues, name, namespace, derived);
+  if (!values.existingPvcName)
+    createWorkspacePvc(scope, name, namespace, values as WorkspaceValues);
+  const containerEnv = buildWorkspaceContainerEnv(values as WorkspaceValues, name, extraEnv);
+  const volumeMounts = buildWorkspaceVolumeMounts(
+    values.homeMountPath as string,
+    derived.hasSshKeys,
+    [
+      ...((props.volumeMounts as Array<unknown>) ?? []),
+      ...(((props.values as Record<string, unknown>)?.volumeMounts as Array<unknown>) ?? []),
+    ] as Array<{ name: string; mountPath: string; readOnly?: boolean }>,
+  );
+  const volumes = buildWorkspaceVolumes(derived.hasSshKeys, derived.sshSecretName, pvcName, [
+    ...((props.volumes as Array<unknown>) ?? []),
+    ...(((props.values as Record<string, unknown>)?.volumes as Array<unknown>) ?? []),
+  ] as Array<{ name: string; [key: string]: unknown }>);
+  return { values, derived, pvcName, containerEnv, volumeMounts, volumes };
 }
