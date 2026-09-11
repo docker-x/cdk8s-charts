@@ -1,8 +1,15 @@
-import { Devcontainer } from '@cdk8s-charts/devcontainer';
 import type { SidecarContainer } from '@cdk8s-charts/devcontainer';
+import { Devcontainer } from '@cdk8s-charts/devcontainer';
 import { ApiObject, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
-import type { BackupConfig, KeepaliveConfig, OpenShiftWorkspaceExports, OpenShiftWorkspaceProps, PaseoAutoResumeConfig, TfDeployerConfig } from './types';
+import type {
+  BackupConfig,
+  KeepaliveConfig,
+  OpenShiftWorkspaceExports,
+  OpenShiftWorkspaceProps,
+  PaseoAutoResumeConfig,
+  TfDeployerConfig,
+} from './types';
 
 const OAUTH_PROXY_IMAGE = 'quay.io/openshift/origin-oauth-proxy:4.18';
 const OC_CLI_IMAGE = 'quay.io/openshift/origin-cli:latest';
@@ -26,20 +33,44 @@ function buildLabels(name: string): Record<string, string> {
 
 /** Build component-specific labels. */
 function componentLabels(name: string, component: string): Record<string, string> {
-  return { 'app.kubernetes.io/name': name, 'app.kubernetes.io/component': component, 'app.kubernetes.io/managed-by': 'cdk8s' };
+  return {
+    'app.kubernetes.io/name': name,
+    'app.kubernetes.io/component': component,
+    'app.kubernetes.io/managed-by': 'cdk8s',
+  };
 }
 
 /** Build TF deployer RBAC rules — scoped to prevent secret exfiltration. */
 function buildTfDeployerRules(saName: string) {
   return [
-    { apiGroups: [''], resources: ['pods', 'serviceaccounts', 'persistentvolumeclaims', 'services', 'configmaps'], verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'] },
+    {
+      apiGroups: [''],
+      resources: ['pods', 'serviceaccounts', 'persistentvolumeclaims', 'services', 'configmaps'],
+      verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+    },
     { apiGroups: [''], resources: ['secrets'], verbs: ['create', 'delete', 'patch', 'update'] },
     { apiGroups: [''], resources: ['secrets'], resourceNames: [`${saName}-token`], verbs: ['get'] },
     { apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] },
-    { apiGroups: ['apps'], resources: ['deployments', 'deployments/scale', 'replicasets', 'daemonsets', 'statefulsets'], verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'] },
-    { apiGroups: ['batch'], resources: ['cronjobs', 'jobs'], verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'] },
-    { apiGroups: ['rbac.authorization.k8s.io'], resources: ['roles', 'rolebindings'], verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'] },
-    { apiGroups: ['route.openshift.io'], resources: ['routes'], verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'] },
+    {
+      apiGroups: ['apps'],
+      resources: ['deployments', 'deployments/scale', 'replicasets', 'daemonsets', 'statefulsets'],
+      verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+    },
+    {
+      apiGroups: ['batch'],
+      resources: ['cronjobs', 'jobs'],
+      verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+    },
+    {
+      apiGroups: ['rbac.authorization.k8s.io'],
+      resources: ['roles', 'rolebindings'],
+      verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+    },
+    {
+      apiGroups: ['route.openshift.io'],
+      resources: ['routes'],
+      verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+    },
   ];
 }
 
@@ -54,7 +85,11 @@ export class OpenShiftWorkspace extends Chart {
 
     this.validateDnsLabels(name, namespace);
 
-    const keepalive: ResolvedKeepalive = { enabled: true, schedule: '*/2 * * * *', ...props.keepalive };
+    const keepalive: ResolvedKeepalive = {
+      enabled: true,
+      schedule: '*/2 * * * *',
+      ...props.keepalive,
+    };
     const paseoAutoResume: ResolvedPaseoAutoResume = { enabled: true, ...props.paseoAutoResume };
     const tfDeployer: ResolvedTfDeployer = { enabled: true, ...props.tfDeployer };
     const backup: ResolvedBackup = { schedule: '0 2 * * *', keep: 3, ...props.backup };
@@ -64,15 +99,30 @@ export class OpenShiftWorkspace extends Chart {
     const { r2SecretName, hasBackupSecrets } = this.createR2Secret(name, namespace, backup);
     const autoResumeConfigMapName = this.createPaseoConfigMap(name, namespace, paseoAutoResume);
     const { extraVolumes, extraVolumeMounts } = this.buildExtraVolumes({
-      hasBackupSecrets, r2SecretName, saTokenSecretName, oauthCookieSecretName, paseoAutoResume, autoResumeConfigMapName,
+      hasBackupSecrets,
+      r2SecretName,
+      saTokenSecretName,
+      oauthCookieSecretName,
+      paseoAutoResume,
+      autoResumeConfigMapName,
     });
     const oauthProxySidecar = this.buildOauthProxySidecar(name, namespace);
-    const lifecycle = this.buildLifecycle(paseoAutoResume);
+    const homeMountPath = props.values?.homeMountPath ?? props.homeMountPath ?? '/home/vscode';
+    const lifecycle = this.buildLifecycle(paseoAutoResume, homeMountPath);
     const workspaceEnv = this.buildWorkspaceEnv(name, namespace, appsDomain, props.env);
     const podAnnotations = this.buildPodAnnotations(paseoAutoResume);
-    const homeMountPath = props.values?.homeMountPath ?? props.homeMountPath ?? '/home/vscode';
     const devcontainer = this.createDevcontainer({
-      name, namespace, appsDomain, props, homeMountPath, workspaceEnv, podAnnotations, extraVolumes, extraVolumeMounts, oauthProxySidecar, lifecycle,
+      name,
+      namespace,
+      appsDomain,
+      props,
+      homeMountPath,
+      workspaceEnv,
+      podAnnotations,
+      extraVolumes,
+      extraVolumeMounts,
+      oauthProxySidecar,
+      lifecycle,
     });
     const routes = this.createRoutes(name, namespace, appsDomain, devcontainer.exports.serviceName);
     if (keepalive.enabled) this.createKeepaliveRbac(name, namespace);
@@ -83,8 +133,10 @@ export class OpenShiftWorkspace extends Chart {
 
     this.exports = {
       pvcName: devcontainer.exports.pvcName,
-      paseoRouteName: routes.paseoRouteName, paseoRouteUrl: routes.paseoRouteUrl,
-      previewRouteName: routes.previewRouteName, previewRouteUrl: routes.previewRouteUrl,
+      paseoRouteName: routes.paseoRouteName,
+      paseoRouteUrl: routes.paseoRouteUrl,
+      previewRouteName: routes.previewRouteName,
+      previewRouteUrl: routes.previewRouteUrl,
       backupCronJobName: hasBackupSecrets ? `${name}-backup` : '',
       keepaliveCronJobName: keepalive.enabled ? `${name}-keepalive` : '',
       tfDeployerSaName: tfDeployer.enabled ? tfDeployerSaName : '',
@@ -92,18 +144,34 @@ export class OpenShiftWorkspace extends Chart {
   }
 
   private validateDnsLabels(name: string, namespace: string) {
-    const isDnsLabel = (s: string) => s.length > 0 && s.length <= 63 && /^[a-z0-9-]+$/.test(s) && !s.startsWith('-') && !s.endsWith('-');
-    if (!isDnsLabel(name)) throw new Error(`Invalid workspace name "${name}": must be a DNS-label value (lowercase alphanumeric with hyphens, max 63 chars, no dots)`);
-    if (!isDnsLabel(namespace)) throw new Error(`Invalid namespace "${namespace}": must be a DNS-label value (lowercase alphanumeric with hyphens, max 63 chars, no dots)`);
+    const isDnsLabel = (s: string) =>
+      s.length > 0 &&
+      s.length <= 63 &&
+      /^[a-z0-9-]+$/.test(s) &&
+      !s.startsWith('-') &&
+      !s.endsWith('-');
+    if (!isDnsLabel(name))
+      throw new Error(
+        `Invalid workspace name "${name}": must be a DNS-label value (lowercase alphanumeric with hyphens, max 63 chars, no dots)`,
+      );
+    if (!isDnsLabel(namespace))
+      throw new Error(
+        `Invalid namespace "${namespace}": must be a DNS-label value (lowercase alphanumeric with hyphens, max 63 chars, no dots)`,
+      );
   }
 
-  private createOAuthCookieSecret(name: string, namespace: string, props: OpenShiftWorkspaceProps): string {
+  private createOAuthCookieSecret(
+    name: string,
+    namespace: string,
+    props: OpenShiftWorkspaceProps,
+  ): string {
     const secretName = `${name}-oauth-cookie`;
     new ApiObject(this, 'oauth-cookie-secret', {
-      apiVersion: 'v1', kind: 'Secret',
+      apiVersion: 'v1',
+      kind: 'Secret',
       metadata: { name: secretName, namespace, labels: buildLabels(name) },
       type: 'Opaque',
-      data: { 'cookie-secret': Buffer.from(props.oauthCookieSecret, 'utf8').toString('base64') },
+      data: { 'cookie-secret': props.oauthCookieSecret },
     });
     return secretName;
   }
@@ -111,8 +179,14 @@ export class OpenShiftWorkspace extends Chart {
   private createSaTokenSecret(name: string, namespace: string): string {
     const secretName = `${name}-sa-token`;
     new ApiObject(this, 'sa-token-secret', {
-      apiVersion: 'v1', kind: 'Secret',
-      metadata: { name: secretName, namespace, labels: buildLabels(name), annotations: { 'kubernetes.io/service-account.name': `${name}-sa` } },
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: {
+        name: secretName,
+        namespace,
+        labels: buildLabels(name),
+        annotations: { 'kubernetes.io/service-account.name': `${name}-sa` },
+      },
       type: 'kubernetes.io/service-account-token',
     });
     return secretName;
@@ -120,20 +194,31 @@ export class OpenShiftWorkspace extends Chart {
 
   private createR2Secret(name: string, namespace: string, backup: ResolvedBackup): R2SecretResult {
     const r2SecretName = `${name}-r2-credentials`;
-    const r2Fields = [backup.r2AccountId, backup.r2AccessKeyId, backup.r2SecretAccessKey, backup.r2BucketName, backup.resticPassword];
+    const r2Fields = [
+      backup.r2AccountId,
+      backup.r2AccessKeyId,
+      backup.r2SecretAccessKey,
+      backup.r2BucketName,
+      backup.resticPassword,
+    ];
     const providedCount = r2Fields.filter(Boolean).length;
     if (providedCount > 0 && providedCount < r2Fields.length) {
-      throw new Error('Partial R2 credentials: provide all of r2AccountId, r2AccessKeyId, r2SecretAccessKey, r2BucketName, resticPassword — or none to disable backup.');
+      throw new Error(
+        'Partial R2 credentials: provide all of r2AccountId, r2AccessKeyId, r2SecretAccessKey, r2BucketName, resticPassword — or none to disable backup.',
+      );
     }
     const hasBackupSecrets = providedCount === r2Fields.length;
     if (hasBackupSecrets) {
       new ApiObject(this, 'r2-credentials-secret', {
-        apiVersion: 'v1', kind: 'Secret',
+        apiVersion: 'v1',
+        kind: 'Secret',
         metadata: { name: r2SecretName, namespace, labels: componentLabels(name, 'backup') },
         type: 'Opaque',
         stringData: {
-          'r2-account-id': backup.r2AccountId ?? '', 'r2-bucket': backup.r2BucketName ?? '',
-          'r2-access-key-id': backup.r2AccessKeyId ?? '', 'r2-secret-access-key': backup.r2SecretAccessKey ?? '',
+          'r2-account-id': backup.r2AccountId ?? '',
+          'r2-bucket': backup.r2BucketName ?? '',
+          'r2-access-key-id': backup.r2AccessKeyId ?? '',
+          'r2-secret-access-key': backup.r2SecretAccessKey ?? '',
           'restic-password': backup.resticPassword ?? '',
         },
       });
@@ -141,11 +226,16 @@ export class OpenShiftWorkspace extends Chart {
     return { r2SecretName, hasBackupSecrets };
   }
 
-  private createPaseoConfigMap(name: string, namespace: string, paseoAutoResume: ResolvedPaseoAutoResume): string {
+  private createPaseoConfigMap(
+    name: string,
+    namespace: string,
+    paseoAutoResume: ResolvedPaseoAutoResume,
+  ): string {
     const cmName = `${name}-paseo-auto-resume`;
     if (paseoAutoResume.enabled) {
       new ApiObject(this, 'paseo-auto-resume-cm', {
-        apiVersion: 'v1', kind: 'ConfigMap',
+        apiVersion: 'v1',
+        kind: 'ConfigMap',
         metadata: { name: cmName, namespace, labels: componentLabels(name, 'paseo-auto-resume') },
         data: { 'auto-resume.sh': PASEO_AUTO_RESUME_SCRIPT },
       });
@@ -154,9 +244,16 @@ export class OpenShiftWorkspace extends Chart {
   }
 
   private buildExtraVolumes(opts: {
-    hasBackupSecrets: boolean; r2SecretName: string; saTokenSecretName: string;
-    oauthCookieSecretName: string; paseoAutoResume: ResolvedPaseoAutoResume; autoResumeConfigMapName: string;
-  }): { extraVolumes: Array<{ name: string; [key: string]: unknown }>; extraVolumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }> } {
+    hasBackupSecrets: boolean;
+    r2SecretName: string;
+    saTokenSecretName: string;
+    oauthCookieSecretName: string;
+    paseoAutoResume: ResolvedPaseoAutoResume;
+    autoResumeConfigMapName: string;
+  }): {
+    extraVolumes: Array<{ name: string; [key: string]: unknown }>;
+    extraVolumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }>;
+  } {
     const extraVolumes: Array<{ name: string; [key: string]: unknown }> = [
       { name: 'sa-token', secret: { secretName: opts.saTokenSecretName } },
       { name: 'oauth-cookie', secret: { secretName: opts.oauthCookieSecretName } },
@@ -165,57 +262,111 @@ export class OpenShiftWorkspace extends Chart {
     if (opts.hasBackupSecrets) {
       extraVolumes.push({
         name: 'r2-credentials',
-        secret: { secretName: opts.r2SecretName, items: [
-          { key: 'r2-access-key-id', path: 'AWS_ACCESS_KEY_ID' }, { key: 'r2-secret-access-key', path: 'AWS_SECRET_ACCESS_KEY' },
-          { key: 'r2-account-id', path: 'R2_ACCOUNT_ID' }, { key: 'r2-bucket', path: 'R2_BUCKET' }, { key: 'restic-password', path: 'BACKUP_PASSWORD' },
-        ] },
+        secret: {
+          secretName: opts.r2SecretName,
+          items: [
+            { key: 'r2-access-key-id', path: 'AWS_ACCESS_KEY_ID' },
+            { key: 'r2-secret-access-key', path: 'AWS_SECRET_ACCESS_KEY' },
+            { key: 'r2-account-id', path: 'R2_ACCOUNT_ID' },
+            { key: 'r2-bucket', path: 'R2_BUCKET' },
+            { key: 'restic-password', path: 'BACKUP_PASSWORD' },
+          ],
+        },
       });
-      extraVolumeMounts.push({ name: 'r2-credentials', mountPath: '/etc/r2-credentials', readOnly: true });
+      extraVolumeMounts.push({
+        name: 'r2-credentials',
+        mountPath: '/etc/r2-credentials',
+        readOnly: true,
+      });
     }
     if (opts.paseoAutoResume.enabled) {
-      extraVolumes.push({ name: 'paseo-auto-resume', configMap: { name: opts.autoResumeConfigMapName, defaultMode: 0o755 } });
-      extraVolumeMounts.push({ name: 'paseo-auto-resume', mountPath: '/usr/local/share/paseo-auto-resume', readOnly: true });
+      extraVolumes.push({
+        name: 'paseo-auto-resume',
+        configMap: { name: opts.autoResumeConfigMapName, defaultMode: 0o755 },
+      });
+      extraVolumeMounts.push({
+        name: 'paseo-auto-resume',
+        mountPath: '/usr/local/share/paseo-auto-resume',
+        readOnly: true,
+      });
     }
     return { extraVolumes, extraVolumeMounts };
   }
 
   private buildOauthProxySidecar(name: string, namespace: string): SidecarContainer {
     return {
-      name: 'oauth-proxy', image: OAUTH_PROXY_IMAGE,
-      securityContext: { runAsNonRoot: true, allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } },
+      name: 'oauth-proxy',
+      image: OAUTH_PROXY_IMAGE,
+      securityContext: {
+        runAsNonRoot: true,
+        allowPrivilegeEscalation: false,
+        capabilities: { drop: ['ALL'] },
+      },
       args: [
-        '--http-address=0.0.0.0:4180', '--https-address=', '--upstream=http://127.0.0.1:6767',
+        '--http-address=0.0.0.0:4180',
+        '--https-address=',
+        '--upstream=http://127.0.0.1:6767',
         `--openshift-sar={"namespace":"${namespace}","resource":"pods","verb":"get"}`,
-        '--cookie-secret-file=/etc/oauth/cookie-secret', '--cookie-secure=true', '--cookie-samesite=none',
+        '--cookie-secret-file=/etc/oauth/cookie-secret',
+        '--cookie-secure=true',
+        '--cookie-samesite=none',
         '--skip-auth-regex=^/healthz|^/ws',
         `--client-id=system:serviceaccount:${namespace}:${name}-sa`,
         '--client-secret-file=/var/run/secrets/openshift/serviceaccount/token',
       ],
       ports: [{ containerPort: 4180, name: 'oauth-proxy' }],
       volumeMounts: [
-        { name: 'sa-token', mountPath: '/var/run/secrets/openshift/serviceaccount', readOnly: true },
+        {
+          name: 'sa-token',
+          mountPath: '/var/run/secrets/openshift/serviceaccount',
+          readOnly: true,
+        },
         { name: 'oauth-cookie', mountPath: '/etc/oauth', readOnly: true },
       ],
-      resources: { requests: { cpu: '50m', memory: '64Mi' }, limits: { cpu: '100m', memory: '128Mi' } },
+      resources: {
+        requests: { cpu: '50m', memory: '64Mi' },
+        limits: { cpu: '100m', memory: '128Mi' },
+      },
     };
   }
 
-  private buildLifecycle(paseoAutoResume: ResolvedPaseoAutoResume): PodLifecycle | undefined {
+  private buildLifecycle(
+    paseoAutoResume: ResolvedPaseoAutoResume,
+    homeMountPath: string,
+  ): PodLifecycle | undefined {
     if (!paseoAutoResume.enabled) return undefined;
     return {
-      postStart: { exec: { command: ['/bin/bash', '-c', [
-        'export PASEO_HOME=/home/vscode/.paseo', 'export HOME=/home/vscode',
-        '[[ -f /etc/profile.d/nvm-path.sh ]] && . /etc/profile.d/nvm-path.sh',
-        'export PATH="/usr/local/share/runtime-bin:$PATH"',
-        'nohup /bin/bash /usr/local/share/paseo-auto-resume/auto-resume.sh >> /home/vscode/.paseo/auto-resume.log 2>&1 &',
-      ].join('\n')] } },
+      postStart: {
+        exec: {
+          command: [
+            '/bin/bash',
+            '-c',
+            [
+              `export PASEO_HOME=${homeMountPath}/.paseo`,
+              `export HOME=${homeMountPath}`,
+              `mkdir -p "${homeMountPath}/.paseo"`,
+              '[[ -f /etc/profile.d/nvm-path.sh ]] && . /etc/profile.d/nvm-path.sh',
+              'export PATH="/usr/local/share/runtime-bin:$PATH"',
+              `nohup /bin/bash /usr/local/share/paseo-auto-resume/auto-resume.sh >> ${homeMountPath}/.paseo/auto-resume.log 2>&1 &`,
+            ].join('\n'),
+          ],
+        },
+      },
     };
   }
 
-  private buildWorkspaceEnv(name: string, namespace: string, appsDomain: string, extraEnv?: Record<string, string>): Record<string, string> {
+  private buildWorkspaceEnv(
+    name: string,
+    namespace: string,
+    appsDomain: string,
+    extraEnv?: Record<string, string>,
+  ): Record<string, string> {
     return {
-      TERM: 'xterm-256color', HUSKY: '0', DEVCONTAINER: 'true',
-      PASEO_HOSTNAMES: `${name}-paseo-${namespace}.${appsDomain}`, PASEO_TRUSTED_PROXIES: 'loopback',
+      TERM: 'xterm-256color',
+      HUSKY: '0',
+      DEVCONTAINER: 'true',
+      PASEO_HOSTNAMES: `${name}-paseo-${namespace}.${appsDomain}`,
+      PASEO_TRUSTED_PROXIES: 'loopback',
       ...extraEnv,
     };
   }
@@ -226,24 +377,59 @@ export class OpenShiftWorkspace extends Chart {
   }
 
   private createDevcontainer(opts: {
-    name: string; namespace: string; appsDomain: string; props: OpenShiftWorkspaceProps; homeMountPath: string;
-    workspaceEnv: Record<string, string>; podAnnotations: Record<string, string>;
+    name: string;
+    namespace: string;
+    appsDomain: string;
+    props: OpenShiftWorkspaceProps;
+    homeMountPath: string;
+    workspaceEnv: Record<string, string>;
+    podAnnotations: Record<string, string>;
     extraVolumes: Array<{ name: string; [key: string]: unknown }>;
     extraVolumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }>;
-    oauthProxySidecar: SidecarContainer; lifecycle: PodLifecycle | undefined;
+    oauthProxySidecar: SidecarContainer;
+    lifecycle: PodLifecycle | undefined;
   }) {
-    const { name, namespace, appsDomain, props, homeMountPath, workspaceEnv, podAnnotations, extraVolumes, extraVolumeMounts, oauthProxySidecar, lifecycle } = opts;
+    const {
+      name,
+      namespace,
+      appsDomain,
+      props,
+      homeMountPath,
+      workspaceEnv,
+      podAnnotations,
+      extraVolumes,
+      extraVolumeMounts,
+      oauthProxySidecar,
+      lifecycle,
+    } = opts;
     const paseoRedirectUri = `https://${name}-paseo-${namespace}.${appsDomain}/oauth/callback`;
     return new Devcontainer(this, 'workspace', {
-      namespace, image: props.image, imageDigest: props.imageDigest, name,
-      storageSize: props.pvcSize ?? '30Gi', storageClass: props.pvcStorageClass ?? 'gp3',
+      namespace,
+      image: props.image,
+      imageDigest: props.imageDigest,
+      name,
+      storageSize: props.pvcSize ?? '30Gi',
+      storageClass: props.pvcStorageClass ?? 'gp3',
       existingPvcName: props.existingPvcName,
-      homeMountPath, sshAuthorizedKeys: props.sshAuthorizedKeys, imagePullSecret: props.ghcrPullSecret,
-      env: workspaceEnv, resources: props.resources,
-      labels: { 'app.kubernetes.io/managed-by': 'cdk8s' }, annotations: podAnnotations,
-      volumes: extraVolumes, volumeMounts: extraVolumeMounts, sidecars: [oauthProxySidecar], lifecycle,
+      homeMountPath,
+      sshAuthorizedKeys: props.sshAuthorizedKeys,
+      imagePullSecret: props.ghcrPullSecret,
+      env: workspaceEnv,
+      resources: props.resources,
+      labels: { 'app.kubernetes.io/managed-by': 'cdk8s' },
+      annotations: podAnnotations,
+      volumes: extraVolumes,
+      volumeMounts: extraVolumeMounts,
+      sidecars: [oauthProxySidecar],
+      lifecycle,
       extraServicePorts: [{ name: 'oauth-proxy', port: 4180, targetPort: 'oauth-proxy' }],
-      values: { ...props.values, serviceAccountAnnotations: { 'serviceaccounts.openshift.io/oauth-redirecturi.primary': paseoRedirectUri, ...props.values?.serviceAccountAnnotations } },
+      values: {
+        ...props.values,
+        serviceAccountAnnotations: {
+          'serviceaccounts.openshift.io/oauth-redirecturi.primary': paseoRedirectUri,
+          ...props.values?.serviceAccountAnnotations,
+        },
+      },
     });
   }
 
@@ -253,101 +439,213 @@ export class OpenShiftWorkspace extends Chart {
     const paseoRouteUrl = `https://${paseoRouteName}-${namespace}.${appsDomain}`;
     const previewRouteUrl = `https://${previewRouteName}-${namespace}.${appsDomain}`;
     new ApiObject(this, 'paseo-route', {
-      apiVersion: 'route.openshift.io/v1', kind: 'Route',
+      apiVersion: 'route.openshift.io/v1',
+      kind: 'Route',
       metadata: { name: paseoRouteName, namespace, labels: buildLabels(name) },
-      spec: { to: { kind: 'Service', name: serviceName, weight: 100 }, port: { targetPort: 'oauth-proxy' }, tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' } },
+      spec: {
+        to: { kind: 'Service', name: serviceName, weight: 100 },
+        port: { targetPort: 'oauth-proxy' },
+        tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' },
+      },
     });
     new ApiObject(this, 'preview-route', {
-      apiVersion: 'route.openshift.io/v1', kind: 'Route',
+      apiVersion: 'route.openshift.io/v1',
+      kind: 'Route',
       metadata: { name: previewRouteName, namespace, labels: buildLabels(name) },
-      spec: { to: { kind: 'Service', name: serviceName, weight: 100 }, port: { targetPort: 'preview' }, tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' } },
+      spec: {
+        to: { kind: 'Service', name: serviceName, weight: 100 },
+        port: { targetPort: 'preview' },
+        tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' },
+      },
     });
     return { paseoRouteName, previewRouteName, paseoRouteUrl, previewRouteUrl };
   }
 
   private createKeepaliveRbac(name: string, namespace: string) {
     const saName = `${name}-keepalive`;
-    new ApiObject(this, 'keepalive-sa', { apiVersion: 'v1', kind: 'ServiceAccount', metadata: { name: saName, namespace, labels: componentLabels(name, 'keepalive') } });
-    new ApiObject(this, 'keepalive-role', {
-      apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'Role',
+    new ApiObject(this, 'keepalive-sa', {
+      apiVersion: 'v1',
+      kind: 'ServiceAccount',
       metadata: { name: saName, namespace, labels: componentLabels(name, 'keepalive') },
-      rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get', 'list', 'delete'] }, { apiGroups: ['apps'], resources: ['deployments', 'deployments/scale'], verbs: ['get', 'patch'] }],
+    });
+    new ApiObject(this, 'keepalive-role', {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'Role',
+      metadata: { name: saName, namespace, labels: componentLabels(name, 'keepalive') },
+      rules: [
+        { apiGroups: [''], resources: ['pods'], verbs: ['get', 'list', 'delete'] },
+        {
+          apiGroups: ['apps'],
+          resources: ['deployments', 'deployments/scale'],
+          verbs: ['get', 'patch'],
+        },
+      ],
     });
     new ApiObject(this, 'keepalive-rb', {
-      apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'RoleBinding',
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'RoleBinding',
       metadata: { name: saName, namespace, labels: componentLabels(name, 'keepalive') },
-      subjects: [{ kind: 'ServiceAccount', name: saName, namespace }], roleRef: { kind: 'Role', name: saName, apiGroup: 'rbac.authorization.k8s.io' },
+      subjects: [{ kind: 'ServiceAccount', name: saName, namespace }],
+      roleRef: { kind: 'Role', name: saName, apiGroup: 'rbac.authorization.k8s.io' },
     });
   }
 
   private createKeepaliveCronJob(name: string, namespace: string, keepalive: ResolvedKeepalive) {
     const saName = `${name}-keepalive`;
     new ApiObject(this, 'keepalive-cronjob', {
-      apiVersion: 'batch/v1', kind: 'CronJob',
-      metadata: { name: `${name}-keepalive`, namespace, labels: componentLabels(name, 'keepalive') },
+      apiVersion: 'batch/v1',
+      kind: 'CronJob',
+      metadata: {
+        name: `${name}-keepalive`,
+        namespace,
+        labels: componentLabels(name, 'keepalive'),
+      },
       spec: {
-        schedule: keepalive.schedule, concurrencyPolicy: 'Forbid', successfulJobsHistoryLimit: 1, failedJobsHistoryLimit: 3,
-        jobTemplate: { spec: { backoffLimit: 1, template: { spec: {
-          serviceAccountName: saName, restartPolicy: 'OnFailure',
-          containers: [{ name: 'keepalive', image: OC_CLI_IMAGE, securityContext: { runAsNonRoot: true, allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } }, command: ['/bin/sh', '-ec', buildKeepaliveScript(name, namespace)] }],
-        } } } },
+        schedule: keepalive.schedule,
+        concurrencyPolicy: 'Forbid',
+        successfulJobsHistoryLimit: 1,
+        failedJobsHistoryLimit: 3,
+        jobTemplate: {
+          spec: {
+            backoffLimit: 1,
+            template: {
+              spec: {
+                serviceAccountName: saName,
+                restartPolicy: 'OnFailure',
+                containers: [
+                  {
+                    name: 'keepalive',
+                    image: OC_CLI_IMAGE,
+                    securityContext: {
+                      runAsNonRoot: true,
+                      allowPrivilegeEscalation: false,
+                      capabilities: { drop: ['ALL'] },
+                    },
+                    env: [
+                      { name: 'WORKSPACE_NAME', value: name },
+                      { name: 'NAMESPACE', value: namespace },
+                    ],
+                    command: ['/bin/sh', '-ec', buildKeepaliveScript()],
+                  },
+                ],
+              },
+            },
+          },
+        },
       },
     });
   }
 
   private createBackupRbac(name: string, namespace: string) {
     const saName = `${name}-backup`;
-    new ApiObject(this, 'backup-sa', { apiVersion: 'v1', kind: 'ServiceAccount', metadata: { name: saName, namespace, labels: componentLabels(name, 'backup') } });
+    new ApiObject(this, 'backup-sa', {
+      apiVersion: 'v1',
+      kind: 'ServiceAccount',
+      metadata: { name: saName, namespace, labels: componentLabels(name, 'backup') },
+    });
     new ApiObject(this, 'backup-role', {
-      apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'Role',
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'Role',
       metadata: { name: `${name}-backup-exec`, namespace, labels: componentLabels(name, 'backup') },
-      rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] }, { apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] }],
+      rules: [
+        { apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] },
+        { apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] },
+      ],
     });
     new ApiObject(this, 'backup-rb', {
-      apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'RoleBinding',
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'RoleBinding',
       metadata: { name: `${name}-backup-exec`, namespace, labels: componentLabels(name, 'backup') },
-      subjects: [{ kind: 'ServiceAccount', name: saName, namespace }], roleRef: { kind: 'Role', name: `${name}-backup-exec`, apiGroup: 'rbac.authorization.k8s.io' },
+      subjects: [{ kind: 'ServiceAccount', name: saName, namespace }],
+      roleRef: { kind: 'Role', name: `${name}-backup-exec`, apiGroup: 'rbac.authorization.k8s.io' },
     });
   }
 
-  private createBackupCronJob(name: string, namespace: string, backup: ResolvedBackup, homeMountPath: string) {
+  private createBackupCronJob(
+    name: string,
+    namespace: string,
+    backup: ResolvedBackup,
+    homeMountPath: string,
+  ) {
     const saName = `${name}-backup`;
     new ApiObject(this, 'backup-cronjob', {
-      apiVersion: 'batch/v1', kind: 'CronJob',
+      apiVersion: 'batch/v1',
+      kind: 'CronJob',
       metadata: { name: `${name}-backup`, namespace, labels: componentLabels(name, 'backup') },
       spec: {
-        schedule: backup.schedule, concurrencyPolicy: 'Forbid', successfulJobsHistoryLimit: 3, failedJobsHistoryLimit: 3,
-        jobTemplate: { spec: { backoffLimit: 2, template: { spec: {
-          serviceAccountName: saName, restartPolicy: 'OnFailure',
-          containers: [{
-            name: 'r2-backup', image: OC_CLI_IMAGE, imagePullPolicy: 'IfNotPresent',
-            securityContext: { runAsNonRoot: true, allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } },
-            env: [{ name: 'WORKSPACE_POD_LABEL', value: `app.kubernetes.io/name=${name}` }, { name: 'NAMESPACE', value: namespace }],
-            command: ['/bin/sh', '-ec', buildBackupScript(backup.keep, homeMountPath)],
-          }],
-        } } } },
+        schedule: backup.schedule,
+        concurrencyPolicy: 'Forbid',
+        successfulJobsHistoryLimit: 3,
+        failedJobsHistoryLimit: 3,
+        jobTemplate: {
+          spec: {
+            backoffLimit: 2,
+            template: {
+              spec: {
+                serviceAccountName: saName,
+                restartPolicy: 'OnFailure',
+                containers: [
+                  {
+                    name: 'r2-backup',
+                    image: OC_CLI_IMAGE,
+                    imagePullPolicy: 'IfNotPresent',
+                    securityContext: {
+                      runAsNonRoot: true,
+                      allowPrivilegeEscalation: false,
+                      capabilities: { drop: ['ALL'] },
+                    },
+                    env: [
+                      { name: 'WORKSPACE_POD_LABEL', value: `app.kubernetes.io/name=${name}` },
+                      { name: 'NAMESPACE', value: namespace },
+                      { name: 'HOME_MOUNT_PATH', value: homeMountPath },
+                      { name: 'BACKUP_KEEP', value: String(backup.keep) },
+                    ],
+                    command: ['/bin/sh', '-ec', buildBackupScript()],
+                  },
+                ],
+              },
+            },
+          },
+        },
       },
     });
   }
 
-  private createTfDeployer(name: string, namespace: string, tfDeployer: ResolvedTfDeployer): string {
+  private createTfDeployer(
+    name: string,
+    namespace: string,
+    tfDeployer: ResolvedTfDeployer,
+  ): string {
     const saName = `${name}-tf-deployer`;
     if (!tfDeployer.enabled) return saName;
-    new ApiObject(this, 'tf-deployer-sa', { apiVersion: 'v1', kind: 'ServiceAccount', metadata: { name: saName, namespace, labels: componentLabels(name, 'tf-deployer') } });
+    new ApiObject(this, 'tf-deployer-sa', {
+      apiVersion: 'v1',
+      kind: 'ServiceAccount',
+      metadata: { name: saName, namespace, labels: componentLabels(name, 'tf-deployer') },
+    });
     new ApiObject(this, 'tf-deployer-token', {
-      apiVersion: 'v1', kind: 'Secret',
-      metadata: { name: `${saName}-token`, namespace, labels: componentLabels(name, 'tf-deployer'), annotations: { 'kubernetes.io/service-account.name': saName } },
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: {
+        name: `${saName}-token`,
+        namespace,
+        labels: componentLabels(name, 'tf-deployer'),
+        annotations: { 'kubernetes.io/service-account.name': saName },
+      },
       type: 'kubernetes.io/service-account-token',
     });
     new ApiObject(this, 'tf-deployer-role', {
-      apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'Role',
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'Role',
       metadata: { name: saName, namespace, labels: componentLabels(name, 'tf-deployer') },
       rules: buildTfDeployerRules(saName),
     });
     new ApiObject(this, 'tf-deployer-rb', {
-      apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'RoleBinding',
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'RoleBinding',
       metadata: { name: saName, namespace, labels: componentLabels(name, 'tf-deployer') },
-      subjects: [{ kind: 'ServiceAccount', name: saName, namespace }], roleRef: { kind: 'Role', name: saName, apiGroup: 'rbac.authorization.k8s.io' },
+      subjects: [{ kind: 'ServiceAccount', name: saName, namespace }],
+      roleRef: { kind: 'Role', name: saName, apiGroup: 'rbac.authorization.k8s.io' },
     });
     return saName;
   }
@@ -368,29 +666,29 @@ function simpleHash(str: string): string {
   return Math.abs(hash).toString(16);
 }
 
-function buildKeepaliveScript(name: string, namespace: string): string {
+function buildKeepaliveScript(): string {
   return [
-    `REPLICAS=$(oc get deployment ${name} -n ${namespace} -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")`,
+    `REPLICAS=$(oc get deployment "$WORKSPACE_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")`,
     'if [ "${REPLICAS}" -le 0 ]; then',
-    `  echo "Deployment ${name} is scaled to zero. Scaling up to 1..."`,
-    `  oc scale deployment ${name} -n ${namespace} --replicas=1`,
+    '  echo "Deployment $WORKSPACE_NAME is scaled to zero. Scaling up to 1..."',
+    '  oc scale deployment "$WORKSPACE_NAME" -n "$NAMESPACE" --replicas=1',
     'fi',
-    `POD=$(oc get pods -n ${namespace} -l app.kubernetes.io/name=${name} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)`,
+    `POD=$(oc get pods -n "$NAMESPACE" -l app.kubernetes.io/name="$WORKSPACE_NAME" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)`,
     'if [ -z "$POD" ]; then',
-    `  echo "No ${name} pod found yet — Deployment controller will create one."`,
+    '  echo "No $WORKSPACE_NAME pod found yet — Deployment controller will create one."',
     '  exit 0',
     'fi',
-    `STATUS=$(oc get pod "$POD" -n ${namespace} -o jsonpath='{.status.phase}' 2>/dev/null || true)`,
+    `STATUS=$(oc get pod "$POD" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || true)`,
     'if [ "$STATUS" != "Running" ]; then',
     '  echo "Pod $POD is not Running (status: $STATUS). Deleting so Deployment recreates it."',
-    `  oc delete pod "$POD" -n ${namespace} || true`,
+    '  oc delete pod "$POD" -n "$NAMESPACE" || true',
     'else',
     '  echo "Pod $POD is Running. All good."',
     'fi',
   ].join('\n');
 }
 
-function buildBackupScript(keep: number, homeMountPath: string): string {
+function buildBackupScript(): string {
   return [
     'POD=$(oc get pods -n "${NAMESPACE}" -l "${WORKSPACE_POD_LABEL}" --field-selector=status.phase=Running -o jsonpath=\'{.items[0].metadata.name}\')',
     'if [ -z "${POD}" ]; then',
@@ -398,7 +696,7 @@ function buildBackupScript(keep: number, homeMountPath: string): string {
     '  exit 1',
     'fi',
     'echo "Backing up from pod: ${POD}"',
-    `oc exec -n "\${NAMESPACE}" "\${POD}" -c devcontainer -- env HOME_MOUNT_PATH=${JSON.stringify(homeMountPath)} BACKUP_KEEP=${keep} /bin/sh -ec '`,
+    `oc exec -n "\${NAMESPACE}" "\${POD}" -c devcontainer -- env HOME_MOUNT_PATH="\${HOME_MOUNT_PATH}" BACKUP_KEEP="\${BACKUP_KEEP}" /bin/sh -ec '`,
     '  for f in /etc/r2-credentials/AWS_ACCESS_KEY_ID /etc/r2-credentials/AWS_SECRET_ACCESS_KEY /etc/r2-credentials/R2_ACCOUNT_ID /etc/r2-credentials/R2_BUCKET /etc/r2-credentials/BACKUP_PASSWORD; do',
     '    if [ ! -f "$f" ]; then echo "Fatal: missing R2 credential file $f"; exit 1; fi',
     '  done',

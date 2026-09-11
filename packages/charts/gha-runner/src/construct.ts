@@ -188,6 +188,11 @@ export class GhaRunner extends HelmConstruct<Values> {
                 name: 'init-nix',
                 image: `${values.image ?? DEFAULT_IMAGE}:${values.imageTag ?? DEFAULT_IMAGE_TAG}`,
                 command: ['/bin/sh', '/scripts/init-nix.sh'],
+                securityContext: {
+                  runAsNonRoot: values.runAsNonRoot ?? true,
+                  allowPrivilegeEscalation: false,
+                  capabilities: { drop: ['ALL'] },
+                },
                 volumeMounts: [
                   { name: 'nix-store', mountPath: '/nix-pvc' },
                   { name: 'scripts', mountPath: '/scripts', readOnly: true },

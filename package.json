@@ -15,7 +15,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "test": "nx run-many --target=test",
+    "test": "vitest run",
     "synth": "nx run-many --target=synth",
     "check-updates": "node .github/scripts/check-chart-updates-local.ts",
     "check-updates:outdated": "node .github/scripts/check-chart-updates-local.ts --outdated",
@@ -35,7 +35,8 @@
     "lint-staged": "^16.4.0",
     "nx": "^22.7.2",
     "tsdown": "^0.21.7",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.0"
   },
   "overrides": {
     "axios": {

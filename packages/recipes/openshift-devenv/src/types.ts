@@ -55,7 +55,7 @@ export interface OpenShiftDevenvProps {
   appsDomain: string;
   /** SSH authorized_keys content. */
   sshAuthorizedKeys: string;
-  /** OAuth proxy cookie secret (plain string, will be base64-encoded for K8s Secret). */
+  /** OAuth proxy cookie secret (base64-encoded; written directly to K8s Secret data). */
   oauthCookieSecret: string;
   /** Base64 docker config JSON for GHCR auth. */
   ghcrPullSecret?: string;

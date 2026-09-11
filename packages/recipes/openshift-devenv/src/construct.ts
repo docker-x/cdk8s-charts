@@ -107,10 +107,10 @@ export class OpenShiftDevenv extends Chart {
       autoResumeConfigMapName,
     });
     const oauthProxySidecar = this.buildOauthProxySidecar(name, namespace);
-    const lifecycle = this.buildLifecycle(paseoAutoResume);
+    const homeMountPath = props.values?.homeMountPath ?? props.homeMountPath ?? '/env';
+    const lifecycle = this.buildLifecycle(paseoAutoResume, homeMountPath);
     const workspaceEnv = this.buildWorkspaceEnv(name, namespace, appsDomain, props.env);
     const podAnnotations = this.buildPodAnnotations(paseoAutoResume);
-    const homeMountPath = props.values?.homeMountPath ?? props.homeMountPath ?? '/env';
     const devenv = this.createDevenv({
       name,
       namespace,
@@ -171,7 +171,7 @@ export class OpenShiftDevenv extends Chart {
       kind: 'Secret',
       metadata: { name: secretName, namespace, labels: buildLabels(name) },
       type: 'Opaque',
-      data: { 'cookie-secret': Buffer.from(props.oauthCookieSecret, 'utf8').toString('base64') },
+      data: { 'cookie-secret': props.oauthCookieSecret },
     });
     return secretName;
   }
@@ -330,7 +330,10 @@ export class OpenShiftDevenv extends Chart {
     };
   }
 
-  private buildLifecycle(paseoAutoResume: ResolvedPaseoAutoResume): PodLifecycle | undefined {
+  private buildLifecycle(
+    paseoAutoResume: ResolvedPaseoAutoResume,
+    homeMountPath: string,
+  ): PodLifecycle | undefined {
     if (!paseoAutoResume.enabled) return undefined;
     return {
       postStart: {
@@ -339,9 +342,10 @@ export class OpenShiftDevenv extends Chart {
             '/bin/bash',
             '-c',
             [
-              'export PASEO_HOME=/env/.paseo',
-              'export HOME=/env',
-              'nohup /bin/bash /usr/local/share/paseo-auto-resume/auto-resume.sh >> /env/.paseo/auto-resume.log 2>&1 &',
+              `export PASEO_HOME=${homeMountPath}/.paseo`,
+              `export HOME=${homeMountPath}`,
+              `mkdir -p "${homeMountPath}/.paseo"`,
+              `nohup /bin/bash /usr/local/share/paseo-auto-resume/auto-resume.sh >> ${homeMountPath}/.paseo/auto-resume.log 2>&1 &`,
             ].join('\n'),
           ],
         },
@@ -515,7 +519,11 @@ export class OpenShiftDevenv extends Chart {
                       allowPrivilegeEscalation: false,
                       capabilities: { drop: ['ALL'] },
                     },
-                    command: ['/bin/sh', '-ec', buildKeepaliveScript(name, namespace)],
+                    command: ['/bin/sh', '-ec', buildKeepaliveScript()],
+                    env: [
+                      { name: 'WORKSPACE_NAME', value: name },
+                      { name: 'NAMESPACE', value: namespace },
+                    ],
                   },
                 ],
               },
@@ -587,8 +595,10 @@ export class OpenShiftDevenv extends Chart {
                     env: [
                       { name: 'WORKSPACE_POD_LABEL', value: `app.kubernetes.io/name=${name}` },
                       { name: 'NAMESPACE', value: namespace },
+                      { name: 'HOME_MOUNT_PATH', value: homeMountPath },
+                      { name: 'BACKUP_KEEP', value: String(backup.keep) },
                     ],
-                    command: ['/bin/sh', '-ec', buildBackupScript(backup.keep, homeMountPath)],
+                    command: ['/bin/sh', '-ec', buildBackupScript()],
                   },
                 ],
               },
@@ -654,29 +664,29 @@ function simpleHash(str: string): string {
   return Math.abs(hash).toString(16);
 }
 
-function buildKeepaliveScript(name: string, namespace: string): string {
+function buildKeepaliveScript(): string {
   return [
-    `REPLICAS=$(oc get deployment ${name} -n ${namespace} -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")`,
+    `REPLICAS=$(oc get deployment "$WORKSPACE_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")`,
     'if [ "${REPLICAS}" -le 0 ]; then',
-    `  echo "Deployment ${name} is scaled to zero. Scaling up to 1..."`,
-    `  oc scale deployment ${name} -n ${namespace} --replicas=1`,
+    '  echo "Deployment $WORKSPACE_NAME is scaled to zero. Scaling up to 1..."',
+    '  oc scale deployment "$WORKSPACE_NAME" -n "$NAMESPACE" --replicas=1',
     'fi',
-    `POD=$(oc get pods -n ${namespace} -l app.kubernetes.io/name=${name} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)`,
+    `POD=$(oc get pods -n "$NAMESPACE" -l app.kubernetes.io/name="$WORKSPACE_NAME" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)`,
     'if [ -z "$POD" ]; then',
-    `  echo "No ${name} pod found yet — Deployment controller will create one."`,
+    '  echo "No $WORKSPACE_NAME pod found yet — Deployment controller will create one."',
     '  exit 0',
     'fi',
-    `STATUS=$(oc get pod "$POD" -n ${namespace} -o jsonpath='{.status.phase}' 2>/dev/null || true)`,
+    `STATUS=$(oc get pod "$POD" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || true)`,
     'if [ "$STATUS" != "Running" ]; then',
     '  echo "Pod $POD is not Running (status: $STATUS). Deleting so Deployment recreates it."',
-    `  oc delete pod "$POD" -n ${namespace} || true`,
+    '  oc delete pod "$POD" -n "$NAMESPACE" || true',
     'else',
     '  echo "Pod $POD is Running. All good."',
     'fi',
   ].join('\n');
 }
 
-function buildBackupScript(keep: number, homeMountPath: string): string {
+function buildBackupScript(): string {
   return [
     'POD=$(oc get pods -n "${NAMESPACE}" -l "${WORKSPACE_POD_LABEL}" --field-selector=status.phase=Running -o jsonpath=\'{.items[0].metadata.name}\')',
     'if [ -z "${POD}" ]; then',
@@ -684,7 +694,7 @@ function buildBackupScript(keep: number, homeMountPath: string): string {
     '  exit 1',
     'fi',
     'echo "Backing up from pod: ${POD}"',
-    `oc exec -n "\${NAMESPACE}" "\${POD}" -c devenv -- env HOME_MOUNT_PATH=${JSON.stringify(homeMountPath)} BACKUP_KEEP=${keep} /bin/sh -ec '`,
+    `oc exec -n "\${NAMESPACE}" "\${POD}" -c devenv -- env HOME_MOUNT_PATH="\${HOME_MOUNT_PATH}" BACKUP_KEEP="\${BACKUP_KEEP}" /bin/sh -ec '`,
     '  for f in /etc/r2-credentials/AWS_ACCESS_KEY_ID /etc/r2-credentials/AWS_SECRET_ACCESS_KEY /etc/r2-credentials/R2_ACCOUNT_ID /etc/r2-credentials/R2_BUCKET /etc/r2-credentials/BACKUP_PASSWORD; do',
     '    if [ ! -f "$f" ]; then echo "Fatal: missing R2 credential file $f"; exit 1; fi',
     '  done',
