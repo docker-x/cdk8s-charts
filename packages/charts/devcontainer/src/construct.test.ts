@@ -10,11 +10,18 @@ function synth(props: ConstructorParameters<typeof Devcontainer>[2]) {
   return Testing.synth(chart);
 }
 
+type Obj = Record<string, unknown>;
+
 /** Find a synthesized Kubernetes manifest by kind and optional name. */
-function find(manifests: object[], kind: string, name?: string): Record<string, any> {
-  const found = manifests.find((m: any) => m.kind === kind && (!name || m.metadata?.name === name));
+function find(manifests: object[], kind: string, name?: string): Obj {
+  const found = manifests.find((m): boolean => {
+    const obj = m as Obj;
+    return (
+      obj.kind === kind && (!name || (obj.metadata as { name?: string } | undefined)?.name === name)
+    );
+  });
   if (!found) throw new Error(`Expected ${kind}${name ? ` named ${name}` : ''} not found`);
-  return found as Record<string, any>;
+  return found as Obj;
 }
 
 describe('Devcontainer construct', () => {
@@ -28,18 +35,30 @@ describe('Devcontainer construct', () => {
     expect(dep).toBeDefined();
     expect(pvc).toBeDefined();
     expect(svc).toBeDefined();
-    expect(dep.metadata.labels['app.kubernetes.io/name']).toBe('dev');
-    expect(dep.metadata.labels['app.kubernetes.io/managed-by']).toBe('cdk8s');
-    expect(svc.spec.selector['app.kubernetes.io/name']).toBe('dev');
+    expect(
+      (dep.metadata as { labels: Record<string, string> }).labels['app.kubernetes.io/name'],
+    ).toBe('dev');
+    expect(
+      (dep.metadata as { labels: Record<string, string> }).labels['app.kubernetes.io/managed-by'],
+    ).toBe('cdk8s');
+    expect(
+      (svc.spec as { selector: Record<string, string> }).selector['app.kubernetes.io/name'],
+    ).toBe('dev');
   });
 
   it('sets security context with runAsNonRoot and dropped capabilities', () => {
     const m = synth(baseProps);
     const dep = find(m, 'Deployment', 'dev');
-    const c = dep.spec.template.spec.containers[0];
-    expect(c.securityContext.runAsNonRoot).toBe(true);
-    expect(c.securityContext.allowPrivilegeEscalation).toBe(false);
-    expect(c.securityContext.capabilities.drop).toContain('ALL');
+    const spec = dep.spec as { template: { spec: { containers: Obj[] } } };
+    const c = spec.template.spec.containers[0];
+    const sc = c.securityContext as {
+      runAsNonRoot: boolean;
+      allowPrivilegeEscalation: boolean;
+      capabilities: { drop: string[] };
+    };
+    expect(sc.runAsNonRoot).toBe(true);
+    expect(sc.allowPrivilegeEscalation).toBe(false);
+    expect(sc.capabilities.drop).toContain('ALL');
   });
 
   it('creates a ServiceAccount by default', () => {
@@ -50,47 +69,62 @@ describe('Devcontainer construct', () => {
 
   it('does not create a ServiceAccount when serviceAccountName is provided', () => {
     const m = synth({ ...baseProps, serviceAccountName: 'custom-sa' });
-    const sas = m.filter((o: any) => o.kind === 'ServiceAccount');
+    const sas = m.filter((o) => (o as Obj).kind === 'ServiceAccount');
     expect(sas).toHaveLength(0);
     const dep = find(m, 'Deployment', 'dev');
-    expect(dep.spec.template.spec.serviceAccountName).toBe('custom-sa');
+    const spec = dep.spec as { template: { spec: { serviceAccountName: string } } };
+    expect(spec.template.spec.serviceAccountName).toBe('custom-sa');
   });
 
   it('respects serviceAccountName override via values deep-merge', () => {
     const m = synth({ ...baseProps, values: { serviceAccountName: 'merged-sa' } });
     const dep = find(m, 'Deployment', 'dev');
-    expect(dep.spec.template.spec.serviceAccountName).toBe('merged-sa');
+    const spec = dep.spec as { template: { spec: { serviceAccountName: string } } };
+    expect(spec.template.spec.serviceAccountName).toBe('merged-sa');
   });
 
   it('skips PVC creation when existingPvcName is provided and uses it', () => {
     const m = synth({ ...baseProps, existingPvcName: 'existing-pvc' });
-    const pvcs = m.filter((o: any) => o.kind === 'PersistentVolumeClaim');
+    const pvcs = m.filter((o) => (o as Obj).kind === 'PersistentVolumeClaim');
     expect(pvcs).toHaveLength(0);
     const dep = find(m, 'Deployment', 'dev');
-    const vol = dep.spec.template.spec.volumes.find((v: any) => v.name === 'workspace-state');
+    const spec = dep.spec as {
+      template: {
+        spec: { volumes: { name: string; persistentVolumeClaim: { claimName: string } }[] };
+      };
+    };
+    const vol = spec.template.spec.volumes.find((v) => v.name === 'workspace-state')!;
     expect(vol.persistentVolumeClaim.claimName).toBe('existing-pvc');
   });
 
   it('creates PVC with correct storage size and class', () => {
     const m = synth({ ...baseProps, storageSize: '50Gi', storageClass: 'fast' });
     const pvc = find(m, 'PersistentVolumeClaim', 'dev-state');
-    expect(pvc.spec.resources.requests.storage).toBe('50Gi');
-    expect(pvc.spec.storageClassName).toBe('fast');
+    const spec = pvc.spec as {
+      resources: { requests: { storage: string } };
+      storageClassName: string;
+    };
+    expect(spec.resources.requests.storage).toBe('50Gi');
+    expect(spec.storageClassName).toBe('fast');
   });
 
   it('mounts PVC at homeMountPath', () => {
     const m = synth({ ...baseProps, homeMountPath: '/home/custom' });
     const dep = find(m, 'Deployment', 'dev');
-    const mount = dep.spec.template.spec.containers[0].volumeMounts.find(
-      (v: any) => v.name === 'workspace-state',
-    );
+    const spec = dep.spec as {
+      template: { spec: { containers: { volumeMounts: { name: string; mountPath: string }[] }[] } };
+    };
+    const mount = spec.template.spec.containers[0].volumeMounts.find(
+      (v) => v.name === 'workspace-state',
+    )!;
     expect(mount.mountPath).toBe('/home/custom');
   });
 
   it('exposes ssh and preview ports', () => {
     const m = synth(baseProps);
     const svc = find(m, 'Service', 'dev');
-    const portNames = svc.spec.ports.map((p: any) => p.name);
+    const spec = svc.spec as { ports: { name: string }[] };
+    const portNames = spec.ports.map((p) => p.name);
     expect(portNames).toContain('ssh');
     expect(portNames).toContain('preview');
   });
@@ -99,7 +133,9 @@ describe('Devcontainer construct', () => {
     const m = synth({ ...baseProps, sshAuthorizedKeys: 'ssh-ed25519 AAAA test' });
     const secret = find(m, 'Secret', 'dev-ssh-keys');
     expect(secret).toBeDefined();
-    expect(secret.stringData.authorized_keys).toBe('ssh-ed25519 AAAA test');
+    expect((secret.stringData as { authorized_keys: string }).authorized_keys).toBe(
+      'ssh-ed25519 AAAA test',
+    );
   });
 
   it('respects sshSecretName override via values', () => {

@@ -10,11 +10,18 @@ function synth(props: ConstructorParameters<typeof GhaRunner>[2]) {
   return Testing.synth(chart);
 }
 
+type Obj = Record<string, unknown>;
+
 /** Find a synthesized Kubernetes manifest by kind and optional name. */
-function find(manifests: object[], kind: string, name?: string): Record<string, any> {
-  const found = manifests.find((m: any) => m.kind === kind && (!name || m.metadata?.name === name));
+function find(manifests: object[], kind: string, name?: string): Obj {
+  const found = manifests.find((m): boolean => {
+    const obj = m as Obj;
+    return (
+      obj.kind === kind && (!name || (obj.metadata as { name?: string } | undefined)?.name === name)
+    );
+  });
   if (!found) throw new Error(`Expected ${kind}${name ? ` named ${name}` : ''} not found`);
-  return found as Record<string, any>;
+  return found as Obj;
 }
 
 const baseProps = {
@@ -25,6 +32,17 @@ const baseProps = {
   githubAppId: '123456',
   githubAppInstallationId: '789',
   githubAppPem: 'test-fake-key-not-a-real-pem-just-a-placeholder-string',
+};
+
+type Container = {
+  name: string;
+  securityContext: {
+    runAsNonRoot: boolean;
+    allowPrivilegeEscalation: boolean;
+    capabilities: { drop: string[] };
+  };
+  volumeMounts: { name: string; mountPath: string; readOnly: boolean }[];
+  resources: { requests: { memory: string; cpu: string }; limits: { memory: string; cpu: string } };
 };
 
 describe('GhaRunner construct', () => {
@@ -40,7 +58,8 @@ describe('GhaRunner construct', () => {
   it('sets securityContext on the main runner container', () => {
     const m = synth(baseProps);
     const dep = find(m, 'Deployment', 'runner');
-    const runner = dep.spec.template.spec.containers.find((c: any) => c.name === 'runner');
+    const spec = dep.spec as { template: { spec: { containers: Container[] } } };
+    const runner = spec.template.spec.containers.find((c) => c.name === 'runner')!;
     expect(runner.securityContext.runAsNonRoot).toBe(true);
     expect(runner.securityContext.allowPrivilegeEscalation).toBe(false);
     expect(runner.securityContext.capabilities.drop).toContain('ALL');
@@ -49,7 +68,8 @@ describe('GhaRunner construct', () => {
   it('sets securityContext on the init-nix container', () => {
     const m = synth(baseProps);
     const dep = find(m, 'Deployment', 'runner');
-    const init = dep.spec.template.spec.initContainers.find((c: any) => c.name === 'init-nix');
+    const spec = dep.spec as { template: { spec: { initContainers: Container[] } } };
+    const init = spec.template.spec.initContainers.find((c) => c.name === 'init-nix')!;
     expect(init.securityContext).toBeDefined();
     expect(init.securityContext.runAsNonRoot).toBe(true);
     expect(init.securityContext.allowPrivilegeEscalation).toBe(false);
@@ -59,11 +79,19 @@ describe('GhaRunner construct', () => {
   it('mounts GitHub App secret read-only at /secrets', () => {
     const m = synth(baseProps);
     const dep = find(m, 'Deployment', 'runner');
-    const vol = dep.spec.template.spec.volumes.find((v: any) => v.name === 'github-app');
+    const spec = dep.spec as {
+      template: {
+        spec: {
+          volumes: { name: string; secret: { secretName: string } }[];
+          containers: Container[];
+        };
+      };
+    };
+    const vol = spec.template.spec.volumes.find((v) => v.name === 'github-app')!;
     expect(vol.secret.secretName).toBe('runner-github-app');
-    const mount = dep.spec.template.spec.containers[0].volumeMounts.find(
-      (vm: any) => vm.name === 'github-app',
-    );
+    const mount = spec.template.spec.containers[0].volumeMounts.find(
+      (vm) => vm.name === 'github-app',
+    )!;
     expect(mount.mountPath).toBe('/secrets');
     expect(mount.readOnly).toBe(true);
   });
@@ -71,7 +99,8 @@ describe('GhaRunner construct', () => {
   it('sets resource requests and limits on the runner container', () => {
     const m = synth(baseProps);
     const dep = find(m, 'Deployment', 'runner');
-    const runner = dep.spec.template.spec.containers[0];
+    const spec = dep.spec as { template: { spec: { containers: Container[] } } };
+    const runner = spec.template.spec.containers[0];
     expect(runner.resources.requests.memory).toBeDefined();
     expect(runner.resources.requests.cpu).toBeDefined();
     expect(runner.resources.limits.memory).toBeDefined();

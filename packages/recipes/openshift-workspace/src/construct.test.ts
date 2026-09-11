@@ -9,11 +9,18 @@ function synth(props: ConstructorParameters<typeof OpenShiftWorkspace>[2]) {
   return Testing.synth(chart);
 }
 
+type Obj = Record<string, unknown>;
+
 /** Find a synthesized Kubernetes manifest by kind and optional name. */
-function find(manifests: object[], kind: string, name?: string): Record<string, any> {
-  const found = manifests.find((m: any) => m.kind === kind && (!name || m.metadata?.name === name));
+function find(manifests: object[], kind: string, name?: string): Obj {
+  const found = manifests.find((m): boolean => {
+    const obj = m as Obj;
+    return (
+      obj.kind === kind && (!name || (obj.metadata as { name?: string } | undefined)?.name === name)
+    );
+  });
   if (!found) throw new Error(`Expected ${kind}${name ? ` named ${name}` : ''} not found`);
-  return found as Record<string, any>;
+  return found as Obj;
 }
 
 const baseProps = {
@@ -44,14 +51,26 @@ describe('OpenShiftWorkspace recipe', () => {
     const secret = find(m, 'Secret', 'workspace-oauth-cookie');
     expect(secret).toBeDefined();
     // The value should be the raw base64 input, NOT base64-encoded again
-    expect(secret.data['cookie-secret']).toBe(baseProps.oauthCookieSecret);
+    expect((secret.data as Record<string, string>)['cookie-secret']).toBe(
+      baseProps.oauthCookieSecret,
+    );
   });
 
   it('injects OAuth proxy sidecar into the Deployment', () => {
     const m = synth(baseProps);
     const dep = find(m, 'Deployment', 'workspace');
-    const containers = dep.spec.template.spec.containers;
-    const proxy = containers.find((c: any) => c.name === 'oauth-proxy');
+    const spec = dep.spec as {
+      template: {
+        spec: {
+          containers: {
+            name: string;
+            image: string;
+            securityContext: { runAsNonRoot: boolean; capabilities: { drop: string[] } };
+          }[];
+        };
+      };
+    };
+    const proxy = spec.template.spec.containers.find((c) => c.name === 'oauth-proxy')!;
     expect(proxy).toBeDefined();
     expect(proxy.image).toContain('oauth-proxy');
     expect(proxy.securityContext.runAsNonRoot).toBe(true);
@@ -62,7 +81,9 @@ describe('OpenShiftWorkspace recipe', () => {
     const m = synth(baseProps);
     const sa = find(m, 'ServiceAccount', 'workspace-sa');
     expect(sa).toBeDefined();
-    const ann = sa.metadata.annotations['serviceaccounts.openshift.io/oauth-redirecturi.primary'];
+    const ann = (sa.metadata as { annotations: Record<string, string> }).annotations[
+      'serviceaccounts.openshift.io/oauth-redirecturi.primary'
+    ];
     expect(ann).toBe('https://workspace-paseo-test-ns.apps.example.com/oauth/callback');
   });
 
@@ -72,10 +93,9 @@ describe('OpenShiftWorkspace recipe', () => {
       values: { serviceAccountAnnotations: { 'custom.annotation/foo': 'bar' } },
     });
     const sa = find(m, 'ServiceAccount', 'workspace-sa');
-    expect(sa.metadata.annotations['custom.annotation/foo']).toBe('bar');
-    expect(
-      sa.metadata.annotations['serviceaccounts.openshift.io/oauth-redirecturi.primary'],
-    ).toBeDefined();
+    const ann = (sa.metadata as { annotations: Record<string, string> }).annotations;
+    expect(ann['custom.annotation/foo']).toBe('bar');
+    expect(ann['serviceaccounts.openshift.io/oauth-redirecturi.primary']).toBeDefined();
   });
 
   it('creates OpenShift Routes for Paseo and preview', () => {
@@ -84,13 +104,18 @@ describe('OpenShiftWorkspace recipe', () => {
     const previewRoute = find(m, 'Route', 'workspace-preview');
     expect(paseoRoute).toBeDefined();
     expect(previewRoute).toBeDefined();
-    expect(paseoRoute.spec.tls.termination).toBe('edge');
+    expect((paseoRoute.spec as { tls: { termination: string } }).tls.termination).toBe('edge');
   });
 
   it('lifecycle postStart hook includes mkdir -p for .paseo directory', () => {
     const m = synth(baseProps);
     const dep = find(m, 'Deployment', 'workspace');
-    const lifecycle = dep.spec.template.spec.containers[0].lifecycle;
+    const spec = dep.spec as {
+      template: {
+        spec: { containers: { lifecycle: { postStart: { exec: { command: string[] } } } }[] };
+      };
+    };
+    const lifecycle = spec.template.spec.containers[0].lifecycle;
     expect(lifecycle).toBeDefined();
     const cmd = lifecycle.postStart.exec.command.join('\n');
     expect(cmd).toContain('mkdir -p');
@@ -100,7 +125,12 @@ describe('OpenShiftWorkspace recipe', () => {
   it('lifecycle hook uses configured homeMountPath instead of hardcoded /home/vscode', () => {
     const m = synth({ ...baseProps, homeMountPath: '/home/custom' });
     const dep = find(m, 'Deployment', 'workspace');
-    const cmd = dep.spec.template.spec.containers[0].lifecycle.postStart.exec.command.join('\n');
+    const spec = dep.spec as {
+      template: {
+        spec: { containers: { lifecycle: { postStart: { exec: { command: string[] } } } }[] };
+      };
+    };
+    const cmd = spec.template.spec.containers[0].lifecycle.postStart.exec.command.join('\n');
     expect(cmd).toContain('/home/custom/.paseo');
     expect(cmd).not.toContain('/home/vscode');
   });
@@ -109,8 +139,15 @@ describe('OpenShiftWorkspace recipe', () => {
     const m = synth(baseProps);
     const cj = find(m, 'CronJob', 'workspace-keepalive');
     expect(cj).toBeDefined();
-    const container = cj.spec.jobTemplate.spec.template.spec.containers[0];
-    const envNames = container.env.map((e: any) => e.name);
+    const spec = cj.spec as {
+      jobTemplate: {
+        spec: {
+          template: { spec: { containers: { env: { name: string }[]; command: string[] }[] } };
+        };
+      };
+    };
+    const container = spec.jobTemplate.spec.template.spec.containers[0];
+    const envNames = container.env.map((e) => e.name);
     expect(envNames).toContain('WORKSPACE_NAME');
     expect(envNames).toContain('NAMESPACE');
     expect(container.command[2]).toContain('$WORKSPACE_NAME');
@@ -130,8 +167,17 @@ describe('OpenShiftWorkspace recipe', () => {
     });
     const cj = find(m, 'CronJob', 'workspace-backup');
     expect(cj).toBeDefined();
-    const container = cj.spec.jobTemplate.spec.template.spec.containers[0];
-    const env = Object.fromEntries(container.env.map((e: any) => [e.name, e.value]));
+    const spec = cj.spec as {
+      jobTemplate: {
+        spec: {
+          template: {
+            spec: { containers: { env: { name: string; value: string }[]; command: string[] }[] };
+          };
+        };
+      };
+    };
+    const container = spec.jobTemplate.spec.template.spec.containers[0];
+    const env = Object.fromEntries(container.env.map((e) => [e.name, e.value]));
     expect(env.HOME_MOUNT_PATH).toBe('/home/vscode');
     expect(env.BACKUP_KEEP).toBe('3');
     // Script must reference the env var, not a hardcoded/interpolated path
@@ -143,7 +189,8 @@ describe('OpenShiftWorkspace recipe', () => {
     const m = synth(baseProps);
     const role = find(m, 'Role', 'workspace-tf-deployer');
     expect(role).toBeDefined();
-    const secretRules = role.rules.filter((r: any) => r.resources?.includes('secrets'));
+    const rules = role.rules as { resources?: string[]; verbs: string[] }[];
+    const secretRules = rules.filter((r) => r.resources?.includes('secrets'));
     for (const rule of secretRules) {
       expect(rule.verbs).not.toContain('list');
       expect(rule.verbs).not.toContain('watch');
