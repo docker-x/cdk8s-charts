@@ -90,6 +90,7 @@ function buildLabels(name: string): Record<string, string> {
 export class GhaRunner extends HelmConstruct<Values> {
   readonly exports: Exports;
 
+  /** Create a self-hosted GitHub Actions runner and its supporting resources. */
   constructor(scope: Construct, id: string, props: Props) {
     super(scope, id);
 

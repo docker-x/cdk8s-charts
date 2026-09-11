@@ -77,6 +77,7 @@ function buildTfDeployerRules(saName: string) {
 export class OpenShiftWorkspace extends Chart {
   public readonly exports: OpenShiftWorkspaceExports;
 
+  /** Compose a devcontainer workspace and its supporting OpenShift resources. */
   constructor(scope: Construct, id: string, props: OpenShiftWorkspaceProps) {
     super(scope, id);
     const name = props.values?.name ?? props.name ?? 'workspace';
@@ -149,6 +150,7 @@ export class OpenShiftWorkspace extends Chart {
     };
   }
 
+  /** Reject home mount paths that are unsafe to use in generated shell commands. */
   private validateHomeMountPath(homeMountPath: string) {
     if (!homeMountPath.startsWith('/'))
       throw new Error(`Invalid homeMountPath "${homeMountPath}": must be an absolute path`);
@@ -636,6 +638,7 @@ export class OpenShiftWorkspace extends Chart {
     });
   }
 
+  /** Create the service account and scoped RBAC resources used by the TF deployer. */
   private createTfDeployer(name: string, namespace: string, tfDeployer: ResolvedTfDeployer): void {
     const saName = `${name}-tf-deployer`;
     new ApiObject(this, 'tf-deployer-sa', {
@@ -685,6 +688,7 @@ function simpleHash(str: string): string {
   return Math.abs(hash).toString(16);
 }
 
+/** Build the script that restores a scaled-down or terminal workspace workload. */
 function buildKeepaliveScript(): string {
   return [
     `REPLICAS=$(oc get deployment "$WORKSPACE_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")`,
@@ -709,6 +713,7 @@ function buildKeepaliveScript(): string {
   ].join('\n');
 }
 
+/** Build the script that archives, uploads, and rotates workspace backups. */
 function buildBackupScript(): string {
   return [
     'POD=$(oc get pods -n "${NAMESPACE}" -l "${WORKSPACE_POD_LABEL}" --field-selector=status.phase=Running -o jsonpath=\'{.items[0].metadata.name}\')',

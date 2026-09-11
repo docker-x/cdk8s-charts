@@ -2,6 +2,7 @@ import { Chart, Testing } from 'cdk8s';
 import { describe, expect, it } from 'vitest';
 import { Devcontainer } from './construct';
 
+/** Synthesize a Devcontainer chart for assertions. */
 function synth(props: ConstructorParameters<typeof Devcontainer>[2]) {
   const app = Testing.app();
   const chart = new Chart(app, 'test-chart');
@@ -9,6 +10,7 @@ function synth(props: ConstructorParameters<typeof Devcontainer>[2]) {
   return Testing.synth(chart);
 }
 
+/** Find a synthesized Kubernetes manifest by kind and optional name. */
 function find(manifests: object[], kind: string, name?: string): Record<string, any> {
   const found = manifests.find((m: any) => m.kind === kind && (!name || m.metadata?.name === name));
   if (!found) throw new Error(`Expected ${kind}${name ? ` named ${name}` : ''} not found`);

@@ -2,12 +2,14 @@ import { Testing } from 'cdk8s';
 import { describe, expect, it } from 'vitest';
 import { OpenShiftWorkspace } from './construct';
 
+/** Synthesize an OpenShiftWorkspace chart for assertions. */
 function synth(props: ConstructorParameters<typeof OpenShiftWorkspace>[2]) {
   const app = Testing.app();
   const chart = new OpenShiftWorkspace(app, 'test', props);
   return Testing.synth(chart);
 }
 
+/** Find a synthesized Kubernetes manifest by kind and optional name. */
 function find(manifests: object[], kind: string, name?: string): Record<string, any> {
   const found = manifests.find((m: any) => m.kind === kind && (!name || m.metadata?.name === name));
   if (!found) throw new Error(`Expected ${kind}${name ? ` named ${name}` : ''} not found`);

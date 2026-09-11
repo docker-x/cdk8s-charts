@@ -11,6 +11,7 @@ function buildLabels(name: string): Record<string, string> {
 export class Devenv extends HelmConstruct<Values> {
   public readonly exports: Exports;
 
+  /** Create the devenv workspace resources described by the supplied chart values. */
   constructor(scope: Construct, id: string, props: Props) {
     super(scope, id);
 
@@ -56,6 +57,7 @@ export class Devenv extends HelmConstruct<Values> {
     };
   }
 
+  /** Reject home mount paths that are unsafe to use in generated shell commands. */
   private validateHomeMountPath(homeMountPath: string) {
     if (!homeMountPath.startsWith('/'))
       throw new Error(`Invalid homeMountPath "${homeMountPath}": must be an absolute path`);
