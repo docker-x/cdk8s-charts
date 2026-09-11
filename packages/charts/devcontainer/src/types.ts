@@ -1,14 +1,10 @@
-import type { DeepPartial, SecretRefs, Volume, VolumeMount } from '@cdk8s-charts/utils';
-
-// ---------------------------------------------------------------------------
-// Resources
-// ---------------------------------------------------------------------------
-
-export interface ResourceValues {
-  requests?: { memory?: string; cpu?: string };
-  limits?: { memory?: string; cpu?: string };
-  [key: string]: unknown;
-}
+import type {
+  DeepPartial,
+  ResourceValues,
+  SecretRefs,
+  Volume,
+  VolumeMount,
+} from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
 // Internal values (deep-merged with user overrides)

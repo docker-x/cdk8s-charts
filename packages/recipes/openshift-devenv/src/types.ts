@@ -1,5 +1,5 @@
 import type { Values as DevenvValues } from '@cdk8s-charts/devenv';
-import type { DeepPartial } from '@cdk8s-charts/utils';
+import type { DeepPartial, ResourceValues } from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
 // Sub-configs
@@ -34,12 +34,6 @@ export interface PaseoAutoResumeConfig {
 
 export interface TfDeployerConfig {
   enabled?: boolean;
-}
-
-export interface ResourceValues {
-  requests?: { memory?: string; cpu?: string };
-  limits?: { memory?: string; cpu?: string };
-  [key: string]: unknown;
 }
 
 // ---------------------------------------------------------------------------

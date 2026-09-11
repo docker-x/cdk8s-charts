@@ -7,6 +7,13 @@ export function buildWorkspaceLabels(name: string): Record<string, string> {
   return { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' };
 }
 
+/** Container resource requests and limits. */
+export interface ResourceValues {
+  requests?: { memory?: string; cpu?: string };
+  limits?: { memory?: string; cpu?: string };
+  [key: string]: unknown;
+}
+
 /** Common workspace values used by shared factory functions. */
 export interface WorkspaceValues {
   sshAuthorizedKeys?: string;
