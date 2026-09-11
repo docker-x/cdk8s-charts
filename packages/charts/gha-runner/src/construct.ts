@@ -278,6 +278,7 @@ export class GhaRunner extends HelmConstruct<Values> {
       annotations: props.annotations,
       serviceAccountName: props.serviceAccountName,
       runAsNonRoot: props.runAsNonRoot ?? true,
+      fsGroup: props.fsGroup,
       name,
     };
     return props.values ? deepMerge(computed, props.values) : computed;
