@@ -776,3 +776,93 @@ log "auto-resume complete: $resumed agent(s) resumed"`;
 
 /** Backward-compatible constant (devcontainer variant). */
 export const PASEO_AUTO_RESUME_SCRIPT = getPaseoAutoResumeScript('devcontainer');
+
+// ---------------------------------------------------------------------------
+// Recipe chart factory (shared between openshift-workspace and openshift-devenv)
+// ---------------------------------------------------------------------------
+
+export interface WorkspaceRecipeProps {
+  image: string;
+  imageDigest?: string;
+  pvcSize?: string;
+  pvcStorageClass?: string;
+  existingPvcName?: string;
+  sshAuthorizedKeys?: string;
+  ghcrPullSecret?: string;
+  resources?: Record<string, unknown>;
+  values?: {
+    serviceAccountName?: string;
+    serviceAccountAnnotations?: Record<string, string>;
+    [key: string]: unknown;
+  };
+}
+
+export interface CreateWorkspaceRecipeOpts {
+  name: string;
+  namespace: string;
+  appsDomain: string;
+  props: WorkspaceRecipeProps;
+  homeMountPath: string;
+  workspaceEnv: Record<string, string>;
+  podAnnotations: Record<string, string>;
+  extraVolumes: Array<{ name: string; [key: string]: unknown }>;
+  extraVolumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }>;
+  oauthProxySidecar: SidecarContainer;
+  lifecycle: PodLifecycle | undefined;
+}
+
+export function buildWorkspaceRecipeValues(
+  name: string,
+  namespace: string,
+  appsDomain: string,
+  props: WorkspaceRecipeProps,
+): Record<string, unknown> {
+  const paseoRedirectUri = `https://${name}-paseo-${namespace}.${appsDomain}/oauth/callback`;
+  return {
+    ...props.values,
+    serviceAccountAnnotations: {
+      'serviceaccounts.openshift.io/oauth-redirecturi.primary': paseoRedirectUri,
+      ...props.values?.serviceAccountAnnotations,
+    },
+  };
+}
+
+export function buildWorkspaceRecipeProps(
+  opts: CreateWorkspaceRecipeOpts,
+): Record<string, unknown> {
+  const {
+    name,
+    namespace,
+    appsDomain,
+    props,
+    homeMountPath,
+    workspaceEnv,
+    podAnnotations,
+    extraVolumes,
+    extraVolumeMounts,
+    oauthProxySidecar,
+    lifecycle,
+  } = opts;
+  return {
+    namespace,
+    image: props.image,
+    imageDigest: props.imageDigest,
+    name,
+    storageSize: props.pvcSize ?? '30Gi',
+    storageClass: props.pvcStorageClass ?? 'gp3',
+    existingPvcName: props.existingPvcName,
+    homeMountPath,
+    sshAuthorizedKeys: props.sshAuthorizedKeys,
+    imagePullSecret: props.ghcrPullSecret,
+    env: workspaceEnv,
+    resources: props.resources,
+    labels: { 'app.kubernetes.io/managed-by': 'cdk8s' },
+    annotations: podAnnotations,
+    volumes: extraVolumes,
+    volumeMounts: extraVolumeMounts,
+    sidecars: [oauthProxySidecar],
+    lifecycle,
+    extraServicePorts: [{ name: 'oauth-proxy', port: 4180, targetPort: 'oauth-proxy' }],
+    values: buildWorkspaceRecipeValues(name, namespace, appsDomain, props),
+  };
+}

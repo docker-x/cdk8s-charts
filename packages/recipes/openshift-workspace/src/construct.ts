@@ -1,12 +1,10 @@
-import type { SidecarContainer as DevSidecarContainer } from '@cdk8s-charts/devcontainer';
 import { Devcontainer } from '@cdk8s-charts/devcontainer';
 import type {
-  PodLifecycle,
+  R2SecretResult,
   ResolvedBackup,
   ResolvedKeepalive,
   ResolvedPaseoAutoResume,
   ResolvedTfDeployer,
-  SidecarContainer,
 } from '@cdk8s-charts/utils';
 import {
   buildExtraVolumes,
@@ -14,6 +12,7 @@ import {
   buildOauthProxySidecar,
   buildPodAnnotations,
   buildWorkspaceEnv,
+  buildWorkspaceRecipeProps,
   createBackupCronJob,
   createBackupRbac,
   createKeepaliveCronJob,
@@ -62,7 +61,12 @@ export class OpenShiftWorkspace extends Chart {
     );
     const saName = props.values?.serviceAccountName ?? `${name}-sa`;
     const saTokenSecretName = createSaTokenSecret(this, name, namespace, saName);
-    const { r2SecretName, hasBackupSecrets } = createR2Secret(this, name, namespace, backup);
+    const { r2SecretName, hasBackupSecrets }: R2SecretResult = createR2Secret(
+      this,
+      name,
+      namespace,
+      backup,
+    );
     const autoResumeConfigMapName = createPaseoConfigMap(this, name, namespace, paseoAutoResume);
     const { extraVolumes, extraVolumeMounts } = buildExtraVolumes({
       hasBackupSecrets,
@@ -76,19 +80,23 @@ export class OpenShiftWorkspace extends Chart {
     const lifecycle = buildLifecycle(paseoAutoResume, homeMountPath);
     const workspaceEnv = buildWorkspaceEnv(name, namespace, appsDomain, props.env);
     const podAnnotations = buildPodAnnotations(paseoAutoResume);
-    const devcontainer = this.createDevcontainer({
-      name,
-      namespace,
-      appsDomain,
-      props,
-      homeMountPath,
-      workspaceEnv,
-      podAnnotations,
-      extraVolumes,
-      extraVolumeMounts,
-      oauthProxySidecar,
-      lifecycle,
-    });
+    const devcontainer = new Devcontainer(
+      this,
+      'workspace',
+      buildWorkspaceRecipeProps({
+        name,
+        namespace,
+        appsDomain,
+        props: props as unknown as Parameters<typeof buildWorkspaceRecipeProps>[0]['props'],
+        homeMountPath,
+        workspaceEnv,
+        podAnnotations,
+        extraVolumes,
+        extraVolumeMounts,
+        oauthProxySidecar,
+        lifecycle,
+      }) as unknown as ConstructorParameters<typeof Devcontainer>[2],
+    );
     const routes = createRoutes(
       this,
       name,
@@ -113,62 +121,5 @@ export class OpenShiftWorkspace extends Chart {
       keepaliveCronJobName: keepalive.enabled ? `${name}-keepalive` : '',
       tfDeployerSaName: tfDeployer.enabled ? tfDeployerSaName : '',
     };
-  }
-
-  private createDevcontainer(opts: {
-    name: string;
-    namespace: string;
-    appsDomain: string;
-    props: OpenShiftWorkspaceProps;
-    homeMountPath: string;
-    workspaceEnv: Record<string, string>;
-    podAnnotations: Record<string, string>;
-    extraVolumes: Array<{ name: string; [key: string]: unknown }>;
-    extraVolumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }>;
-    oauthProxySidecar: SidecarContainer;
-    lifecycle: PodLifecycle | undefined;
-  }) {
-    const {
-      name,
-      namespace,
-      appsDomain,
-      props,
-      homeMountPath,
-      workspaceEnv,
-      podAnnotations,
-      extraVolumes,
-      extraVolumeMounts,
-      oauthProxySidecar,
-      lifecycle,
-    } = opts;
-    const paseoRedirectUri = `https://${name}-paseo-${namespace}.${appsDomain}/oauth/callback`;
-    return new Devcontainer(this, 'workspace', {
-      namespace,
-      image: props.image,
-      imageDigest: props.imageDigest,
-      name,
-      storageSize: props.pvcSize ?? '30Gi',
-      storageClass: props.pvcStorageClass ?? 'gp3',
-      existingPvcName: props.existingPvcName,
-      homeMountPath,
-      sshAuthorizedKeys: props.sshAuthorizedKeys,
-      imagePullSecret: props.ghcrPullSecret,
-      env: workspaceEnv,
-      resources: props.resources,
-      labels: { 'app.kubernetes.io/managed-by': 'cdk8s' },
-      annotations: podAnnotations,
-      volumes: extraVolumes,
-      volumeMounts: extraVolumeMounts,
-      sidecars: [oauthProxySidecar as DevSidecarContainer],
-      lifecycle,
-      extraServicePorts: [{ name: 'oauth-proxy', port: 4180, targetPort: 'oauth-proxy' }],
-      values: {
-        ...props.values,
-        serviceAccountAnnotations: {
-          'serviceaccounts.openshift.io/oauth-redirecturi.primary': paseoRedirectUri,
-          ...props.values?.serviceAccountAnnotations,
-        },
-      },
-    });
   }
 }
