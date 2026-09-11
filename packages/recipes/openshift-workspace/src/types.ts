@@ -39,6 +39,7 @@ export interface TfDeployerConfig {
 export interface ResourceValues {
   requests?: { memory?: string; cpu?: string };
   limits?: { memory?: string; cpu?: string };
+  [key: string]: unknown;
 }
 
 // ---------------------------------------------------------------------------

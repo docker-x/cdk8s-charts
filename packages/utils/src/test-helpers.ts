@@ -17,7 +17,7 @@ export function findManifest(manifests: object[], kind: string, name?: string): 
 
 /** Filter manifests by kind. */
 export function filterByKind(manifests: object[], kind: string): Manifest[] {
-  return manifests.filter((m) => (m as Manifest).kind === kind);
+  return manifests.filter((m) => (m as Manifest).kind === kind) as Manifest[];
 }
 
 /** Synthesize a cdk8s Chart subclass for testing. */

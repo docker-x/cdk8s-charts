@@ -7,6 +7,7 @@ import type { DeepPartial, SecretRefs, Volume, VolumeMount } from '@cdk8s-charts
 export interface ResourceValues {
   requests?: { memory?: string; cpu?: string };
   limits?: { memory?: string; cpu?: string };
+  [key: string]: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -24,6 +25,7 @@ export interface SidecarContainer {
 export interface Lifecycle {
   postStart?: { exec?: { command: string[] } };
   preStop?: { exec?: { command: string[] } };
+  [key: string]: unknown;
 }
 
 /** Extra service port to expose. */

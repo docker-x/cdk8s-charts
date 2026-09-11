@@ -1,14 +1,20 @@
-import { deepMerge, HelmConstruct } from '@cdk8s-charts/utils';
+import type { DerivedWorkspaceState } from '@cdk8s-charts/utils';
+import {
+  buildWorkspaceContainerEnv,
+  buildWorkspaceVolumeMounts,
+  buildWorkspaceVolumes,
+  createWorkspacePvc,
+  createWorkspaceSecrets,
+  deepMerge,
+  deriveWorkspaceState,
+  HelmConstruct,
+  validateHomeMountPath,
+} from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { Exports, Props, Values } from './types';
 
 const DEFAULT_COMMAND = ['/usr/local/bin/entrypoint.sh'];
-
-/** Build standard metadata labels for this devcontainer. */
-function buildLabels(name: string): Record<string, string> {
-  return { 'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'cdk8s' };
-}
 
 export class Devcontainer extends HelmConstruct<Values> {
   public readonly exports: Exports;
@@ -19,21 +25,22 @@ export class Devcontainer extends HelmConstruct<Values> {
 
     const name = props.values?.name ?? props.name ?? id;
     const values = this.computeValues(props, name);
-    this.validateHomeMountPath(values.homeMountPath ?? '/home/vscode');
-    const derived = this.deriveState(values, name, props);
+    validateHomeMountPath(values.homeMountPath ?? '/home/vscode');
+    const derived = deriveWorkspaceState(values, name, props);
     const pvcName = values.existingPvcName ?? `${name}-state`;
 
-    this.createSecrets(values, name, props.namespace, derived);
-    if (!values.existingPvcName) this.createPvc(name, props.namespace, values);
-    const containerEnv = this.buildContainerEnv(values, name);
-    const volumeMounts = this.buildVolumeMounts(values, derived.hasSshKeys, props);
-    const volumes = this.buildVolumes(
-      values,
+    createWorkspaceSecrets(this, values, name, props.namespace, derived);
+    if (!values.existingPvcName) createWorkspacePvc(this, name, props.namespace, values);
+    const containerEnv = buildWorkspaceContainerEnv(values, name, []);
+    const volumeMounts = buildWorkspaceVolumeMounts(
+      values.homeMountPath ?? '/home/vscode',
       derived.hasSshKeys,
-      derived.sshSecretName,
-      pvcName,
-      props,
+      [...(props.volumeMounts ?? []), ...(props.values?.volumeMounts ?? [])],
     );
+    const volumes = buildWorkspaceVolumes(derived.hasSshKeys, derived.sshSecretName, pvcName, [
+      ...(props.volumes ?? []),
+      ...(props.values?.volumes ?? []),
+    ]);
     this.createDeployment({
       name,
       namespace: props.namespace,
@@ -55,22 +62,6 @@ export class Devcontainer extends HelmConstruct<Values> {
       deploymentName: name,
       secretName: derived.sshSecretName ?? '',
     };
-  }
-
-  /** Reject home mount paths that are unsafe to use in generated shell commands. */
-  private validateHomeMountPath(homeMountPath: string) {
-    if (!homeMountPath.startsWith('/'))
-      throw new Error(`Invalid homeMountPath "${homeMountPath}": must be an absolute path`);
-    if (homeMountPath === '/')
-      throw new Error(`Invalid homeMountPath "/": must not be the filesystem root`);
-    if (homeMountPath.split('/').includes('..'))
-      throw new Error(
-        `Invalid homeMountPath "${homeMountPath}": must not contain ".." path segments`,
-      );
-    if (!/^[a-zA-Z0-9._/+@~:-]+$/.test(homeMountPath))
-      throw new Error(
-        `Invalid homeMountPath "${homeMountPath}": must contain only alphanumeric, dots, hyphens, underscores, slashes, colons, plus, at-sign, or tilde`,
-      );
   }
 
   private computeValues(props: Props, name: string): Values {
@@ -114,163 +105,14 @@ export class Devcontainer extends HelmConstruct<Values> {
     return props.values ? deepMerge(computed, props.values) : computed;
   }
 
-  private deriveState(values: Values, name: string, props: Props) {
-    const hasSshData = Boolean(values.sshAuthorizedKeys);
-    const hasSshRef = Boolean(values.sshSecretName);
-    const hasPullData = Boolean(values.imagePullSecret);
-    const hasPullRef = Boolean(values.imagePullSecretName);
-    return {
-      hasSshKeys: hasSshData || hasSshRef,
-      sshSecretName:
-        hasSshData || hasSshRef ? (values.sshSecretName ?? `${name}-ssh-keys`) : undefined,
-      hasPullSecretData: hasPullData,
-      hasPullSecretRef: hasPullRef,
-      pullSecretName:
-        hasPullData || hasPullRef ? (values.imagePullSecretName ?? 'ghcr-pull-secret') : undefined,
-      saName: values.serviceAccountName ?? `${name}-sa`,
-      shouldCreateSa: !props.serviceAccountName && !props.values?.serviceAccountName,
-    };
-  }
-
-  private createSecrets(
-    values: Values,
-    name: string,
-    namespace: string,
-    d: ReturnType<Devcontainer['deriveState']>,
-  ) {
-    if (values.sshAuthorizedKeys) {
-      new ApiObject(this, 'ssh-secret', {
-        apiVersion: 'v1',
-        kind: 'Secret',
-        metadata: { name: d.sshSecretName, namespace, labels: buildLabels(name) },
-        type: 'Opaque',
-        stringData: { authorized_keys: values.sshAuthorizedKeys },
-      });
-    }
-    if (values.secretEnv && Object.keys(values.secretEnv).length > 0) {
-      new ApiObject(this, 'secret-env', {
-        apiVersion: 'v1',
-        kind: 'Secret',
-        metadata: { name: `${name}-secret-env`, namespace, labels: buildLabels(name) },
-        type: 'Opaque',
-        stringData: values.secretEnv,
-      });
-    }
-    if (values.imagePullSecret) {
-      new ApiObject(this, 'pull-secret', {
-        apiVersion: 'v1',
-        kind: 'Secret',
-        metadata: { name: d.pullSecretName, namespace, labels: buildLabels(name) },
-        type: 'kubernetes.io/dockerconfigjson',
-        data: { '.dockerconfigjson': values.imagePullSecret },
-      });
-    }
-    if (d.shouldCreateSa) {
-      new ApiObject(this, 'sa', {
-        apiVersion: 'v1',
-        kind: 'ServiceAccount',
-        metadata: {
-          name: d.saName,
-          namespace,
-          labels: buildLabels(name),
-          annotations: values.serviceAccountAnnotations,
-        },
-        automountServiceAccountToken: values.automountServiceAccountToken,
-      });
-    }
-  }
-
-  private createPvc(name: string, namespace: string, values: Values) {
-    new ApiObject(this, 'pvc', {
-      apiVersion: 'v1',
-      kind: 'PersistentVolumeClaim',
-      metadata: {
-        name: `${name}-state`,
-        namespace,
-        labels: {
-          'app.kubernetes.io/name': name,
-          'app.kubernetes.io/component': 'workspace-state',
-          'app.kubernetes.io/managed-by': 'cdk8s',
-        },
-        annotations: { 'helm.sh/resource-policy': 'keep' },
-      },
-      spec: {
-        accessModes: ['ReadWriteOnce'],
-        storageClassName: values.storageClass,
-        resources: { requests: { storage: values.storageSize } },
-      },
-    });
-  }
-
-  private buildContainerEnv(values: Values, name: string) {
-    const env: Array<{
-      name: string;
-      value?: string;
-      valueFrom?: { secretKeyRef?: { name: string; key: string } };
-    }> = [];
-    const seen = new Set<string>();
-    if (values.env)
-      for (const [k, v] of Object.entries(values.env)) {
-        seen.add(k);
-        env.push({ name: k, value: v });
-      }
-    if (values.secretEnv)
-      for (const k of Object.keys(values.secretEnv)) {
-        if (seen.has(k))
-          throw new Error(`Duplicate env var "${k}": defined in both env and secretEnv`);
-        seen.add(k);
-        env.push({ name: k, valueFrom: { secretKeyRef: { name: `${name}-secret-env`, key: k } } });
-      }
-    if (values.secretRefs)
-      for (const [k, r] of Object.entries(values.secretRefs)) {
-        if (seen.has(k)) throw new Error(`Duplicate env var "${k}": defined in multiple sources`);
-        seen.add(k);
-        env.push({ name: k, valueFrom: { secretKeyRef: { name: r.name, key: r.key } } });
-      }
-    return env;
-  }
-
-  private buildVolumeMounts(values: Values, hasSshKeys: boolean, props: Props) {
-    const mounts: Array<{ name: string; mountPath: string; readOnly?: boolean; subPath?: string }> =
-      [{ name: 'workspace-state', mountPath: values.homeMountPath ?? '/home/vscode' }];
-    if (hasSshKeys) mounts.push({ name: 'ssh-keys', mountPath: '/ssh-keys', readOnly: true });
-    if (props.volumeMounts) mounts.push(...props.volumeMounts);
-    if (props.values?.volumeMounts) mounts.push(...props.values.volumeMounts);
-    return mounts;
-  }
-
-  private buildVolumes(
-    values: Values,
-    hasSshKeys: boolean,
-    sshSecretName: string | undefined,
-    pvcName: string,
-    props: Props,
-  ) {
-    const vols: Array<{ name: string; [key: string]: unknown }> = [
-      { name: 'workspace-state', persistentVolumeClaim: { claimName: pvcName } },
-    ];
-    if (hasSshKeys) {
-      vols.push({
-        name: 'ssh-keys',
-        secret: {
-          secretName: sshSecretName,
-          items: [{ key: 'authorized_keys', path: 'authorized_keys' }],
-        },
-      });
-    }
-    if (props.volumes) vols.push(...props.volumes);
-    if (props.values?.volumes) vols.push(...props.values.volumes);
-    return vols;
-  }
-
   private createDeployment(opts: {
     name: string;
     namespace: string;
     values: Values;
-    d: ReturnType<Devcontainer['deriveState']>;
-    containerEnv: ReturnType<Devcontainer['buildContainerEnv']>;
-    volumeMounts: ReturnType<Devcontainer['buildVolumeMounts']>;
-    volumes: ReturnType<Devcontainer['buildVolumes']>;
+    d: DerivedWorkspaceState;
+    containerEnv: ReturnType<typeof buildWorkspaceContainerEnv>;
+    volumeMounts: ReturnType<typeof buildWorkspaceVolumeMounts>;
+    volumes: ReturnType<typeof buildWorkspaceVolumes>;
     props: Props;
   }) {
     const { name, namespace, values, d, containerEnv, volumeMounts, volumes, props } = opts;
@@ -302,10 +144,10 @@ export class Devcontainer extends HelmConstruct<Values> {
   private buildPodSpec(
     name: string,
     values: Values,
-    d: ReturnType<Devcontainer['deriveState']>,
-    containerEnv: ReturnType<Devcontainer['buildContainerEnv']>,
-    volumeMounts: ReturnType<Devcontainer['buildVolumeMounts']>,
-    volumes: ReturnType<Devcontainer['buildVolumes']>,
+    d: DerivedWorkspaceState,
+    containerEnv: ReturnType<typeof buildWorkspaceContainerEnv>,
+    volumeMounts: ReturnType<typeof buildWorkspaceVolumeMounts>,
+    volumes: ReturnType<typeof buildWorkspaceVolumes>,
     props: Props,
   ) {
     return {
