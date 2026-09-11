@@ -646,6 +646,17 @@ export function buildKeepaliveScript(): string {
   ].join('\n');
 }
 
+function buildBackupExcludes(extraExcludes: string): string[] {
+  return [
+    '  EXCLUDES="--exclude=.ssh --exclude=.aws --exclude=.kube --exclude=.gnupg --exclude=.env --exclude=.env.*"',
+    '  EXCLUDES="$EXCLUDES --exclude=*_history --exclude=node_modules --exclude=.bun --exclude=.nix-profile --exclude=.local/bin"',
+    '  EXCLUDES="$EXCLUDES --exclude=.local/share/devin --exclude=.local/share/terminal-browser --exclude=.cache --exclude=.npm"',
+    '  EXCLUDES="$EXCLUDES --exclude=.turbo --exclude=.nx --exclude=.astro --exclude=dist --exclude=build --exclude=.next"',
+    '  EXCLUDES="$EXCLUDES --exclude=models --exclude=worktrees --exclude=daemon.log --exclude=.paseo/*-daemon.log --exclude=logs"',
+    `  EXCLUDES="$EXCLUDES --exclude=.gc/cache --exclude=.gc/supervisor.log --exclude=lost+found${extraExcludes}"`,
+  ];
+}
+
 export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devcontainer'): string {
   const containerName = variant === 'devenv' ? 'devenv' : 'devcontainer';
   const extraExcludes = variant === 'devenv' ? ' --exclude=.devenv --exclude=.nix-store' : '';
@@ -662,12 +673,7 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '  done',
     '  for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET BACKUP_PASSWORD; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
     '  cd -- "$HOME_MOUNT_PATH"',
-    '  EXCLUDES="--exclude=.ssh --exclude=.aws --exclude=.kube --exclude=.gnupg --exclude=.env --exclude=.env.*"',
-    '  EXCLUDES="$EXCLUDES --exclude=*_history --exclude=node_modules --exclude=.bun --exclude=.nix-profile --exclude=.local/bin"',
-    '  EXCLUDES="$EXCLUDES --exclude=.local/share/devin --exclude=.local/share/terminal-browser --exclude=.cache --exclude=.npm"',
-    '  EXCLUDES="$EXCLUDES --exclude=.turbo --exclude=.nx --exclude=.astro --exclude=dist --exclude=build --exclude=.next"',
-    '  EXCLUDES="$EXCLUDES --exclude=models --exclude=worktrees --exclude=daemon.log --exclude=.paseo/*-daemon.log --exclude=logs"',
-    `  EXCLUDES="$EXCLUDES --exclude=.gc/cache --exclude=.gc/supervisor.log --exclude=lost+found${extraExcludes}"`,
+    ...buildBackupExcludes(extraExcludes),
     '  tar czf /tmp/backup.tar.gz $EXCLUDES . || tar_rc=$?',
     '  if [ "${tar_rc:-0}" -ge 2 ]; then echo "Fatal: tar failed with exit code ${tar_rc}"; exit "${tar_rc}"; fi',
     '  if [ "${tar_rc:-0}" -eq 1 ]; then echo "Warning: tar exit code 1 (non-fatal)"; fi',
@@ -698,10 +704,7 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
   ].join('\n');
 }
 
-export function getPaseoAutoResumeScript(
-  variant: 'devcontainer' | 'devenv' = 'devcontainer',
-): string {
-  const defaultHome = variant === 'devenv' ? '/env/.paseo' : '/home/vscode/.paseo';
+function paseoAutoResumeHeader(defaultHome: string): string {
   return `#!/bin/bash
 # Auto-resume closed Paseo agents after daemon restart.
 set -euo pipefail
@@ -753,8 +756,11 @@ done
 if [[ \${#CLOSED_AGENTS[@]} -eq 0 ]]; then
   log "no closed agents found, nothing to resume"
   exit 0
-fi
+fi`;
+}
 
+function paseoAutoResumeBody(): string {
+  return `
 log "found \${#CLOSED_AGENTS[@]} closed agent(s) to resume"
 resumed=0
 for agent_id in "\${CLOSED_AGENTS[@]}"; do
@@ -772,6 +778,13 @@ for agent_id in "\${CLOSED_AGENTS[@]}"; do
   sleep 2
 done
 log "auto-resume complete: $resumed agent(s) resumed"`;
+}
+
+export function getPaseoAutoResumeScript(
+  variant: 'devcontainer' | 'devenv' = 'devcontainer',
+): string {
+  const defaultHome = variant === 'devenv' ? '/env/.paseo' : '/home/vscode/.paseo';
+  return paseoAutoResumeHeader(defaultHome) + paseoAutoResumeBody();
 }
 
 /** Backward-compatible constant (devcontainer variant). */
