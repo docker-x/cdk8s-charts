@@ -465,7 +465,8 @@ export function buildWorkspaceComputedValues(
   };
   if (defaults.extraPorts) {
     for (const [key, value] of Object.entries(defaults.extraPorts)) {
-      computed[key] = props[key as keyof WorkspaceValuesProps] ?? value;
+      const propValue = props[key as keyof WorkspaceValuesProps];
+      Object.assign(computed, { [key]: propValue ?? value });
     }
   }
   return props.values ? deepMerge(computed, props.values) : computed;
@@ -500,7 +501,7 @@ export function initWorkspaceChart(
     name,
     defaults,
   );
-  validateHomeMountPath((values.homeMountPath as string) ?? defaults.homeMountPath);
+  validateHomeMountPath(values.homeMountPath as string);
   const derived = deriveWorkspaceState(values as WorkspaceValues, name, props);
   const pvcName = (values.existingPvcName as string | undefined) ?? `${name}-state`;
 
@@ -514,12 +515,16 @@ export function initWorkspaceChart(
     derived.hasSshKeys,
     [
       ...((props.volumeMounts as Array<unknown>) ?? []),
-      ...(((props.values as Record<string, unknown>)?.volumeMounts as Array<unknown>) ?? []),
+      ...(((props.values as Record<string, unknown> | undefined)?.volumeMounts as
+        | Array<unknown>
+        | undefined) ?? []),
     ] as Array<{ name: string; mountPath: string; readOnly?: boolean }>,
   );
   const volumes = buildWorkspaceVolumes(derived.hasSshKeys, derived.sshSecretName, pvcName, [
     ...((props.volumes as Array<unknown>) ?? []),
-    ...(((props.values as Record<string, unknown>)?.volumes as Array<unknown>) ?? []),
+    ...(((props.values as Record<string, unknown> | undefined)?.volumes as
+      | Array<unknown>
+      | undefined) ?? []),
   ] as Array<{ name: string; [key: string]: unknown }>);
   return { values, derived, pvcName, containerEnv, volumeMounts, volumes };
 }

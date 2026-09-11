@@ -57,11 +57,11 @@ describe('OpenShiftWorkspace recipe', () => {
         };
       };
     };
-    const proxy = spec.template.spec.containers.find((c) => c.name === 'oauth-proxy')!;
+    const proxy = spec.template.spec.containers.find((c) => c.name === 'oauth-proxy');
     expect(proxy).toBeDefined();
-    expect(proxy.image).toContain('oauth-proxy');
-    expect(proxy.securityContext.runAsNonRoot).toBe(true);
-    expect(proxy.securityContext.capabilities.drop).toContain('ALL');
+    expect(proxy?.image).toContain('oauth-proxy');
+    expect(proxy?.securityContext.runAsNonRoot).toBe(true);
+    expect(proxy?.securityContext.capabilities.drop).toContain('ALL');
   });
 
   it('sets OAuth redirect URI annotation on the ServiceAccount', () => {

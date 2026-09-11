@@ -78,8 +78,8 @@ describe('Devcontainer construct', () => {
         spec: { volumes: { name: string; persistentVolumeClaim: { claimName: string } }[] };
       };
     };
-    const vol = spec.template.spec.volumes.find((v) => v.name === 'workspace-state')!;
-    expect(vol.persistentVolumeClaim.claimName).toBe('existing-pvc');
+    const vol = spec.template.spec.volumes.find((v) => v.name === 'workspace-state');
+    expect(vol?.persistentVolumeClaim.claimName).toBe('existing-pvc');
   });
 
   it('creates PVC with correct storage size and class', () => {
@@ -101,8 +101,8 @@ describe('Devcontainer construct', () => {
     };
     const mount = spec.template.spec.containers[0].volumeMounts.find(
       (v) => v.name === 'workspace-state',
-    )!;
-    expect(mount.mountPath).toBe('/home/custom');
+    );
+    expect(mount?.mountPath).toBe('/home/custom');
   });
 
   it('exposes ssh and preview ports', () => {
