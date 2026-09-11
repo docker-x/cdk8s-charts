@@ -21,6 +21,7 @@ export type {
   VolumeMount,
 } from './k8s-types';
 export * from './openshift-recipe';
+export * from './openshift-scripts';
 export type { Manifest } from './test-helpers';
 export { filterByKind, findManifest, synthChart } from './test-helpers';
 export * from './workspace-construct';
