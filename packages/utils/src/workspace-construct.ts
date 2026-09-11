@@ -224,3 +224,139 @@ export function buildWorkspaceContainerEnv(
     }
   return env;
 }
+
+// ---------------------------------------------------------------------------
+// Deployment / Service factories
+// ---------------------------------------------------------------------------
+
+export interface WorkspaceContainerSpec {
+  name: string;
+  image?: string;
+  command?: string[];
+  ports: Array<{ containerPort: number; name: string }>;
+  optionalCommand?: boolean;
+}
+
+export interface WorkspaceServicePorts {
+  ports: Array<{ port: number; targetPort: string | number; name: string }>;
+}
+
+export interface WorkspaceSidecars {
+  sidecars?: Array<Record<string, unknown>>;
+  valuesSidecars?: Array<Record<string, unknown>>;
+}
+
+export function createWorkspaceDeployment(
+  scope: Construct,
+  opts: {
+    name: string;
+    namespace: string;
+    values: WorkspaceValues;
+    d: DerivedWorkspaceState;
+    containerEnv: ReturnType<typeof buildWorkspaceContainerEnv>;
+    volumeMounts: ReturnType<typeof buildWorkspaceVolumeMounts>;
+    volumes: ReturnType<typeof buildWorkspaceVolumes>;
+    container: WorkspaceContainerSpec;
+    sidecars: WorkspaceSidecars;
+  },
+): void {
+  const { name, namespace, values, d, containerEnv, volumeMounts, volumes, container, sidecars } =
+    opts;
+  const podAnnotations = {
+    'rollouts.dev/image-digest': values.imageDigest ?? 'unknown',
+    ...(values.annotations ?? {}),
+  };
+  const podLabels = {
+    ...(values.labels ?? {}),
+    'app.kubernetes.io/name': name,
+    'app.kubernetes.io/managed-by': 'cdk8s',
+  };
+  new ApiObject(scope, 'deployment', {
+    apiVersion: 'apps/v1',
+    kind: 'Deployment',
+    metadata: { name, namespace, labels: podLabels },
+    spec: {
+      replicas: values.replicas,
+      strategy: { type: 'Recreate' },
+      selector: { matchLabels: { 'app.kubernetes.io/name': name } },
+      template: {
+        metadata: { labels: podLabels, annotations: podAnnotations },
+        spec: buildWorkspacePodSpec(
+          name,
+          values,
+          d,
+          containerEnv,
+          volumeMounts,
+          volumes,
+          container,
+          sidecars,
+        ),
+      },
+    },
+  });
+}
+
+function buildWorkspacePodSpec(
+  name: string,
+  values: WorkspaceValues,
+  d: DerivedWorkspaceState,
+  containerEnv: ReturnType<typeof buildWorkspaceContainerEnv>,
+  volumeMounts: ReturnType<typeof buildWorkspaceVolumeMounts>,
+  volumes: ReturnType<typeof buildWorkspaceVolumes>,
+  container: WorkspaceContainerSpec,
+  sidecars: WorkspaceSidecars,
+) {
+  const containerObj: Record<string, unknown> = {
+    name: container.name,
+    image: values.image,
+    securityContext: {
+      runAsNonRoot: values.runAsNonRoot,
+      allowPrivilegeEscalation: false,
+      capabilities: { drop: ['ALL'] },
+    },
+    env: containerEnv,
+    ports: container.ports,
+    volumeMounts,
+    resources: values.resources,
+  };
+  if (container.optionalCommand) {
+    if (values.command) containerObj.command = values.command;
+  } else {
+    containerObj.command = values.command;
+  }
+  if (values.lifecycle) containerObj.lifecycle = values.lifecycle;
+  return {
+    serviceAccountName: d.saName,
+    automountServiceAccountToken: values.automountServiceAccountToken,
+    ...(values.fsGroup ? { securityContext: { fsGroup: values.fsGroup } } : {}),
+    ...(d.hasPullSecretData || d.hasPullSecretRef
+      ? { imagePullSecrets: [{ name: d.pullSecretName }] }
+      : {}),
+    containers: [containerObj, ...(sidecars.sidecars ?? []), ...(sidecars.valuesSidecars ?? [])],
+    volumes,
+  };
+}
+
+export function createWorkspaceService(
+  scope: Construct,
+  name: string,
+  namespace: string,
+  values: WorkspaceValues,
+  servicePorts: WorkspaceServicePorts,
+): void {
+  const podLabels = {
+    ...(values.labels ?? {}),
+    'app.kubernetes.io/name': name,
+    'app.kubernetes.io/managed-by': 'cdk8s',
+  };
+  new ApiObject(scope, 'service', {
+    apiVersion: 'v1',
+    kind: 'Service',
+    metadata: { name, namespace, labels: podLabels },
+    spec: {
+      selector: { 'app.kubernetes.io/name': name },
+      ports: [...servicePorts.ports, ...(values.extraServicePorts ?? [])],
+      type: 'ClusterIP',
+    },
+  });
+}

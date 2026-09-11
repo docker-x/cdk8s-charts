@@ -1,16 +1,16 @@
 import {
   buildWorkspaceContainerEnv,
-  buildWorkspaceLabels,
   buildWorkspaceVolumeMounts,
   buildWorkspaceVolumes,
+  createWorkspaceDeployment,
   createWorkspacePvc,
   createWorkspaceSecrets,
+  createWorkspaceService,
   deepMerge,
   deriveWorkspaceState,
   HelmConstruct,
   validateHomeMountPath,
 } from '@cdk8s-charts/utils';
-import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { Exports, Props, Values } from './types';
 
@@ -41,7 +41,7 @@ export class Devenv extends HelmConstruct<Values> {
       ...(props.volumes ?? []),
       ...(props.values?.volumes ?? []),
     ]);
-    this.createDeployment({
+    createWorkspaceDeployment(this, {
       name,
       namespace: props.namespace,
       values,
@@ -49,9 +49,29 @@ export class Devenv extends HelmConstruct<Values> {
       containerEnv,
       volumeMounts,
       volumes,
-      props,
+      container: {
+        name: 'devenv',
+        optionalCommand: true,
+        ports: [
+          { containerPort: values.sshPort ?? 2222, name: 'ssh' },
+          { containerPort: values.paseoPort ?? 6767, name: 'paseo' },
+          { containerPort: values.caddyPort ?? 8080, name: 'caddy' },
+          { containerPort: values.previewPort ?? 3000, name: 'preview' },
+        ],
+      },
+      sidecars: {
+        sidecars: props.sidecars as Array<Record<string, unknown>> | undefined,
+        valuesSidecars: props.values?.sidecars as Array<Record<string, unknown>> | undefined,
+      },
     });
-    this.createService(name, props.namespace, values);
+    createWorkspaceService(this, name, props.namespace, values, {
+      ports: [
+        { port: values.sshPort ?? 2222, targetPort: 'ssh', name: 'ssh' },
+        { port: values.paseoPort ?? 6767, targetPort: 'paseo', name: 'paseo' },
+        { port: values.caddyPort ?? 8080, targetPort: 'caddy', name: 'caddy' },
+        { port: values.previewPort ?? 3000, targetPort: 'preview', name: 'preview' },
+      ],
+    });
 
     this.exports = {
       host: name,
@@ -103,107 +123,5 @@ export class Devenv extends HelmConstruct<Values> {
       name,
     };
     return props.values ? deepMerge(computed, props.values) : computed;
-  }
-
-  private createDeployment(opts: {
-    name: string;
-    namespace: string;
-    values: Values;
-    d: ReturnType<typeof deriveWorkspaceState>;
-    containerEnv: ReturnType<typeof buildWorkspaceContainerEnv>;
-    volumeMounts: ReturnType<typeof buildWorkspaceVolumeMounts>;
-    volumes: ReturnType<typeof buildWorkspaceVolumes>;
-    props: Props;
-  }) {
-    const { name, namespace, values, d, containerEnv, volumeMounts, volumes, props } = opts;
-    const podAnnotations = {
-      'rollouts.dev/image-digest': values.imageDigest ?? 'unknown',
-      ...(values.annotations ?? {}),
-    };
-    const podLabels = {
-      ...(values.labels ?? {}),
-      ...buildWorkspaceLabels(name),
-    };
-    new ApiObject(this, 'deployment', {
-      apiVersion: 'apps/v1',
-      kind: 'Deployment',
-      metadata: { name, namespace, labels: podLabels },
-      spec: {
-        replicas: values.replicas,
-        strategy: { type: 'Recreate' },
-        selector: { matchLabels: { 'app.kubernetes.io/name': name } },
-        template: {
-          metadata: { labels: podLabels, annotations: podAnnotations },
-          spec: this.buildPodSpec(name, values, d, containerEnv, volumeMounts, volumes, props),
-        },
-      },
-    });
-  }
-
-  private buildPodSpec(
-    name: string,
-    values: Values,
-    d: ReturnType<typeof deriveWorkspaceState>,
-    containerEnv: ReturnType<typeof buildWorkspaceContainerEnv>,
-    volumeMounts: ReturnType<typeof buildWorkspaceVolumeMounts>,
-    volumes: ReturnType<typeof buildWorkspaceVolumes>,
-    props: Props,
-  ) {
-    return {
-      serviceAccountName: d.saName,
-      automountServiceAccountToken: values.automountServiceAccountToken,
-      ...(values.fsGroup ? { securityContext: { fsGroup: values.fsGroup } } : {}),
-      ...(d.hasPullSecretData || d.hasPullSecretRef
-        ? { imagePullSecrets: [{ name: d.pullSecretName }] }
-        : {}),
-      containers: [
-        {
-          name: 'devenv',
-          image: values.image,
-          ...(values.command ? { command: values.command } : {}),
-          securityContext: {
-            runAsNonRoot: values.runAsNonRoot,
-            allowPrivilegeEscalation: false,
-            capabilities: { drop: ['ALL'] },
-          },
-          env: containerEnv,
-          ports: [
-            { containerPort: values.sshPort ?? 2222, name: 'ssh' },
-            { containerPort: values.paseoPort ?? 6767, name: 'paseo' },
-            { containerPort: values.caddyPort ?? 8080, name: 'caddy' },
-            { containerPort: values.previewPort ?? 3000, name: 'preview' },
-          ],
-          volumeMounts,
-          resources: values.resources,
-          ...(values.lifecycle ? { lifecycle: values.lifecycle } : {}),
-        },
-        ...(props.sidecars ?? []),
-        ...(props.values?.sidecars ?? []),
-      ],
-      volumes,
-    };
-  }
-
-  private createService(name: string, namespace: string, values: Values) {
-    const podLabels = {
-      ...(values.labels ?? {}),
-      ...buildWorkspaceLabels(name),
-    };
-    new ApiObject(this, 'service', {
-      apiVersion: 'v1',
-      kind: 'Service',
-      metadata: { name, namespace, labels: podLabels },
-      spec: {
-        selector: { 'app.kubernetes.io/name': name },
-        ports: [
-          { port: values.sshPort, targetPort: 'ssh', name: 'ssh' },
-          { port: values.paseoPort, targetPort: 'paseo', name: 'paseo' },
-          { port: values.caddyPort, targetPort: 'caddy', name: 'caddy' },
-          { port: values.previewPort, targetPort: 'preview', name: 'preview' },
-          ...(values.extraServicePorts ?? []),
-        ],
-        type: 'ClusterIP',
-      },
-    });
   }
 }
