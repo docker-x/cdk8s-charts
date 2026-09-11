@@ -109,7 +109,11 @@ export class OpenShiftDevenv extends Chart {
       paseoAutoResume,
       autoResumeConfigMapName,
     });
-    const oauthProxySidecar = this.buildOauthProxySidecar(name, namespace);
+    const oauthProxySidecar = this.buildOauthProxySidecar(
+      name,
+      namespace,
+      props.values?.serviceAccountName ?? `${name}-sa`,
+    );
     const lifecycle = this.buildLifecycle(paseoAutoResume, homeMountPath);
     const workspaceEnv = this.buildWorkspaceEnv(name, namespace, appsDomain, props.env);
     const podAnnotations = this.buildPodAnnotations(paseoAutoResume);
@@ -132,7 +136,7 @@ export class OpenShiftDevenv extends Chart {
     if (hasBackupSecrets) this.createBackupRbac(name, namespace);
     if (hasBackupSecrets) this.createBackupCronJob(name, namespace, backup, homeMountPath);
     const tfDeployerSaName = `${name}-tf-deployer`;
-    if (tfDeployer.enabled) this.createTfDeployer(name, namespace, tfDeployer);
+    if (tfDeployer.enabled) this.createTfDeployer(name, namespace);
 
     this.exports = {
       pvcName: devenv.exports.pvcName,
@@ -312,7 +316,11 @@ export class OpenShiftDevenv extends Chart {
     return { extraVolumes, extraVolumeMounts };
   }
 
-  private buildOauthProxySidecar(name: string, namespace: string): SidecarContainer {
+  private buildOauthProxySidecar(
+    name: string,
+    namespace: string,
+    saName: string,
+  ): SidecarContainer {
     return {
       name: 'oauth-proxy',
       image: OAUTH_PROXY_IMAGE,
@@ -330,7 +338,7 @@ export class OpenShiftDevenv extends Chart {
         '--cookie-secure=true',
         '--cookie-samesite=none',
         '--skip-auth-regex=^/healthz|^/ws',
-        `--client-id=system:serviceaccount:${namespace}:${name}-sa`,
+        `--client-id=system:serviceaccount:${namespace}:${saName}`,
         '--client-secret-file=/var/run/secrets/openshift/serviceaccount/token',
       ],
       ports: [{ containerPort: 4180, name: 'oauth-proxy' }],
@@ -629,7 +637,7 @@ export class OpenShiftDevenv extends Chart {
   }
 
   /** Create the service account and scoped RBAC resources used by the TF deployer. */
-  private createTfDeployer(name: string, namespace: string, tfDeployer: ResolvedTfDeployer): void {
+  private createTfDeployer(name: string, namespace: string): void {
     const saName = `${name}-tf-deployer`;
     new ApiObject(this, 'tf-deployer-sa', {
       apiVersion: 'v1',

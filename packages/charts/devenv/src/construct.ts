@@ -17,7 +17,7 @@ export class Devenv extends HelmConstruct<Values> {
 
     const name = props.values?.name ?? props.name ?? id;
     const values = this.computeValues(props, name);
-    this.validateHomeMountPath(values.homeMountPath!);
+    this.validateHomeMountPath(values.homeMountPath ?? '/env');
     const derived = this.deriveState(values, name, props);
     const pvcName = values.existingPvcName ?? `${name}-state`;
 

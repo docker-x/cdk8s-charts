@@ -136,7 +136,7 @@ export class OpenShiftWorkspace extends Chart {
     if (hasBackupSecrets) this.createBackupRbac(name, namespace);
     if (hasBackupSecrets) this.createBackupCronJob(name, namespace, backup, homeMountPath);
     const tfDeployerSaName = `${name}-tf-deployer`;
-    if (tfDeployer.enabled) this.createTfDeployer(name, namespace, tfDeployer);
+    if (tfDeployer.enabled) this.createTfDeployer(name, namespace);
 
     this.exports = {
       pvcName: devcontainer.exports.pvcName,
@@ -639,7 +639,7 @@ export class OpenShiftWorkspace extends Chart {
   }
 
   /** Create the service account and scoped RBAC resources used by the TF deployer. */
-  private createTfDeployer(name: string, namespace: string, tfDeployer: ResolvedTfDeployer): void {
+  private createTfDeployer(name: string, namespace: string): void {
     const saName = `${name}-tf-deployer`;
     new ApiObject(this, 'tf-deployer-sa', {
       apiVersion: 'v1',
