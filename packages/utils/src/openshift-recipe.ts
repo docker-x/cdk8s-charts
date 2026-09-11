@@ -704,7 +704,7 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
   ].join('\n');
 }
 
-function paseoAutoResumeHeader(defaultHome: string): string {
+function paseoAutoResumeSetup(defaultHome: string): string {
   return `#!/bin/bash
 # Auto-resume closed Paseo agents after daemon restart.
 set -euo pipefail
@@ -714,8 +714,11 @@ AGENTS_DIR="$PASEO_HOME/agents"
 RESUME_PROMPT="\${PASEO_AUTO_RESUME_PROMPT:-Continue working on your last task. Pick up where you left off.}"
 MAX_AGENTS="\${PASEO_AUTO_RESUME_MAX:-10}"
 
-log() { echo "[auto-resume] $*"; }
+log() { echo "[auto-resume] $*"; }`;
+}
 
+function paseoWaitForDaemon(): string {
+  return `
 log "waiting for Paseo daemon on 127.0.0.1:6767..."
 daemon_ready=false
 for i in $(seq 1 60); do
@@ -784,7 +787,7 @@ export function getPaseoAutoResumeScript(
   variant: 'devcontainer' | 'devenv' = 'devcontainer',
 ): string {
   const defaultHome = variant === 'devenv' ? '/env/.paseo' : '/home/vscode/.paseo';
-  return paseoAutoResumeHeader(defaultHome) + paseoAutoResumeBody();
+  return paseoAutoResumeSetup(defaultHome) + paseoWaitForDaemon() + paseoAutoResumeBody();
 }
 
 /** Backward-compatible constant (devcontainer variant). */
