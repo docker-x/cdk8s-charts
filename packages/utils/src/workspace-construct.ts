@@ -210,20 +210,36 @@ export function buildWorkspaceContainerEnv(
       seen.add(k);
       env.push({ name: k, value: v });
     }
-  if (values.secretEnv)
-    for (const k of Object.keys(values.secretEnv)) {
-      if (seen.has(k))
-        throw new Error(`Duplicate env var "${k}": defined in both env and secretEnv`);
-      seen.add(k);
-      env.push({ name: k, valueFrom: { secretKeyRef: { name: `${name}-secret-env`, key: k } } });
-    }
-  if (values.secretRefs)
-    for (const [k, r] of Object.entries(values.secretRefs)) {
-      if (seen.has(k)) throw new Error(`Duplicate env var "${k}": defined in multiple sources`);
-      seen.add(k);
-      env.push({ name: k, valueFrom: { secretKeyRef: { name: r.name, key: r.key } } });
-    }
+  addSecretEnvEntries(env, seen, values.secretEnv, name);
+  addSecretRefEntries(env, seen, values.secretRefs);
   return env;
+}
+
+function addSecretEnvEntries(
+  env: Array<{ name: string; valueFrom?: { secretKeyRef?: { name: string; key: string } } }>,
+  seen: Set<string>,
+  secretEnv: Record<string, unknown> | undefined,
+  name: string,
+): void {
+  if (!secretEnv) return;
+  for (const k of Object.keys(secretEnv)) {
+    if (seen.has(k)) throw new Error(`Duplicate env var "${k}": defined in both env and secretEnv`);
+    seen.add(k);
+    env.push({ name: k, valueFrom: { secretKeyRef: { name: `${name}-secret-env`, key: k } } });
+  }
+}
+
+function addSecretRefEntries(
+  env: Array<{ name: string; valueFrom?: { secretKeyRef?: { name: string; key: string } } }>,
+  seen: Set<string>,
+  secretRefs: Record<string, { name: string; key: string }> | undefined,
+): void {
+  if (!secretRefs) return;
+  for (const [k, r] of Object.entries(secretRefs)) {
+    if (seen.has(k)) throw new Error(`Duplicate env var "${k}": defined in multiple sources`);
+    seen.add(k);
+    env.push({ name: k, valueFrom: { secretKeyRef: { name: r.name, key: r.key } } });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -265,10 +281,10 @@ export function createWorkspaceDeployment(
     opts;
   const podAnnotations = {
     'rollouts.dev/image-digest': values.imageDigest ?? 'unknown',
-    ...(values.annotations ?? {}),
+    ...values.annotations,
   };
   const podLabels = {
-    ...(values.labels ?? {}),
+    ...values.labels,
     'app.kubernetes.io/name': name,
     'app.kubernetes.io/managed-by': 'cdk8s',
   };
@@ -283,7 +299,6 @@ export function createWorkspaceDeployment(
       template: {
         metadata: { labels: podLabels, annotations: podAnnotations },
         spec: buildWorkspacePodSpec(
-          name,
           values,
           d,
           containerEnv,
@@ -298,7 +313,6 @@ export function createWorkspaceDeployment(
 }
 
 function buildWorkspacePodSpec(
-  _name: string,
   values: WorkspaceValues,
   d: DerivedWorkspaceState,
   containerEnv: ReturnType<typeof buildWorkspaceContainerEnv>,
@@ -346,7 +360,7 @@ export function createWorkspaceService(
   servicePorts: WorkspaceServicePorts,
 ): void {
   const podLabels = {
-    ...(values.labels ?? {}),
+    ...values.labels,
     'app.kubernetes.io/name': name,
     'app.kubernetes.io/managed-by': 'cdk8s',
   };

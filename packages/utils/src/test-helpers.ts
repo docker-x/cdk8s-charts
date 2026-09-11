@@ -11,7 +11,10 @@ export function findManifest(manifests: object[], kind: string, name?: string): 
       obj.kind === kind && (!name || (obj.metadata as { name?: string } | undefined)?.name === name)
     );
   });
-  if (!found) throw new Error(`Expected ${kind}${name ? ` named ${name}` : ''} not found`);
+  if (!found) {
+    const label = name ? ` named ${name}` : '';
+    throw new Error(`Expected ${kind}${label} not found`);
+  }
   return found as Manifest;
 }
 
