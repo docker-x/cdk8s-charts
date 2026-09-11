@@ -67,7 +67,7 @@ export class Devcontainer extends HelmConstruct<Values> {
       throw new Error(
         `Invalid homeMountPath "${homeMountPath}": must not contain ".." path segments`,
       );
-    if (!/^[a-zA-Z0-9._/+@~-]+$/.test(homeMountPath))
+    if (!/^[a-zA-Z0-9._/+@~:-]+$/.test(homeMountPath))
       throw new Error(
         `Invalid homeMountPath "${homeMountPath}": must contain only alphanumeric, dots, hyphens, underscores, slashes, colons, plus, at-sign, or tilde`,
       );

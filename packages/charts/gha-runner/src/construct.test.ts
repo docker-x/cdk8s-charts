@@ -51,6 +51,7 @@ describe('GhaRunner construct', () => {
     const dep = find(m, 'Deployment', 'runner');
     const init = dep.spec.template.spec.initContainers.find((c: any) => c.name === 'init-nix');
     expect(init.securityContext).toBeDefined();
+    expect(init.securityContext.runAsNonRoot).toBe(true);
     expect(init.securityContext.allowPrivilegeEscalation).toBe(false);
     expect(init.securityContext.capabilities.drop).toContain('ALL');
   });

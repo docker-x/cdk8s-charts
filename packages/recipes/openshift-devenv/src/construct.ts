@@ -98,7 +98,8 @@ export class OpenShiftDevenv extends Chart {
     const backup: ResolvedBackup = { schedule: '0 2 * * *', keep: 3, ...props.backup };
 
     const oauthCookieSecretName = this.createOAuthCookieSecret(name, namespace, props);
-    const saTokenSecretName = this.createSaTokenSecret(name, namespace);
+    const saName = props.values?.serviceAccountName ?? `${name}-sa`;
+    const saTokenSecretName = this.createSaTokenSecret(name, namespace, saName);
     const { r2SecretName, hasBackupSecrets } = this.createR2Secret(name, namespace, backup);
     const autoResumeConfigMapName = this.createPaseoConfigMap(name, namespace, paseoAutoResume);
     const { extraVolumes, extraVolumeMounts } = this.buildExtraVolumes({
@@ -109,11 +110,7 @@ export class OpenShiftDevenv extends Chart {
       paseoAutoResume,
       autoResumeConfigMapName,
     });
-    const oauthProxySidecar = this.buildOauthProxySidecar(
-      name,
-      namespace,
-      props.values?.serviceAccountName ?? `${name}-sa`,
-    );
+    const oauthProxySidecar = this.buildOauthProxySidecar(name, namespace, saName);
     const lifecycle = this.buildLifecycle(paseoAutoResume, homeMountPath);
     const workspaceEnv = this.buildWorkspaceEnv(name, namespace, appsDomain, props.env);
     const podAnnotations = this.buildPodAnnotations(paseoAutoResume);
@@ -160,7 +157,7 @@ export class OpenShiftDevenv extends Chart {
       throw new Error(
         `Invalid homeMountPath "${homeMountPath}": must not contain ".." path segments`,
       );
-    if (!/^[a-zA-Z0-9._/+@~-]+$/.test(homeMountPath))
+    if (!/^[a-zA-Z0-9._/+@~:-]+$/.test(homeMountPath))
       throw new Error(
         `Invalid homeMountPath "${homeMountPath}": must contain only alphanumeric, dots, hyphens, underscores, slashes, colons, plus, at-sign, or tilde`,
       );
@@ -199,7 +196,7 @@ export class OpenShiftDevenv extends Chart {
     return secretName;
   }
 
-  private createSaTokenSecret(name: string, namespace: string): string {
+  private createSaTokenSecret(name: string, namespace: string, saName: string): string {
     const secretName = `${name}-sa-token`;
     new ApiObject(this, 'sa-token-secret', {
       apiVersion: 'v1',
@@ -208,7 +205,7 @@ export class OpenShiftDevenv extends Chart {
         name: secretName,
         namespace,
         labels: buildLabels(name),
-        annotations: { 'kubernetes.io/service-account.name': `${name}-sa` },
+        annotations: { 'kubernetes.io/service-account.name': saName },
       },
       type: 'kubernetes.io/service-account-token',
     });
