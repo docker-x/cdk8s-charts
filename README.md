@@ -17,7 +17,9 @@ Fully typed [cdk8s](https://cdk8s.io/) constructs for popular Helm charts and ra
 | [`@cdk8s-charts/a2a-agent`](packages/charts/a2a-agent/) | A2A agent gateway |
 | [`@cdk8s-charts/devpod`](packages/charts/devpod/) | DevPod/VS Code workspace via code-server |
 | [`@cdk8s-charts/devcontainer`](packages/charts/devcontainer/) | Generic devcontainer workspace in a K8s pod |
+| [`@cdk8s-charts/devenv`](packages/charts/devenv/) | Nix-based devenv workspace in a K8s pod |
 | [`@cdk8s-charts/gascity`](packages/charts/gascity/) | Gascity AI agent framework |
+| [`@cdk8s-charts/gha-runner`](packages/charts/gha-runner/) | Self-hosted GitHub Actions runner |
 | [`@cdk8s-charts/gitlab-ce`](packages/charts/gitlab-ce/) | GitLab Community Edition Helm chart |
 | [`@cdk8s-charts/gitlab-runner`](packages/charts/gitlab-runner/) | GitLab Runner in-cluster executor |
 | [`@cdk8s-charts/headlamp`](packages/charts/headlamp/) | Kubernetes Headlamp dashboard |
@@ -29,6 +31,7 @@ Fully typed [cdk8s](https://cdk8s.io/) constructs for popular Helm charts and ra
 | [`@cdk8s-charts/mastra`](packages/charts/mastra/) | Mastra framework |
 | [`@cdk8s-charts/mastra-studio`](packages/charts/mastra-studio/) | Mastra Studio |
 | [`@cdk8s-charts/nginx`](packages/charts/nginx/) | Nginx proxy/sidecar |
+| [`@cdk8s-charts/omniroute`](packages/charts/omniroute/) | Omniroute AI gateway |
 | [`@cdk8s-charts/otel-lgtm`](packages/charts/otel-lgtm/) | Grafana OTel LGTM stack (dev/demo) |
 | [`@cdk8s-charts/plane-ce`](packages/charts/plane-ce/) | Plane CE project management |
 | [`@cdk8s-charts/solace`](packages/charts/solace/) | Solace PubSub+ Software Event Broker (dev / standard / HA) |
@@ -42,9 +45,13 @@ Fully typed [cdk8s](https://cdk8s.io/) constructs for popular Helm charts and ra
 |---------|-------------|
 | [`@cdk8s-charts/agent-platform`](packages/recipes/agent-platform/) | Full agent platform stack |
 | [`@cdk8s-charts/devspace`](packages/recipes/devspace/) | DevPod + Gascity + Nginx workspace |
+| [`@cdk8s-charts/gascity`](packages/recipes/gascity/) | Gascity + Hindsight + Omniroute agent stack |
+| [`@cdk8s-charts/gascity-hindsight-omniroute`](packages/recipes/gascity-hindsight-omniroute/) | Gascity with Hindsight and Omniroute |
 | [`@cdk8s-charts/gitlab-pilot`](packages/recipes/gitlab-pilot/) | GitLab + agent tooling recipe |
 | [`@cdk8s-charts/hindsight-litellm`](packages/recipes/hindsight-litellm/) | Hindsight + LiteLLM composed stack |
+| [`@cdk8s-charts/hindsight-omniroute`](packages/recipes/hindsight-omniroute/) | Hindsight + Omniroute composed stack |
 | [`@cdk8s-charts/litellm-plane`](packages/recipes/litellm-plane/) | LiteLLM + Plane CE + Redis |
+| [`@cdk8s-charts/openshift-devenv`](packages/recipes/openshift-devenv/) | Devenv workspace on OpenShift with OAuth, backup, keepalive |
 | [`@cdk8s-charts/openshift-workspace`](packages/recipes/openshift-workspace/) | Devcontainer workspace on OpenShift with OAuth, backup, keepalive |
 
 ## Quick Start
