@@ -27,6 +27,7 @@ export interface Values {
   annotations?: Record<string, string>;
   serviceAccountName?: string;
   runAsNonRoot?: boolean;
+  fsGroup?: number;
   name?: string;
 }
 

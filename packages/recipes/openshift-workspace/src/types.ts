@@ -1,5 +1,5 @@
 import type { Values as DevcontainerValues } from '@cdk8s-charts/devcontainer';
-import type { DeepPartial } from '@cdk8s-charts/utils';
+import type { DeepPartial, ResourceValues } from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
 // Sub-configs
@@ -36,11 +36,6 @@ export interface TfDeployerConfig {
   enabled?: boolean;
 }
 
-export interface ResourceValues {
-  requests?: { memory?: string; cpu?: string };
-  limits?: { memory?: string; cpu?: string };
-}
-
 // ---------------------------------------------------------------------------
 // Construct props & exports
 // ---------------------------------------------------------------------------
@@ -55,7 +50,7 @@ export interface OpenShiftWorkspaceProps {
   appsDomain: string;
   /** SSH authorized_keys content. */
   sshAuthorizedKeys: string;
-  /** OAuth proxy cookie secret (plain string, will be base64-encoded for K8s Secret). */
+  /** OAuth proxy cookie secret (base64-encoded; written directly to K8s Secret data). */
   oauthCookieSecret: string;
   /** Base64 docker config JSON for GHCR auth. */
   ghcrPullSecret?: string;

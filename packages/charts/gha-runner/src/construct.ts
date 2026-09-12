@@ -90,6 +90,7 @@ function buildLabels(name: string): Record<string, string> {
 export class GhaRunner extends Chart {
   readonly exports: Exports;
 
+  /** Create a self-hosted GitHub Actions runner and its supporting resources. */
   constructor(scope: Construct, id: string, props: Props) {
     super(scope, id);
 
@@ -183,11 +184,19 @@ export class GhaRunner extends Chart {
           metadata: { labels, annotations: props.annotations },
           spec: {
             serviceAccountName: values.serviceAccountName ?? `${name}-sa`,
+            ...(values.fsGroup !== undefined
+              ? { securityContext: { fsGroup: values.fsGroup } }
+              : {}),
             initContainers: [
               {
                 name: 'init-nix',
                 image: `${values.image ?? DEFAULT_IMAGE}:${values.imageTag ?? DEFAULT_IMAGE_TAG}`,
                 command: ['/bin/sh', '/scripts/init-nix.sh'],
+                securityContext: {
+                  runAsNonRoot: values.runAsNonRoot ?? true,
+                  allowPrivilegeEscalation: false,
+                  capabilities: { drop: ['ALL'] },
+                },
                 volumeMounts: [
                   { name: 'nix-store', mountPath: '/nix-pvc' },
                   { name: 'scripts', mountPath: '/scripts', readOnly: true },
@@ -269,6 +278,7 @@ export class GhaRunner extends Chart {
       annotations: props.annotations,
       serviceAccountName: props.serviceAccountName,
       runAsNonRoot: props.runAsNonRoot ?? true,
+      fsGroup: props.fsGroup,
       name,
     };
     return props.values ? deepMerge(computed, props.values) : computed;

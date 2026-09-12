@@ -1,24 +1,15 @@
-import type { DeepPartial, SecretRefs, Volume, VolumeMount } from '@cdk8s-charts/utils';
-
-// ---------------------------------------------------------------------------
-// Resources
-// ---------------------------------------------------------------------------
-
-export interface ResourceValues {
-  requests?: { memory?: string; cpu?: string };
-  limits?: { memory?: string; cpu?: string };
-}
+import type {
+  DeepPartial,
+  ResourceValues,
+  SecretRefs,
+  SidecarContainer,
+  Volume,
+  VolumeMount,
+} from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
 // Internal values (deep-merged with user overrides)
 // ---------------------------------------------------------------------------
-
-/** A sidecar container spec (raw K8s container object). */
-export interface SidecarContainer {
-  name: string;
-  image: string;
-  [key: string]: unknown;
-}
 
 /** Pod lifecycle hooks (postStart, preStop). */
 export interface Lifecycle {

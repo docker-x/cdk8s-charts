@@ -17,6 +17,7 @@ git submodule update --init --recursive  # initialize vendor/nx.ts (required bef
 npm install          # install dependencies
 npm run build        # build all packages (NX)
 npm run lint         # type-check all packages
+npm test             # run vitest unit tests (cdk8s construct synthesis tests)
 ```
 
 ### Trying the example
