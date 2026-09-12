@@ -48,6 +48,20 @@ function buildBackupExcludes(extraExcludes: string): string[] {
   ];
 }
 
+function buildBackupUploadAndCleanup(): string[] {
+  return [
+    '    echo "Cleaning up old backups (keeping last ${BACKUP_KEEP})..."',
+    '    aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "workspace-state-" --endpoint-url "${R2_ENDPOINT}" --region auto --output json --query "Contents[*].Key" > /tmp/listing.json || { echo "Fatal: failed to list R2 objects"; rm -f /tmp/backup.tar.gz.enc; exit 1; }',
+    '    jq -r ".[]" /tmp/listing.json > /tmp/keys.txt || { echo "Fatal: failed to parse R2 listing"; rm -f /tmp/listing.json /tmp/backup.tar.gz.enc; exit 1; }',
+    '    rm -f /tmp/listing.json',
+    '    sort -r /tmp/keys.txt > /tmp/all.txt',
+    '    rm -f /tmp/keys.txt',
+    '    head -n "${BACKUP_KEEP}" /tmp/all.txt > /tmp/keep.txt',
+    '    while IFS= read -r key; do grep -qxF "${key}" /tmp/keep.txt || aws s3api delete-object --bucket "${R2_BUCKET}" --key "${key}" --endpoint-url "${R2_ENDPOINT}" --region auto; done < /tmp/all.txt',
+    '    rm -f /tmp/all.txt /tmp/keep.txt',
+  ];
+}
+
 export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devcontainer'): string {
   const containerName = variant === 'devenv' ? 'devenv' : 'devcontainer';
   const extraExcludes = variant === 'devenv' ? ' --exclude=.devenv --exclude=.nix-store' : '';
@@ -79,15 +93,7 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '    aws s3 cp /tmp/backup.tar.gz.enc "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || UPLOAD_EXIT=$?',
     '    UPLOAD_EXIT=${UPLOAD_EXIT:-0}',
     '    if [ "${UPLOAD_EXIT}" -ne 0 ]; then echo "Fatal: upload failed"; rm -f /tmp/backup.tar.gz.enc; exit "${UPLOAD_EXIT}"; fi',
-    '    echo "Cleaning up old backups (keeping last ${BACKUP_KEEP})..."',
-    '    aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "workspace-state-" --endpoint-url "${R2_ENDPOINT}" --region auto --output json --query "Contents[*].Key" > /tmp/listing.json || { echo "Fatal: failed to list R2 objects"; rm -f /tmp/backup.tar.gz.enc; exit 1; }',
-    '    jq -r ".[]" /tmp/listing.json > /tmp/keys.txt || { echo "Fatal: failed to parse R2 listing"; rm -f /tmp/listing.json /tmp/backup.tar.gz.enc; exit 1; }',
-    '    rm -f /tmp/listing.json',
-    '    sort -r /tmp/keys.txt > /tmp/all.txt',
-    '    rm -f /tmp/keys.txt',
-    '    head -n "${BACKUP_KEEP}" /tmp/all.txt > /tmp/keep.txt',
-    '    while IFS= read -r key; do grep -qxF "${key}" /tmp/keep.txt || aws s3api delete-object --bucket "${R2_BUCKET}" --key "${key}" --endpoint-url "${R2_ENDPOINT}" --region auto; done < /tmp/all.txt',
-    '    rm -f /tmp/all.txt /tmp/keep.txt',
+    ...buildBackupUploadAndCleanup(),
     '  else',
     '    echo "Fatal: aws-cli not found in workspace image. Install aws-cli to enable backups."',
     '    rm -f /tmp/backup.tar.gz.enc',
