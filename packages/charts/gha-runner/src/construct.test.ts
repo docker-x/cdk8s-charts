@@ -6,9 +6,9 @@ import { GhaRunner } from './construct';
 /** Synthesize a GhaRunner chart for assertions. */
 function synth(props: ConstructorParameters<typeof GhaRunner>[2]): Manifest[] {
   const app = Testing.app();
-  const chart = new Chart(app, 'test-chart');
-  new GhaRunner(chart, 'runner', props);
-  return synthChart(chart);
+  const parent = new Chart(app, 'test-chart');
+  const runner = new GhaRunner(parent, 'runner', props);
+  return synthChart(runner);
 }
 
 const baseProps = {
