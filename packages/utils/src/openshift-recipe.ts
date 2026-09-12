@@ -27,7 +27,6 @@ export interface SidecarContainer {
 export interface PodLifecycle {
   postStart?: { exec?: { command: string[] } };
   preStop?: { exec?: { command: string[] } };
-  [key: string]: unknown;
 }
 
 export interface BackupConfig {
@@ -109,6 +108,15 @@ export function validateDnsLabels(name: string, namespace: string): void {
     throw new Error(
       `Invalid namespace "${namespace}": must be a DNS-label value (lowercase alphanumeric with hyphens, max 63 chars, no dots)`,
     );
+  // Validate generated resource names don't exceed K8s limits
+  // CronJob names: max 52 chars; ${name}-keepalive, ${name}-backup
+  const maxSuffix = '-keepalive'.length; // 10 chars — longest suffix
+  const maxName = 52 - maxSuffix;
+  if (name.length > maxName) {
+    throw new Error(
+      `Workspace name "${name}" is too long: generated resource names (e.g. ${name}-keepalive) would exceed the 52-char CronJob name limit. Max length: ${maxName} chars.`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -443,8 +451,8 @@ export function buildWorkspaceRecipeValues(
   return {
     ...props.values,
     serviceAccountAnnotations: {
-      'serviceaccounts.openshift.io/oauth-redirecturi.primary': paseoRedirectUri,
       ...props.values?.serviceAccountAnnotations,
+      'serviceaccounts.openshift.io/oauth-redirecturi.primary': paseoRedirectUri,
     },
   };
 }

@@ -24,6 +24,6 @@ export function filterByKind(manifests: object[], kind: string): Manifest[] {
 }
 
 /** Synthesize a cdk8s Chart subclass for testing. */
-export function synthChart<T extends { synth(): Manifest[] }>(chart: T): Manifest[] {
-  return Testing.synth(chart as unknown as Parameters<typeof Testing.synth>[0]);
+export function synthChart<T extends object>(chart: T): Manifest[] {
+  return Testing.synth(chart as unknown as Parameters<typeof Testing.synth>[0]) as Manifest[];
 }

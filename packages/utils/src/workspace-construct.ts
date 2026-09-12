@@ -1,6 +1,7 @@
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import { deepMerge } from './helm-construct';
+import type { PodLifecycle } from './openshift-recipe';
 import { validateHomeMountPath } from './openshift-recipe';
 
 /** Build standard metadata labels for a workspace resource. */
@@ -38,7 +39,7 @@ export interface WorkspaceValues {
   fsGroup?: number;
   image?: string;
   command?: string[];
-  lifecycle?: Record<string, unknown>;
+  lifecycle?: PodLifecycle;
   resources?: Record<string, unknown>;
   sshPort?: number;
   previewPort?: number;
@@ -215,6 +216,7 @@ export function buildWorkspaceContainerEnv(
   }
   if (values.env)
     for (const [k, v] of Object.entries(values.env)) {
+      if (seen.has(k)) continue;
       seen.add(k);
       env.push({ name: k, value: v });
     }
@@ -331,7 +333,7 @@ function buildWorkspacePodSpec(
 ) {
   const containerObj: Record<string, unknown> = {
     name: container.name,
-    image: values.image,
+    image: container.image ?? values.image,
     securityContext: {
       runAsNonRoot: values.runAsNonRoot,
       allowPrivilegeEscalation: false,
@@ -343,15 +345,16 @@ function buildWorkspacePodSpec(
     resources: values.resources,
   };
   if (container.optionalCommand) {
-    if (values.command) containerObj.command = values.command;
+    const cmd = container.command ?? values.command;
+    if (cmd) containerObj.command = cmd;
   } else {
-    containerObj.command = values.command;
+    containerObj.command = container.command ?? values.command;
   }
   if (values.lifecycle) containerObj.lifecycle = values.lifecycle;
   return {
     serviceAccountName: d.saName,
     automountServiceAccountToken: values.automountServiceAccountToken,
-    ...(values.fsGroup ? { securityContext: { fsGroup: values.fsGroup } } : {}),
+    ...(values.fsGroup !== undefined ? { securityContext: { fsGroup: values.fsGroup } } : {}),
     ...(d.hasPullSecretData || d.hasPullSecretRef
       ? { imagePullSecrets: [{ name: d.pullSecretName }] }
       : {}),
@@ -415,7 +418,7 @@ export interface WorkspaceValuesProps {
   replicas?: number;
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
-  lifecycle?: Record<string, unknown>;
+  lifecycle?: PodLifecycle;
   extraServicePorts?: Array<{ port: number; targetPort: string | number; name: string }>;
   serviceAccountName?: string;
   serviceAccountAnnotations?: Record<string, string>;

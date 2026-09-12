@@ -125,6 +125,9 @@ export function createBackupCronJob(
   homeMountPath: string,
   variant: 'devcontainer' | 'devenv' = 'devcontainer',
 ): void {
+  if (!Number.isInteger(backup.keep) || backup.keep <= 0) {
+    throw new Error(`backup.keep must be a positive integer, got: ${backup.keep}`);
+  }
   const saName = `${name}-backup`;
   new ApiObject(scope, 'backup-cronjob', {
     apiVersion: 'batch/v1',

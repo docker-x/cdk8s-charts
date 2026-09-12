@@ -15,7 +15,6 @@ import type {
 export interface Lifecycle {
   postStart?: { exec?: { command: string[] } };
   preStop?: { exec?: { command: string[] } };
-  [key: string]: unknown;
 }
 
 /** Extra service port to expose. */

@@ -1,4 +1,4 @@
-import { findManifest, type Manifest } from '@cdk8s-charts/utils';
+import { findManifest, type Manifest, synthChart } from '@cdk8s-charts/utils';
 import { Testing } from 'cdk8s';
 import { describe, expect, it } from 'vitest';
 import { OpenShiftWorkspace } from './construct';
@@ -7,7 +7,7 @@ import { OpenShiftWorkspace } from './construct';
 function synth(props: ConstructorParameters<typeof OpenShiftWorkspace>[2]): Manifest[] {
   const app = Testing.app();
   const chart = new OpenShiftWorkspace(app, 'test', props);
-  return Testing.synth(chart);
+  return synthChart(chart);
 }
 
 const baseProps = {
@@ -60,8 +60,8 @@ describe('OpenShiftWorkspace recipe', () => {
     const proxy = spec.template.spec.containers.find((c) => c.name === 'oauth-proxy');
     expect(proxy).toBeDefined();
     expect(proxy?.image).toContain('oauth-proxy');
-    expect(proxy?.securityContext.runAsNonRoot).toBe(true);
-    expect(proxy?.securityContext.capabilities.drop).toContain('ALL');
+    expect(proxy?.securityContext?.runAsNonRoot).toBe(true);
+    expect(proxy?.securityContext?.capabilities.drop).toContain('ALL');
   });
 
   it('sets OAuth redirect URI annotation on the ServiceAccount', () => {

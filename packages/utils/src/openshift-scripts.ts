@@ -80,7 +80,9 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '    UPLOAD_EXIT=${UPLOAD_EXIT:-0}',
     '    if [ "${UPLOAD_EXIT}" -ne 0 ]; then echo "Fatal: upload failed"; rm -f /tmp/backup.tar.gz.enc; exit "${UPLOAD_EXIT}"; fi',
     '    echo "Cleaning up old backups (keeping last ${BACKUP_KEEP})..."',
-    '    aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "workspace-state-" --endpoint-url "${R2_ENDPOINT}" --region auto --output json --query "Contents[*].Key" | jq -r ".[]" | sort -r > /tmp/all.txt',
+    '    aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "workspace-state-" --endpoint-url "${R2_ENDPOINT}" --region auto --output json --query "Contents[*].Key" > /tmp/listing.json || { echo "Fatal: failed to list R2 objects"; rm -f /tmp/backup.tar.gz.enc; exit 1; }',
+    '    jq -r ".[]" /tmp/listing.json | sort -r > /tmp/all.txt || { echo "Fatal: failed to parse R2 listing"; rm -f /tmp/listing.json /tmp/backup.tar.gz.enc; exit 1; }',
+    '    rm -f /tmp/listing.json',
     '    head -n "${BACKUP_KEEP}" /tmp/all.txt > /tmp/keep.txt',
     '    while IFS= read -r key; do grep -qxF "${key}" /tmp/keep.txt || aws s3api delete-object --bucket "${R2_BUCKET}" --key "${key}" --endpoint-url "${R2_ENDPOINT}" --region auto; done < /tmp/all.txt',
     '    rm -f /tmp/all.txt /tmp/keep.txt',
@@ -134,14 +136,14 @@ fi
 CLOSED_AGENTS=()
 for json_file in "$AGENTS_DIR"/*/*.json; do
   [[ -f "$json_file" ]] || continue
-  agent_id=$(node -e "
+  agent_id=$(node -e '
     try {
-      const d = JSON.parse(require('fs').readFileSync('$json_file', 'utf8'));
-      if (d.lastStatus === 'closed' && !d.archivedAt) {
-        process.stdout.write(d.id || '');
+      const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+      if (d.lastStatus === "closed" && !d.archivedAt) {
+        process.stdout.write(d.id || "");
       }
     } catch (e) { /* skip invalid */ }
-  " 2>/dev/null || true)
+  ' "$json_file" 2>/dev/null || true)
   if [[ -n "$agent_id" ]]; then
     CLOSED_AGENTS+=("$agent_id")
   fi

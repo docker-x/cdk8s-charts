@@ -1,4 +1,4 @@
-import { filterByKind, findManifest, type Manifest } from '@cdk8s-charts/utils';
+import { filterByKind, findManifest, type Manifest, synthChart } from '@cdk8s-charts/utils';
 import { Chart, Testing } from 'cdk8s';
 import { describe, expect, it } from 'vitest';
 import { Devcontainer } from './construct';
@@ -8,7 +8,7 @@ function synth(props: ConstructorParameters<typeof Devcontainer>[2]): Manifest[]
   const app = Testing.app();
   const chart = new Chart(app, 'test-chart');
   new Devcontainer(chart, 'dev', props);
-  return Testing.synth(chart);
+  return synthChart(chart);
 }
 
 describe('Devcontainer construct', () => {
