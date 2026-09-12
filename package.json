@@ -51,11 +51,9 @@
     "js-yaml": "^3.15.0",
     "nx": {
       "brace-expansion": "^5.0.9",
-      "smol-toml": "^1.7.1",
       "tmp": "^0.2.6"
     },
     "smol-toml": "^1.7.1",
-    "stream-json": "^3.5.0",
     "yaml": "^2.8.4"
   }
 }
