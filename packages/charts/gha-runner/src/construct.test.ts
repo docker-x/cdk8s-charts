@@ -47,9 +47,10 @@ describe('GhaRunner construct', () => {
     const dep = findManifest(m, 'Deployment', 'runner');
     const spec = dep.spec as { template: { spec: { containers: Container[] } } };
     const runner = spec.template.spec.containers.find((c) => c.name === 'runner');
-    expect(runner?.securityContext?.runAsNonRoot).toBe(true);
-    expect(runner?.securityContext?.allowPrivilegeEscalation).toBe(false);
-    expect(runner?.securityContext?.capabilities.drop).toContain('ALL');
+    const sc = runner?.securityContext;
+    expect(sc?.runAsNonRoot).toBe(true);
+    expect(sc?.allowPrivilegeEscalation).toBe(false);
+    expect(sc?.capabilities.drop).toContain('ALL');
   });
 
   it('sets securityContext on the init-nix container', () => {
@@ -57,10 +58,11 @@ describe('GhaRunner construct', () => {
     const dep = findManifest(m, 'Deployment', 'runner');
     const spec = dep.spec as { template: { spec: { initContainers: Container[] } } };
     const init = spec.template.spec.initContainers.find((c) => c.name === 'init-nix');
-    expect(init?.securityContext).toBeDefined();
-    expect(init?.securityContext?.runAsNonRoot).toBe(true);
-    expect(init?.securityContext?.allowPrivilegeEscalation).toBe(false);
-    expect(init?.securityContext?.capabilities.drop).toContain('ALL');
+    const sc = init?.securityContext;
+    expect(sc).toBeDefined();
+    expect(sc?.runAsNonRoot).toBe(true);
+    expect(sc?.allowPrivilegeEscalation).toBe(false);
+    expect(sc?.capabilities.drop).toContain('ALL');
   });
 
   it('mounts GitHub App secret read-only at /secrets', () => {
@@ -75,7 +77,7 @@ describe('GhaRunner construct', () => {
       };
     };
     const vol = spec.template.spec.volumes.find((v) => v.name === 'github-app');
-    expect(vol?.secret?.secretName).toBe('runner-github-app');
+    expect(vol?.secret.secretName).toBe('runner-github-app');
     const mount = spec.template.spec.containers[0].volumeMounts.find(
       (vm) => vm.name === 'github-app',
     );

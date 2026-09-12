@@ -117,6 +117,32 @@ export function createBackupRbac(scope: Construct, name: string, namespace: stri
   });
 }
 
+function buildBackupContainerSpec(
+  name: string,
+  namespace: string,
+  backup: ResolvedBackup,
+  homeMountPath: string,
+  variant: 'devcontainer' | 'devenv',
+) {
+  return {
+    name: 'r2-backup',
+    image: OC_CLI_IMAGE,
+    imagePullPolicy: 'IfNotPresent' as const,
+    securityContext: {
+      runAsNonRoot: true,
+      allowPrivilegeEscalation: false,
+      capabilities: { drop: ['ALL'] },
+    },
+    env: [
+      { name: 'WORKSPACE_POD_LABEL', value: `app.kubernetes.io/name=${name}` },
+      { name: 'NAMESPACE', value: namespace },
+      { name: 'HOME_MOUNT_PATH', value: homeMountPath },
+      { name: 'BACKUP_KEEP', value: String(backup.keep) },
+    ],
+    command: ['/bin/sh', '-ec', buildBackupScript(variant)],
+  };
+}
+
 export function createBackupCronJob(
   scope: Construct,
   name: string,
@@ -146,23 +172,7 @@ export function createBackupCronJob(
               serviceAccountName: saName,
               restartPolicy: 'OnFailure',
               containers: [
-                {
-                  name: 'r2-backup',
-                  image: OC_CLI_IMAGE,
-                  imagePullPolicy: 'IfNotPresent',
-                  securityContext: {
-                    runAsNonRoot: true,
-                    allowPrivilegeEscalation: false,
-                    capabilities: { drop: ['ALL'] },
-                  },
-                  env: [
-                    { name: 'WORKSPACE_POD_LABEL', value: `app.kubernetes.io/name=${name}` },
-                    { name: 'NAMESPACE', value: namespace },
-                    { name: 'HOME_MOUNT_PATH', value: homeMountPath },
-                    { name: 'BACKUP_KEEP', value: String(backup.keep) },
-                  ],
-                  command: ['/bin/sh', '-ec', buildBackupScript(variant)],
-                },
+                buildBackupContainerSpec(name, namespace, backup, homeMountPath, variant),
               ],
             },
           },

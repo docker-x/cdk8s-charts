@@ -60,8 +60,9 @@ describe('OpenShiftWorkspace recipe', () => {
     const proxy = spec.template.spec.containers.find((c) => c.name === 'oauth-proxy');
     expect(proxy).toBeDefined();
     expect(proxy?.image).toContain('oauth-proxy');
-    expect(proxy?.securityContext?.runAsNonRoot).toBe(true);
-    expect(proxy?.securityContext?.capabilities.drop).toContain('ALL');
+    const sc = proxy?.securityContext;
+    expect(sc?.runAsNonRoot).toBe(true);
+    expect(sc?.capabilities.drop).toContain('ALL');
   });
 
   it('sets OAuth redirect URI annotation on the ServiceAccount', () => {
