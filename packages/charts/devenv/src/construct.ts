@@ -19,7 +19,6 @@ export class Devenv extends HelmConstruct<Values> {
       id,
       props as unknown as Record<string, unknown>,
       { homeMountPath: '/env', extraPorts: { paseoPort: 6767, caddyPort: 8080 } },
-      [{ name: 'DEVENV', value: 'true' }],
     );
     createWorkspaceDeployment(this, {
       name: values.name as string,
