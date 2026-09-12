@@ -108,13 +108,14 @@ export function validateDnsLabels(name: string, namespace: string): void {
     throw new Error(
       `Invalid namespace "${namespace}": must be a DNS-label value (lowercase alphanumeric with hyphens, max 63 chars, no dots)`,
     );
-  // Validate generated resource names don't exceed K8s limits
-  // CronJob names: max 52 chars; ${name}-keepalive, ${name}-backup
-  const maxSuffix = '-keepalive'.length; // 10 chars — longest suffix
-  const maxName = 52 - maxSuffix;
-  if (name.length > maxName) {
+}
+
+/** Validate that a generated resource name fits within the K8s limit (52 for CronJobs). */
+export function validateGeneratedName(name: string, suffix: string, limit = 52): void {
+  const generated = `${name}${suffix}`;
+  if (generated.length > limit) {
     throw new Error(
-      `Workspace name "${name}" is too long: generated resource names (e.g. ${name}-keepalive) would exceed the 52-char CronJob name limit. Max length: ${maxName} chars.`,
+      `Generated resource name "${generated}" exceeds the ${limit}-char limit. Workspace name "${name}" is too long for suffix "${suffix}" (max ${limit - suffix.length} chars).`,
     );
   }
 }

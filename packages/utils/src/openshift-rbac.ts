@@ -1,7 +1,7 @@
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { ResolvedBackup, ResolvedKeepalive } from './openshift-recipe';
-import { componentLabels, OC_CLI_IMAGE } from './openshift-recipe';
+import { componentLabels, OC_CLI_IMAGE, validateGeneratedName } from './openshift-recipe';
 import { buildBackupScript, buildKeepaliveScript } from './openshift-scripts';
 
 // ---------------------------------------------------------------------------
@@ -43,6 +43,7 @@ export function createKeepaliveCronJob(
   namespace: string,
   keepalive: ResolvedKeepalive,
 ): void {
+  validateGeneratedName(name, '-keepalive');
   const saName = `${name}-keepalive`;
   new ApiObject(scope, 'keepalive-cronjob', {
     apiVersion: 'batch/v1',
@@ -154,6 +155,7 @@ export function createBackupCronJob(
   if (!Number.isInteger(backup.keep) || backup.keep <= 0) {
     throw new Error(`backup.keep must be a positive integer, got: ${backup.keep}`);
   }
+  validateGeneratedName(name, '-backup');
   const saName = `${name}-backup`;
   new ApiObject(scope, 'backup-cronjob', {
     apiVersion: 'batch/v1',
