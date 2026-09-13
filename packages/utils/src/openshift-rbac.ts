@@ -188,31 +188,21 @@ export function createBackupCronJob(
 // Terraform deployer RBAC
 // ---------------------------------------------------------------------------
 
-export function buildTfDeployerRules(name: string, saName: string) {
+export function buildTfDeployerRules() {
   return [
     {
       apiGroups: [''],
       resources: ['pods', 'serviceaccounts', 'persistentvolumeclaims', 'services', 'configmaps'],
       verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
     },
-    { apiGroups: [''], resources: ['secrets'], verbs: ['create', 'delete', 'patch', 'update'] },
-    // The kubectl provider must GET every managed secret to diff state during
-    // plan — scope reads to the secrets this recipe creates (never arbitrary
-    // namespace secrets). Granting get on a name that does not exist is a
-    // harmless no-op, so conditional secrets are listed unconditionally.
+    // get is namespace-wide (no list/watch): the shared OPENSHIFT_TOKEN
+    // varset means one deployer identity serves every stack in the
+    // namespace, and the kubectl provider must GET each managed secret to
+    // refresh state during plan. list/watch stay denied.
     {
       apiGroups: [''],
       resources: ['secrets'],
-      resourceNames: [
-        `${saName}-token`,
-        `${name}-oauth-cookie`,
-        `${name}-sa-token`,
-        `${name}-r2-credentials`,
-        `${name}-ssh-keys`,
-        `${name}-secret-env`,
-        'ghcr-pull-secret',
-      ],
-      verbs: ['get'],
+      verbs: ['create', 'delete', 'get', 'patch', 'update'],
     },
     { apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] },
     {
@@ -260,7 +250,7 @@ export function createTfDeployer(scope: Construct, name: string, namespace: stri
     apiVersion: 'rbac.authorization.k8s.io/v1',
     kind: 'Role',
     metadata: { name: saName, namespace, labels: componentLabels(name, 'tf-deployer') },
-    rules: buildTfDeployerRules(name, saName),
+    rules: buildTfDeployerRules(),
   });
   new ApiObject(scope, 'tf-deployer-rb', {
     apiVersion: 'rbac.authorization.k8s.io/v1',
