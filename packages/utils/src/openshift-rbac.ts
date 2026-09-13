@@ -188,7 +188,7 @@ export function createBackupCronJob(
 // Terraform deployer RBAC
 // ---------------------------------------------------------------------------
 
-export function buildTfDeployerRules(saName: string) {
+export function buildTfDeployerRules(name: string, saName: string) {
   return [
     {
       apiGroups: [''],
@@ -196,7 +196,24 @@ export function buildTfDeployerRules(saName: string) {
       verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
     },
     { apiGroups: [''], resources: ['secrets'], verbs: ['create', 'delete', 'patch', 'update'] },
-    { apiGroups: [''], resources: ['secrets'], resourceNames: [`${saName}-token`], verbs: ['get'] },
+    // The kubectl provider must GET every managed secret to diff state during
+    // plan — scope reads to the secrets this recipe creates (never arbitrary
+    // namespace secrets). Granting get on a name that does not exist is a
+    // harmless no-op, so conditional secrets are listed unconditionally.
+    {
+      apiGroups: [''],
+      resources: ['secrets'],
+      resourceNames: [
+        `${saName}-token`,
+        `${name}-oauth-cookie`,
+        `${name}-sa-token`,
+        `${name}-r2-credentials`,
+        `${name}-ssh-keys`,
+        `${name}-secret-env`,
+        'ghcr-pull-secret',
+      ],
+      verbs: ['get'],
+    },
     { apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] },
     {
       apiGroups: ['apps'],
@@ -243,7 +260,7 @@ export function createTfDeployer(scope: Construct, name: string, namespace: stri
     apiVersion: 'rbac.authorization.k8s.io/v1',
     kind: 'Role',
     metadata: { name: saName, namespace, labels: componentLabels(name, 'tf-deployer') },
-    rules: buildTfDeployerRules(saName),
+    rules: buildTfDeployerRules(name, saName),
   });
   new ApiObject(scope, 'tf-deployer-rb', {
     apiVersion: 'rbac.authorization.k8s.io/v1',
