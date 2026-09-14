@@ -166,7 +166,12 @@ export class LitellmMs extends HelmConstruct<LitellmMsValues> {
       props.namespace,
       computed,
       this.stripVolumeOverrides(props.values),
-      { helmFlags: ['--skip-tests'], version: props.version ?? DEFAULT_VERSION },
+      // Pin the version only for the built-in chart — a caller-supplied
+      // chart may not publish this tag.
+      {
+        helmFlags: ['--skip-tests'],
+        version: props.version ?? (props.chart ? undefined : DEFAULT_VERSION),
+      },
     );
 
     this.exports = this.buildExports(id, values, props.masterKey, props.virtualKeys);

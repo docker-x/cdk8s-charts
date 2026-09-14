@@ -29,7 +29,9 @@ export class Redis extends HelmConstruct<RedisValues> {
       computed,
       props.values,
       {
-        version: props.version ?? DEFAULT_VERSION,
+        // Pin the version only for the built-in chart — a caller-supplied
+        // chart may not publish this tag.
+        version: props.version ?? (props.chart ? undefined : DEFAULT_VERSION),
       },
     );
 
