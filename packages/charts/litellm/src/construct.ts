@@ -13,7 +13,7 @@ const PROVISION_KEYS_SCRIPT = readFileSync(
   'utf8',
 );
 
-const DEFAULT_VERSION = '1.100.0';
+const DEFAULT_VERSION = '1.100.1';
 
 export class Litellm extends HelmConstruct<LitellmValues> {
   public readonly exports: LitellmExports;
@@ -82,7 +82,12 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       props.namespace,
       computed,
       Object.keys(restOverrides).length > 0 ? restOverrides : undefined,
-      { helmFlags: ['--skip-tests'], version: props.version ?? DEFAULT_VERSION },
+      // Pin the version only for the built-in chart — a caller-supplied
+      // chart may not publish this tag.
+      {
+        helmFlags: ['--skip-tests'],
+        version: props.version ?? (props.chart ? undefined : DEFAULT_VERSION),
+      },
     );
 
     const svcHost = id;

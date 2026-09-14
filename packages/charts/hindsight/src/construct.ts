@@ -4,7 +4,7 @@ import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { HindsightExports, HindsightProps, HindsightValues } from './types';
 
-const DEFAULT_VERSION = '0.9.2';
+const DEFAULT_VERSION = '0.10.0';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -79,7 +79,9 @@ export class Hindsight extends HelmConstruct<HindsightValues> {
       props.namespace,
       computed,
       props.values,
-      { version: props.version ?? DEFAULT_VERSION },
+      // Pin the version only for the built-in chart — a caller-supplied
+      // chart may not publish this tag.
+      { version: props.version ?? (props.chart ? undefined : DEFAULT_VERSION) },
     );
 
     this.exports = {

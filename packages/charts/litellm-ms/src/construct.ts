@@ -23,7 +23,7 @@ import type {
 } from './types';
 
 const DEFAULT_CHART = 'oci://ghcr.io/berriai/litellm/chart/litellm';
-const DEFAULT_VERSION = '1.100.0';
+const DEFAULT_VERSION = '1.100.1';
 const DEFAULT_POSTGRES_CHART = 'oci://registry-1.docker.io/bitnamicharts/postgresql';
 const CURL_IMAGE = 'curlimages/curl:8.12.1';
 
@@ -166,7 +166,12 @@ export class LitellmMs extends HelmConstruct<LitellmMsValues> {
       props.namespace,
       computed,
       this.stripVolumeOverrides(props.values),
-      { helmFlags: ['--skip-tests'], version: props.version ?? DEFAULT_VERSION },
+      // Pin the version only for the built-in chart — a caller-supplied
+      // chart may not publish this tag.
+      {
+        helmFlags: ['--skip-tests'],
+        version: props.version ?? (props.chart ? undefined : DEFAULT_VERSION),
+      },
     );
 
     this.exports = this.buildExports(id, values, props.masterKey, props.virtualKeys);

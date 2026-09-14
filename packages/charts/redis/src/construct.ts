@@ -3,7 +3,7 @@ import type { Construct } from 'constructs';
 import type { RedisExports, RedisProps, RedisValues } from './types';
 
 const CHART = 'oci://registry-1.docker.io/bitnamicharts/redis';
-const DEFAULT_VERSION = '28.0.15';
+const DEFAULT_VERSION = '28.1.0';
 
 export class Redis extends HelmConstruct<RedisValues> {
   public readonly exports: RedisExports;
@@ -29,7 +29,9 @@ export class Redis extends HelmConstruct<RedisValues> {
       computed,
       props.values,
       {
-        version: props.version ?? DEFAULT_VERSION,
+        // Pin the version only for the built-in chart — a caller-supplied
+        // chart may not publish this tag.
+        version: props.version ?? (props.chart ? undefined : DEFAULT_VERSION),
       },
     );
 

@@ -3,7 +3,7 @@
  *
  * Chart: plane-ce
  * Repo:  https://helm.plane.so/
- * Chart version: 1.8.0 / appVersion: 1.4.1
+ * Chart version: 1.8.1 / appVersion: 1.4.1
  *
  * Generated from `helm show values` output — every top-level key and its
  * nested structure is represented.  All fields are optional because the
@@ -257,7 +257,7 @@ export interface PlaneCeProps {
   namespace: string;
   /** Plane application version tag (e.g. 'v1.3.1'). */
   version?: string;
-  /** Plane CE Helm chart version (default: 1.8.0). */
+  /** Plane CE Helm chart version (default: 1.8.1). */
   chartVersion?: string;
   /**
    * Django secret key for hashing/encryption.
