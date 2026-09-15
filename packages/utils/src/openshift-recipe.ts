@@ -1,6 +1,6 @@
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
-import { getPaseoAutoResumeScript, simpleHash } from './openshift-scripts';
+import { getPaseoAutoResumeScript, getPaseoPreStopScript, simpleHash } from './openshift-scripts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -219,7 +219,10 @@ export function createPaseoConfigMap(
       apiVersion: 'v1',
       kind: 'ConfigMap',
       metadata: { name: cmName, namespace, labels: componentLabels(name, 'paseo-auto-resume') },
-      data: { 'auto-resume.sh': getPaseoAutoResumeScript(variant) },
+      data: {
+        'auto-resume.sh': getPaseoAutoResumeScript(variant),
+        'pre-stop.sh': getPaseoPreStopScript(variant),
+      },
     });
   }
   return cmName;
@@ -328,14 +331,35 @@ export function buildLifecycle(
       '[[ -f /etc/profile.d/nvm-path.sh ]] && . /etc/profile.d/nvm-path.sh',
       'export PATH="/usr/local/share/runtime-bin:$PATH"',
     );
+  } else {
+    // Append (not prepend): the profile dir lives on the writable PVC, so it
+    // must not shadow trusted system binaries at pod start.
+    lines.push(`export PATH="$PATH:${homeMountPath}/.devenv/profile/bin"`);
   }
-  lines.push(
-    `nohup /bin/bash /usr/local/share/paseo-auto-resume/auto-resume.sh >> "${homeMountPath}/.paseo/auto-resume.log" 2>&1 &`,
-  );
+  const scriptsDir = '/usr/local/share/paseo-auto-resume';
   return {
     postStart: {
       exec: {
-        command: ['/bin/bash', '-c', lines.join('\n')],
+        command: [
+          '/bin/bash',
+          '-c',
+          [
+            ...lines,
+            `nohup /bin/bash ${scriptsDir}/auto-resume.sh >> "${homeMountPath}/.paseo/auto-resume.log" 2>&1 &`,
+          ].join('\n'),
+        ],
+      },
+    },
+    preStop: {
+      exec: {
+        command: [
+          '/bin/bash',
+          '-c',
+          [
+            ...lines,
+            `/bin/bash ${scriptsDir}/pre-stop.sh >> "${homeMountPath}/.paseo/auto-resume.log" 2>&1`,
+          ].join('\n'),
+        ],
       },
     },
   };
@@ -363,7 +387,11 @@ export function buildPodAnnotations(
   variant: 'devcontainer' | 'devenv' = 'devcontainer',
 ): Record<string, string> {
   if (!paseoAutoResume.enabled) return {};
-  return { 'paseo-auto-resume/checksum': simpleHash(getPaseoAutoResumeScript(variant)) };
+  return {
+    'paseo-auto-resume/checksum': simpleHash(
+      getPaseoAutoResumeScript(variant) + getPaseoPreStopScript(variant),
+    ),
+  };
 }
 
 export function createRoutes(

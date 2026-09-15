@@ -1066,7 +1066,11 @@ production remote workspace:
 3. **OpenShift Routes** — edge-terminated TLS routes for Paseo web UI and preview
 4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
 5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2
-6. **Paseo auto-resume** — postStart hook to resume closed Paseo agents after restart
+6. **Paseo auto-resume** — preStop hook snapshots live (non-closed, non-idle,
+   non-archived) agent IDs to `$PASEO_HOME/.was-running`; postStart waits for
+   daemon health and resumes exactly those via `paseo send` (lazy provider
+   resume + "continue" prompt). Without a snapshot (SIGKILL/crash) it falls
+   back to all `closed` non-archived agents, capped by `PASEO_AUTO_RESUME_MAX`.
 7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform deployments
 8. **All secrets** — R2 credentials, SSH keys, OAuth cookie, GHCR pull secret
 
@@ -1208,7 +1212,11 @@ but using the Devenv chart:
 3. **OpenShift Routes** — edge-terminated TLS routes for Paseo web UI and preview
 4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
 5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2
-6. **Paseo auto-resume** — postStart hook to resume closed Paseo agents after restart
+6. **Paseo auto-resume** — preStop hook snapshots live (non-closed, non-idle,
+   non-archived) agent IDs to `$PASEO_HOME/.was-running`; postStart waits for
+   daemon health and resumes exactly those via `paseo send` (lazy provider
+   resume + "continue" prompt). Without a snapshot (SIGKILL/crash) it falls
+   back to all `closed` non-archived agents, capped by `PASEO_AUTO_RESUME_MAX`.
 7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform deployments
 8. **Pod sandbox RBAC** — Role + RoleBinding granting the workspace SA pod
    lifecycle (`oc run`/`kubectl run` sibling pods) plus `pods/exec`.
