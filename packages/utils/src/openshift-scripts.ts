@@ -112,6 +112,7 @@ set -euo pipefail
 
 PASEO_HOME="\${PASEO_HOME:-${defaultHome}}"
 AGENTS_DIR="$PASEO_HOME/agents"
+MARKER="$PASEO_HOME/.was-running"
 RESUME_PROMPT="\${PASEO_AUTO_RESUME_PROMPT:-Continue working on your last task. Pick up where you left off.}"
 MAX_AGENTS="\${PASEO_AUTO_RESUME_MAX:-10}"
 
@@ -142,20 +143,32 @@ if [[ ! -d "$AGENTS_DIR" ]]; then
 fi
 
 CLOSED_AGENTS=()
-for json_file in "$AGENTS_DIR"/*/*.json; do
-  [[ -f "$json_file" ]] || continue
-  agent_id=$(node -e '
-    try {
-      const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-      if (d.lastStatus === "closed" && !d.archivedAt) {
-        process.stdout.write(d.id || "");
-      }
-    } catch (e) { /* skip invalid */ }
-  ' "$json_file" 2>/dev/null || true)
-  if [[ -n "$agent_id" ]]; then
-    CLOSED_AGENTS+=("$agent_id")
-  fi
-done
+if [[ -f "$MARKER" ]]; then
+  # preStop snapshotted agents that were live when the pod stopped —
+  # resume exactly those, not every historically-closed agent.
+  while IFS= read -r agent_id; do
+    [[ -n "$agent_id" ]] && CLOSED_AGENTS+=("$agent_id")
+  done < "$MARKER"
+  rm -f "$MARKER"
+  log "resuming \${#CLOSED_AGENTS[@]} agent(s) from pre-stop snapshot"
+else
+  # No snapshot (SIGKILL/crash or hook never ran): fall back to all
+  # closed non-archived agents.
+  for json_file in "$AGENTS_DIR"/*/*.json; do
+    [[ -f "$json_file" ]] || continue
+    agent_id=$(node -e '
+      try {
+        const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+        if (d.lastStatus === "closed" && !d.archivedAt) {
+          process.stdout.write(d.id || "");
+        }
+      } catch (e) { /* skip invalid */ }
+    ' "$json_file" 2>/dev/null || true)
+    if [[ -n "$agent_id" ]]; then
+      CLOSED_AGENTS+=("$agent_id")
+    fi
+  done
+fi
 
 if [[ \${#CLOSED_AGENTS[@]} -eq 0 ]]; then
   log "no closed agents found, nothing to resume"
@@ -189,6 +202,43 @@ export function getPaseoAutoResumeScript(
 ): string {
   const defaultHome = variant === 'devenv' ? '/env/.paseo' : '/home/vscode/.paseo';
   return paseoAutoResumeSetup(defaultHome) + paseoWaitForDaemon() + paseoAutoResumeBody();
+}
+
+function paseoPreStopBody(defaultHome: string): string {
+  return `#!/bin/bash
+# Snapshot live Paseo agents before pod termination so the postStart
+# auto-resume only picks up agents that were actually running — not
+# every historically-closed agent.
+set -uo pipefail
+
+PASEO_HOME="\${PASEO_HOME:-${defaultHome}}"
+AGENTS_DIR="$PASEO_HOME/agents"
+MARKER="$PASEO_HOME/.was-running"
+
+log() { echo "[pre-stop] $*"; }
+
+if [[ ! -d "$AGENTS_DIR" ]]; then
+  log "no agents directory, nothing to snapshot"
+  exit 0
+fi
+
+: > "$MARKER"
+for json_file in "$AGENTS_DIR"/*/*.json; do
+  [[ -f "$json_file" ]] || continue
+  node -e '
+    try {
+      const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+      const live = d.lastStatus && d.lastStatus !== "closed" && d.lastStatus !== "idle" && !d.archivedAt;
+      if (live && d.id) process.stdout.write(d.id + "\\n");
+    } catch (e) { /* skip invalid */ }
+  ' "$json_file" >> "$MARKER" 2>/dev/null || true
+done
+log "snapshotted $(wc -l < "$MARKER" | tr -d ' ') live agent(s) to $MARKER"`;
+}
+
+export function getPaseoPreStopScript(variant: 'devcontainer' | 'devenv' = 'devcontainer'): string {
+  const defaultHome = variant === 'devenv' ? '/env/.paseo' : '/home/vscode/.paseo';
+  return paseoPreStopBody(defaultHome);
 }
 
 /** Backward-compatible constant (devcontainer variant). */
