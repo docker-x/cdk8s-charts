@@ -1214,6 +1214,12 @@ but using the Devenv chart:
    lifecycle (`oc run`/`kubectl run` sibling pods) plus exec/attach/log/
    portforward. In-pod docker/podman is impossible under restricted SCC
    (user namespaces blocked); sibling pods are the supported equivalent.
+   **Security note:** pod creation cannot be scoped by resourceNames, so a
+   sandboxed pod could run under another SA in the namespace (e.g. the
+   tf-deployer). Acceptable here because the workspace already mounts the
+   same secrets and the namespace is a single trust domain — stricter
+   isolation would require a cluster-scoped ValidatingAdmissionPolicy,
+   which is outside the deployer SA's RBAC.
 9. **All secrets** — R2 credentials, SSH keys, OAuth cookie, GHCR pull secret
 
 **Props (`OpenShiftDevenvProps`):**
