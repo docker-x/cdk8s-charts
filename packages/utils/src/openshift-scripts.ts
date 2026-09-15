@@ -222,17 +222,29 @@ if [[ ! -d "$AGENTS_DIR" ]]; then
   exit 0
 fi
 
-: > "$MARKER"
+if ! command -v node >/dev/null 2>&1; then
+  log "node not on PATH, skipping snapshot — postStart will use fallback"
+  rm -f "$MARKER"
+  exit 0
+fi
+
+TMP_MARKER="$MARKER.tmp.$$"
+: > "$TMP_MARKER" || { log "cannot write snapshot, skipping"; rm -f "$TMP_MARKER"; exit 0; }
 for json_file in "$AGENTS_DIR"/*/*.json; do
   [[ -f "$json_file" ]] || continue
-  node -e '
+  if ! node -e '
     try {
       const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
       const live = d.lastStatus && d.lastStatus !== "closed" && d.lastStatus !== "idle" && !d.archivedAt;
       if (live && d.id) process.stdout.write(d.id + "\\n");
     } catch (e) { /* skip invalid */ }
-  ' "$json_file" >> "$MARKER" 2>/dev/null || true
+  ' "$json_file" >> "$TMP_MARKER" 2>/dev/null; then
+    log "snapshot write failed, discarding"
+    rm -f "$TMP_MARKER" "$MARKER"
+    exit 0
+  fi
 done
+mv "$TMP_MARKER" "$MARKER"
 log "snapshotted $(wc -l < "$MARKER" | tr -d ' ') live agent(s) to $MARKER"`;
 }
 

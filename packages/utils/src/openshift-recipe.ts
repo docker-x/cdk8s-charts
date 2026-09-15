@@ -332,7 +332,9 @@ export function buildLifecycle(
       'export PATH="/usr/local/share/runtime-bin:$PATH"',
     );
   } else {
-    lines.push(`export PATH="${homeMountPath}/.devenv/profile/bin:$PATH"`);
+    // Append (not prepend): the profile dir lives on the writable PVC, so it
+    // must not shadow trusted system binaries at pod start.
+    lines.push(`export PATH="$PATH:${homeMountPath}/.devenv/profile/bin"`);
   }
   const scriptsDir = '/usr/local/share/paseo-auto-resume';
   return {
