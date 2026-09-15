@@ -4,6 +4,7 @@ import type {
   ResolvedBackup,
   ResolvedKeepalive,
   ResolvedPaseoAutoResume,
+  ResolvedPodSandbox,
   ResolvedTfDeployer,
 } from '@cdk8s-charts/utils';
 import {
@@ -23,6 +24,7 @@ import {
   createRoutes,
   createSaTokenSecret,
   createTfDeployer,
+  createWorkspacePodRbac,
   validateDnsLabels,
   validateHomeMountPath,
 } from '@cdk8s-charts/utils';
@@ -51,6 +53,7 @@ export class OpenShiftDevenv extends Chart {
     };
     const paseoAutoResume: ResolvedPaseoAutoResume = { enabled: true, ...props.paseoAutoResume };
     const tfDeployer: ResolvedTfDeployer = { enabled: true, ...props.tfDeployer };
+    const podSandbox: ResolvedPodSandbox = { enabled: true, ...props.podSandbox };
     const backup: ResolvedBackup = { schedule: '0 2 * * *', keep: 3, ...props.backup };
 
     const oauthCookieSecretName = createOAuthCookieSecret(
@@ -111,6 +114,7 @@ export class OpenShiftDevenv extends Chart {
       createBackupCronJob(this, name, namespace, backup, homeMountPath, 'devenv');
     const tfDeployerSaName = `${name}-tf-deployer`;
     if (tfDeployer.enabled) createTfDeployer(this, name, namespace);
+    if (podSandbox.enabled) createWorkspacePodRbac(this, name, namespace, saName);
 
     this.exports = {
       pvcName: devenv.exports.pvcName,

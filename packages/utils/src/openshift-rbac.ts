@@ -185,6 +185,46 @@ export function createBackupCronJob(
 }
 
 // ---------------------------------------------------------------------------
+// Workspace pod-sandbox RBAC — lets the workspace SA spawn sibling pods
+// (`oc run`/`kubectl run`) as the in-cluster equivalent of `docker run`.
+// Restricted SCC blocks user namespaces (unshare → ENOSYS), so in-pod
+// docker/podman cannot work; sibling pods are the supported equivalent.
+// ---------------------------------------------------------------------------
+
+export function createWorkspacePodRbac(
+  scope: Construct,
+  name: string,
+  namespace: string,
+  saName: string,
+): void {
+  const roleName = `${name}-pod-sandbox`;
+  new ApiObject(scope, 'pod-sandbox-role', {
+    apiVersion: 'rbac.authorization.k8s.io/v1',
+    kind: 'Role',
+    metadata: { name: roleName, namespace, labels: componentLabels(name, 'pod-sandbox') },
+    rules: [
+      {
+        apiGroups: [''],
+        resources: ['pods'],
+        verbs: ['create', 'delete', 'get', 'list', 'watch'],
+      },
+      {
+        apiGroups: [''],
+        resources: ['pods/exec', 'pods/attach', 'pods/log', 'pods/portforward'],
+        verbs: ['create', 'get'],
+      },
+    ],
+  });
+  new ApiObject(scope, 'pod-sandbox-rb', {
+    apiVersion: 'rbac.authorization.k8s.io/v1',
+    kind: 'RoleBinding',
+    metadata: { name: roleName, namespace, labels: componentLabels(name, 'pod-sandbox') },
+    subjects: [{ kind: 'ServiceAccount', name: saName, namespace }],
+    roleRef: { kind: 'Role', name: roleName, apiGroup: 'rbac.authorization.k8s.io' },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Terraform deployer RBAC
 // ---------------------------------------------------------------------------
 

@@ -1210,7 +1210,11 @@ but using the Devenv chart:
 5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2
 6. **Paseo auto-resume** — postStart hook to resume closed Paseo agents after restart
 7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform deployments
-8. **All secrets** — R2 credentials, SSH keys, OAuth cookie, GHCR pull secret
+8. **Pod sandbox RBAC** — Role + RoleBinding granting the workspace SA pod
+   lifecycle (`oc run`/`kubectl run` sibling pods) plus exec/attach/log/
+   portforward. In-pod docker/podman is impossible under restricted SCC
+   (user namespaces blocked); sibling pods are the supported equivalent.
+9. **All secrets** — R2 credentials, SSH keys, OAuth cookie, GHCR pull secret
 
 **Props (`OpenShiftDevenvProps`):**
 
@@ -1234,6 +1238,7 @@ but using the Devenv chart:
 | `keepalive` | `{ enabled, schedule }` | no | Keepalive CronJob config |
 | `paseoAutoResume` | `{ enabled }` | no | Paseo auto-resume hook |
 | `tfDeployer` | `{ enabled }` | no | TF deployer SA + RBAC |
+| `podSandbox` | `{ enabled }` | no | Workspace SA pod-spawn RBAC (default: enabled) |
 | `values` | `DeepPartial<DevenvValues>` | no | Raw devenv value overrides |
 
 **Exports (`OpenShiftDevenvExports`):**

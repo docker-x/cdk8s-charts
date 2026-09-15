@@ -52,10 +52,15 @@ export interface TfDeployerConfig {
   enabled?: boolean;
 }
 
+export interface PodSandboxConfig {
+  enabled?: boolean;
+}
+
 export type ResolvedBackup = { schedule: string; keep: number } & BackupConfig;
 export type ResolvedKeepalive = { enabled: boolean; schedule: string } & KeepaliveConfig;
 export type ResolvedPaseoAutoResume = { enabled: boolean } & PaseoAutoResumeConfig;
 export type ResolvedTfDeployer = { enabled: boolean } & TfDeployerConfig;
+export type ResolvedPodSandbox = { enabled: boolean } & PodSandboxConfig;
 export type R2SecretResult = { r2SecretName: string; hasBackupSecrets: boolean };
 
 // ---------------------------------------------------------------------------
