@@ -36,6 +36,11 @@ export interface TfDeployerConfig {
   enabled?: boolean;
 }
 
+export interface PodSandboxConfig {
+  /** Grant the workspace SA rights to spawn sibling pods (oc run). Default: true. */
+  enabled?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Construct props & exports
 // ---------------------------------------------------------------------------
@@ -76,6 +81,8 @@ export interface OpenShiftDevenvProps {
   paseoAutoResume?: PaseoAutoResumeConfig;
   /** TF deployer SA + RBAC. */
   tfDeployer?: TfDeployerConfig;
+  /** Workspace pod sandbox — lets the workspace SA spawn sibling pods (default: enabled). */
+  podSandbox?: PodSandboxConfig;
   /** Raw devenv value overrides. */
   values?: DeepPartial<DevenvValues>;
 }
