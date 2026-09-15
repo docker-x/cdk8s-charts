@@ -1211,9 +1211,13 @@ but using the Devenv chart:
 6. **Paseo auto-resume** — postStart hook to resume closed Paseo agents after restart
 7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform deployments
 8. **Pod sandbox RBAC** — Role + RoleBinding granting the workspace SA pod
-   lifecycle (`oc run`/`kubectl run` sibling pods) plus exec/attach/log/
-   portforward. In-pod docker/podman is impossible under restricted SCC
+   lifecycle (`oc run`/`kubectl run` sibling pods) plus `pods/exec`.
+   In-pod docker/podman is impossible under restricted SCC
    (user namespaces blocked); sibling pods are the supported equivalent.
+   The Role is deliberately scoped to verbs the tf-deployer SA itself
+   holds — Kubernetes RBAC escalation prevention rejects granting more.
+   `pods/log`, `pods/attach`, `pods/portforward` are therefore not
+   deployable through this pipeline; `oc exec` covers interactive access.
    **Security note:** pod creation cannot be scoped by resourceNames, so a
    sandboxed pod could run under another SA in the namespace (e.g. the
    tf-deployer). Acceptable here because the workspace already mounts the

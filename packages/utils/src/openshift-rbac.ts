@@ -202,6 +202,11 @@ export function createWorkspacePodRbac(
     apiVersion: 'rbac.authorization.k8s.io/v1',
     kind: 'Role',
     metadata: { name: roleName, namespace, labels: componentLabels(name, 'pod-sandbox') },
+    // Scoped to verbs the tf-deployer SA itself holds — Kubernetes RBAC
+    // escalation prevention rejects granting permissions the grantor lacks.
+    // pods/log|attach|portforward are not deployable through this pipeline;
+    // `oc exec` covers interactive access, and output is inspectable via
+    // `oc get pod -o yaml` / `oc exec` for running pods.
     rules: [
       {
         apiGroups: [''],
@@ -210,8 +215,8 @@ export function createWorkspacePodRbac(
       },
       {
         apiGroups: [''],
-        resources: ['pods/exec', 'pods/attach', 'pods/log', 'pods/portforward'],
-        verbs: ['create', 'get'],
+        resources: ['pods/exec'],
+        verbs: ['create'],
       },
     ],
   });
