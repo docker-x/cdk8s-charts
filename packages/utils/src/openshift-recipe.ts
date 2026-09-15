@@ -328,6 +328,8 @@ export function buildLifecycle(
       '[[ -f /etc/profile.d/nvm-path.sh ]] && . /etc/profile.d/nvm-path.sh',
       'export PATH="/usr/local/share/runtime-bin:$PATH"',
     );
+  } else {
+    lines.push(`export PATH="${homeMountPath}/.devenv/profile/bin:$PATH"`);
   }
   lines.push(
     `nohup /bin/bash /usr/local/share/paseo-auto-resume/auto-resume.sh >> "${homeMountPath}/.paseo/auto-resume.log" 2>&1 &`,
