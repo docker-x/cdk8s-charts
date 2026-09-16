@@ -88,9 +88,14 @@ set -o pipefail
 if [ ! -f /nix-pvc/.seed-complete ]; then
   echo "Seeding /nix on PVC (one-time, may take a few minutes)..."
   # Heal permissions on a reused partial tree first: stale dirs can be
-  # read-only and tar must be able to unlink their contents.
+  # read-only and tar must be able to unlink their contents. The PVC root
+  # stays root-owned (fsGroup only makes it group-writable) — chmod only
+  # the subdirs this seed creates.
   if [ -d /nix-pvc/store ]; then
-    chmod -R u+rwX /nix-pvc
+    chmod -R u+rwX /nix-pvc/store
+    if [ -d /nix-pvc/var ]; then
+      chmod -R u+rwX /nix-pvc/var
+    fi
   fi
   mkdir -p /nix-pvc/store /nix-pvc/var/nix/db /nix-pvc/var/nix/gcroots /nix-pvc/var/nix/temproots /nix-pvc/var/nix/userpool
   # The db carries all store-path registrations; without it the seeded
@@ -113,7 +118,7 @@ if [ ! -f /nix-pvc/.seed-complete ]; then
   # still read and write the db, create profiles and add store paths.
   # Failure aborts the init before .seed-complete so a retry can heal it.
   chmod -R g+rwX /nix-pvc/var/nix
-  chmod g+rwX /nix-pvc /nix-pvc/store
+  chmod g+rwX /nix-pvc/store
   touch /nix-pvc/.seed-complete
   echo "Nix store seeded."
 else
