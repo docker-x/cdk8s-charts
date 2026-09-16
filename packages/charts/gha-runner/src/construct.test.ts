@@ -1,4 +1,4 @@
-import { findManifest, type Manifest, synthChart } from '@cdk8s-charts/utils';
+import { filterByKind, findManifest, type Manifest, synthChart } from '@cdk8s-charts/utils';
 import { Chart, Testing } from 'cdk8s';
 import { describe, expect, it } from 'vitest';
 import { GhaRunner } from './construct';
@@ -40,6 +40,24 @@ describe('GhaRunner construct', () => {
     expect(findManifest(m, 'Secret', 'runner-github-app')).toBeDefined();
     expect(findManifest(m, 'PersistentVolumeClaim', 'runner-nix-store')).toBeDefined();
     expect(findManifest(m, 'PersistentVolumeClaim', 'runner-runner-home')).toBeDefined();
+  });
+
+  it('creates a ServiceAccount with token automount disabled by default', () => {
+    const m = synth(baseProps);
+    const sa = findManifest(m, 'ServiceAccount', 'runner-sa');
+    expect(sa).toBeDefined();
+    expect(sa.automountServiceAccountToken).toBe(false);
+    const dep = findManifest(m, 'Deployment', 'runner');
+    const spec = dep.spec as { template: { spec: { serviceAccountName: string } } };
+    expect(spec.template.spec.serviceAccountName).toBe('runner-sa');
+  });
+
+  it('does not create a ServiceAccount when serviceAccountName is provided', () => {
+    const m = synth({ ...baseProps, serviceAccountName: 'custom-sa' });
+    expect(filterByKind(m, 'ServiceAccount')).toHaveLength(0);
+    const dep = findManifest(m, 'Deployment', 'runner');
+    const spec = dep.spec as { template: { spec: { serviceAccountName: string } } };
+    expect(spec.template.spec.serviceAccountName).toBe('custom-sa');
   });
 
   it('sets securityContext on the main runner container', () => {
