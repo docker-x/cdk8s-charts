@@ -84,18 +84,31 @@ exec ./run.sh
 // registrations — copying them keeps the prewarmed store paths valid.
 const INIT_SCRIPT = `#!/bin/sh
 set -eu
+set -o pipefail
 if [ ! -f /nix-pvc/.seed-complete ]; then
   echo "Seeding /nix on PVC (one-time, may take a few minutes)..."
+  # Heal permissions on a reused partial tree first: stale dirs can be
+  # read-only and tar must be able to unlink their contents.
+  if [ -d /nix-pvc/store ]; then
+    chmod -R u+rwX /nix-pvc
+  fi
   mkdir -p /nix-pvc/store /nix-pvc/var/nix/db /nix-pvc/var/nix/gcroots /nix-pvc/var/nix/temproots /nix-pvc/var/nix/userpool
+  # The db carries all store-path registrations; without it the seeded
+  # store is useless, so fail loudly rather than marking the seed done.
+  if [ ! -f /nix/var/nix/db/db.sqlite ] || [ ! -f /nix/var/nix/db/schema ]; then
+    echo "ERROR: image is missing /nix/var/nix/db files — cannot seed" >&2
+    exit 1
+  fi
   # tar pipes, not cp -a: non-root can't preserve ownership, and stale 444
   # files from a previous partial copy must be unlinked before rewrite.
   tar -C /nix/store -cf - . | tar -C /nix-pvc/store -xf -
-  [ -d /nix/var/nix/profiles ] && tar -C /nix/var/nix -cf - profiles | tar -C /nix-pvc/var/nix -xf -
-  # Re-copy unconditionally: a PVC from the old seed may hold a partial or
-  # stale db.sqlite, and stale lock/WAL sidecars corrupt later operations.
+  if [ -d /nix/var/nix/profiles ]; then
+    rm -rf /nix-pvc/var/nix/profiles
+    tar -C /nix/var/nix -cf - profiles | tar -C /nix-pvc/var/nix -xf -
+  fi
+  # Remove stale lock/WAL sidecars — they corrupt later nix operations.
   rm -f /nix-pvc/var/nix/db/big-lock /nix-pvc/var/nix/db/reserved /nix-pvc/var/nix/db/db.sqlite /nix-pvc/var/nix/db/db.sqlite-wal /nix-pvc/var/nix/db/db.sqlite-shm /nix-pvc/var/nix/db/schema
-  [ -f /nix/var/nix/db/db.sqlite ] && cp /nix/var/nix/db/db.sqlite /nix-pvc/var/nix/db/
-  [ -f /nix/var/nix/db/schema ] && cp /nix/var/nix/db/schema /nix-pvc/var/nix/db/
+  cp /nix/var/nix/db/db.sqlite /nix/var/nix/db/schema /nix-pvc/var/nix/db/
   # Group-accessible state dirs so a different SCC uid (same fsGroup) can
   # still read and write the db, create profiles and add store paths.
   # Failure aborts the init before .seed-complete so a retry can heal it.
