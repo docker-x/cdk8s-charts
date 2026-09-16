@@ -110,6 +110,15 @@ export class GhaRunner extends Chart {
       },
     });
 
+    // ServiceAccount for the runner pod — the deployment references it by
+    // name; no extra RBAC needed (runner only calls the GitHub API outbound).
+    const saName = values.serviceAccountName ?? `${name}-sa`;
+    new ApiObject(this, 'serviceaccount', {
+      apiVersion: 'v1',
+      kind: 'ServiceAccount',
+      metadata: { name: saName, namespace: props.namespace, labels },
+    });
+
     // Secret with GitHub App PEM
     const secretName = `${name}-github-app`;
     new ApiObject(this, 'secret', {
