@@ -87,13 +87,15 @@ set -eu
 if [ ! -f /nix-pvc/.seed-complete ]; then
   echo "Seeding /nix on PVC (one-time, may take a few minutes)..."
   mkdir -p /nix-pvc/store /nix-pvc/var/nix/db /nix-pvc/var/nix/gcroots /nix-pvc/var/nix/temproots /nix-pvc/var/nix/userpool
-  cp -a /nix/store/. /nix-pvc/store/
-  [ -d /nix/var/nix/profiles ] && cp -a /nix/var/nix/profiles /nix-pvc/var/nix/
+  # tar pipes, not cp -a: non-root can't preserve ownership, and stale 444
+  # files from a previous partial copy must be unlinked before rewrite.
+  tar -C /nix/store -cf - . | tar -C /nix-pvc/store -xf -
+  [ -d /nix/var/nix/profiles ] && tar -C /nix/var/nix -cf - profiles | tar -C /nix-pvc/var/nix -xf -
   # Re-copy unconditionally: a PVC from the old seed may hold a partial or
   # stale db.sqlite, and stale lock/WAL sidecars corrupt later operations.
-  rm -f /nix-pvc/var/nix/db/big-lock /nix-pvc/var/nix/db/reserved /nix-pvc/var/nix/db/db.sqlite-wal /nix-pvc/var/nix/db/db.sqlite-shm
-  [ -f /nix/var/nix/db/db.sqlite ] && cp -f /nix/var/nix/db/db.sqlite /nix-pvc/var/nix/db/
-  [ -f /nix/var/nix/db/schema ] && cp -f /nix/var/nix/db/schema /nix-pvc/var/nix/db/
+  rm -f /nix-pvc/var/nix/db/big-lock /nix-pvc/var/nix/db/reserved /nix-pvc/var/nix/db/db.sqlite /nix-pvc/var/nix/db/db.sqlite-wal /nix-pvc/var/nix/db/db.sqlite-shm /nix-pvc/var/nix/db/schema
+  [ -f /nix/var/nix/db/db.sqlite ] && cp /nix/var/nix/db/db.sqlite /nix-pvc/var/nix/db/
+  [ -f /nix/var/nix/db/schema ] && cp /nix/var/nix/db/schema /nix-pvc/var/nix/db/
   # Group-accessible state dirs so a different SCC uid (same fsGroup) can
   # still read and write the db, create profiles and add store paths.
   # Failure aborts the init before .seed-complete so a retry can heal it.
