@@ -85,12 +85,27 @@ exec ./run.sh
 const INIT_SCRIPT = `#!/bin/sh
 set -eu
 set -o pipefail
+# Serialize seeding across replicas: two init containers on an unseeded
+# PVC could otherwise seed concurrently and corrupt the db. flock works
+# on a read-only fd, so locking the PVC root directory avoids a lock
+# file entirely — no ownership or permission concerns when the SCC uid
+# changes between pods. The lock releases automatically if the init
+# dies, so a crashed seed can't wedge the PVC.
+exec 9</nix-pvc
+flock -w 600 9 || { echo "Timed out waiting for the seed lock" >&2; exit 1; }
 if [ ! -f /nix-pvc/.seed-complete ]; then
   echo "Seeding /nix on PVC (one-time, may take a few minutes)..."
-  # Heal permissions on a reused partial tree first: stale dirs can be
-  # read-only and tar must be able to unlink their contents.
+  # Heal a reused partial tree first: stale dirs can be read-only and tar
+  # must be able to unlink their contents. The PVC root stays root-owned
+  # (fsGroup only makes it group-writable) — chmod only the subdirs this
+  # seed creates. chmod needs ownership, so a tree left by a different
+  # SCC uid is wiped instead — deletion only needs the group-writable
+  # parents that fsGroup provides.
   if [ -d /nix-pvc/store ]; then
-    chmod -R u+rwX /nix-pvc
+    chmod -R u+rwX /nix-pvc/store 2>/dev/null || rm -rf /nix-pvc/store
+  fi
+  if [ -d /nix-pvc/var ]; then
+    chmod -R u+rwX /nix-pvc/var 2>/dev/null || rm -rf /nix-pvc/var
   fi
   mkdir -p /nix-pvc/store /nix-pvc/var/nix/db /nix-pvc/var/nix/gcroots /nix-pvc/var/nix/temproots /nix-pvc/var/nix/userpool
   # The db carries all store-path registrations; without it the seeded
@@ -113,7 +128,12 @@ if [ ! -f /nix-pvc/.seed-complete ]; then
   # still read and write the db, create profiles and add store paths.
   # Failure aborts the init before .seed-complete so a retry can heal it.
   chmod -R g+rwX /nix-pvc/var/nix
-  chmod g+rwX /nix-pvc /nix-pvc/store
+  # Restore the store's read-only invariant after seeding (and after the
+  # u+rwX heal above): runner jobs must not be able to tamper with the
+  # seeded binaries. The store root itself stays writable — nix adds new
+  # paths there — only seeded paths become immutable.
+  find /nix-pvc/store -mindepth 1 -exec chmod a-w {} +
+  chmod g+rwX /nix-pvc/store
   touch /nix-pvc/.seed-complete
   echo "Nix store seeded."
 else
