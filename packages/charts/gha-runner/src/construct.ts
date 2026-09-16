@@ -90,9 +90,11 @@ set -o pipefail
 # on a read-only fd, so locking the PVC root directory avoids a lock
 # file entirely — no ownership or permission concerns when the SCC uid
 # changes between pods. The lock releases automatically if the init
-# dies, so a crashed seed can't wedge the PVC.
+# dies, so a crashed seed can't wedge the PVC. Plain blocking flock —
+# busybox flock has no -w, and a wedged seed surfaces as an init
+# crash-loop either way.
 exec 9</nix-pvc
-flock -w 600 9 || { echo "Timed out waiting for the seed lock" >&2; exit 1; }
+flock 9
 if [ ! -f /nix-pvc/.seed-complete ]; then
   echo "Seeding /nix on PVC (one-time, may take a few minutes)..."
   # Heal a reused partial tree first: stale dirs can be read-only and tar
