@@ -135,9 +135,9 @@ if [ ! -f /nix-pvc/.seed-complete ]; then
   chmod -R g+rwX /nix-pvc/var/nix
   # Restore the store's read-only invariant after seeding (and after the
   # heal above): runner jobs must not be able to tamper with the seeded
-  # binaries. Files and dirs only — chmod on a symlink always fails; the
+  # binaries. Everything but symlinks — chmod on a symlink always fails;
   # store root itself stays writable so nix can still add paths.
-  find /nix-pvc/store -mindepth 1 ( -type f -o -type d ) -print0 | xargs -0 -r chmod a-w
+  find /nix-pvc/store -mindepth 1 ! -type l -print0 | xargs -0 -r chmod a-w
   chmod g+rwX /nix-pvc/store
   touch /nix-pvc/.seed-complete
   echo "Nix store seeded."
