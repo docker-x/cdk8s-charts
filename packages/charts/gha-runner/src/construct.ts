@@ -15,7 +15,7 @@ const DEFAULT_RUNNER_CLASS = 'gp3';
 const ENTRYPOINT_SCRIPT = `#!/bin/sh
 set -eu
 
-export PATH="/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 # Install tools if not available (persists in /nix PVC)
 if ! command -v curl >/dev/null 2>&1; then
@@ -72,15 +72,27 @@ echo "Starting runner..."
 exec ./run.sh
 `;
 
+// OpenShift restricted SCC runs the pod as an arbitrary UID, so the whole
+// /nix tree must live on the PVC (the image's /nix/var/nix/db is root-owned
+// and unwritable). The image's db lock files are 0600 and cannot be copied,
+// but db.sqlite + schema are world-readable and carry all store-path
+// registrations — copying them keeps the prewarmed store paths valid.
 const INIT_SCRIPT = `#!/bin/sh
 set -eu
-if [ ! -d /nix-pvc/store ]; then
-  echo "First boot: copying nix store from image to PVC..."
-  cp -rd /nix/* /nix-pvc/ 2>/dev/null || cp -r /nix/* /nix-pvc/
-  echo "Nix store copied."
+if [ ! -f /nix-pvc/.seed-complete ]; then
+  echo "Seeding /nix on PVC (one-time, may take a few minutes)..."
+  mkdir -p /nix-pvc/store /nix-pvc/var/nix/db /nix-pvc/var/nix/gcroots /nix-pvc/var/nix/temproots /nix-pvc/var/nix/userpool
+  cp -a /nix/store/. /nix-pvc/store/
+  cp -a /nix/var/nix/profiles /nix-pvc/var/nix/
+  cp /nix/var/nix/db/db.sqlite /nix/var/nix/db/schema /nix-pvc/var/nix/db/
+  touch /nix-pvc/.seed-complete
+  echo "Nix store seeded."
 else
-  echo "Nix store already populated."
+  echo "Nix store already seeded."
 fi
+# nix requires $HOME to be owned by the container UID; the PVC root is
+# root-owned, so create a per-uid home dir here (init runs as the same uid).
+mkdir -p /runner/home
 `;
 
 function buildLabels(name: string): Record<string, string> {
@@ -169,6 +181,9 @@ export class GhaRunner extends Chart {
     const deploymentName = name;
     const containerEnv = [
       { name: 'GITHUB_OWNER', value: values.githubOwner ?? '' },
+      // nix requires an owned $HOME; the init container creates /runner/home
+      // as the pod UID on the writable PVC.
+      { name: 'HOME', value: '/runner/home' },
       {
         name: 'GITHUB_APP_ID',
         valueFrom: { secretKeyRef: { name: secretName, key: 'github-app-id' } },
@@ -200,7 +215,15 @@ export class GhaRunner extends Chart {
           spec: {
             serviceAccountName: values.serviceAccountName ?? `${name}-sa`,
             ...(values.fsGroup !== undefined
-              ? { securityContext: { fsGroup: values.fsGroup } }
+              ? {
+                  securityContext: {
+                    fsGroup: values.fsGroup,
+                    // Only chown the volume when the root dir isn't already
+                    // group-owned — avoids re-chowning a large nix store on
+                    // every pod start.
+                    fsGroupChangePolicy: 'OnRootMismatch',
+                  },
+                }
               : {}),
             initContainers: [
               {
@@ -214,6 +237,7 @@ export class GhaRunner extends Chart {
                 },
                 volumeMounts: [
                   { name: 'nix-store', mountPath: '/nix-pvc' },
+                  { name: 'runner-home', mountPath: '/runner' },
                   { name: 'scripts', mountPath: '/scripts', readOnly: true },
                 ],
                 resources: {
