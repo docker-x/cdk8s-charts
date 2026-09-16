@@ -15,7 +15,12 @@ const DEFAULT_RUNNER_CLASS = 'gp3';
 const ENTRYPOINT_SCRIPT = `#!/bin/sh
 set -eu
 
-export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+# Per-UID home: the SCC UID can change across pod recreations, and nix
+# requires $HOME to be owned by the current euid.
+export HOME="/runner/home/$(id -u)"
+# Append the writable nix profile LAST: its directory is on the PVC, so
+# prepending would let installed tools shadow trusted system binaries.
+export PATH="/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:$PATH:$HOME/.nix-profile/bin"
 
 # Install tools if not available (persists in /nix PVC)
 if ! command -v curl >/dev/null 2>&1; then
@@ -85,18 +90,23 @@ if [ ! -f /nix-pvc/.seed-complete ]; then
   cp -a /nix/store/. /nix-pvc/store/
   [ -d /nix/var/nix/profiles ] && cp -a /nix/var/nix/profiles /nix-pvc/var/nix/
   # Re-copy unconditionally: a PVC from the old seed may hold a partial or
-  # stale db.sqlite, and stale 0600 lock files break later nix operations.
-  rm -f /nix-pvc/var/nix/db/big-lock /nix-pvc/var/nix/db/reserved
+  # stale db.sqlite, and stale lock/WAL sidecars corrupt later operations.
+  rm -f /nix-pvc/var/nix/db/big-lock /nix-pvc/var/nix/db/reserved /nix-pvc/var/nix/db/db.sqlite-wal /nix-pvc/var/nix/db/db.sqlite-shm
   [ -f /nix/var/nix/db/db.sqlite ] && cp -f /nix/var/nix/db/db.sqlite /nix-pvc/var/nix/db/
   [ -f /nix/var/nix/db/schema ] && cp -f /nix/var/nix/db/schema /nix-pvc/var/nix/db/
+  # Group-writable state dirs so a different SCC uid (same fsGroup) can
+  # still write the db, create profiles and add store paths.
+  chmod -R g+w /nix-pvc/var/nix 2>/dev/null || true
+  chmod g+w /nix-pvc /nix-pvc/store 2>/dev/null || true
   touch /nix-pvc/.seed-complete
   echo "Nix store seeded."
 else
   echo "Nix store already seeded."
 fi
 # nix requires $HOME to be owned by the container UID; the PVC root is
-# root-owned, so create a per-uid home dir here (init runs as the same uid).
-mkdir -p /runner/home
+# root-owned and the SCC uid can change across recreations, so create a
+# per-uid home dir (init runs as the same uid as the main container).
+mkdir -p "/runner/home/$(id -u)"
 `;
 
 function buildLabels(name: string): Record<string, string> {
@@ -197,9 +207,6 @@ export class GhaRunner extends Chart {
       { name: 'RUNNER_LABELS', value: (values.runnerLabels ?? DEFAULT_LABELS).join(',') },
       { name: 'RUNNER_NAME', value: values.runnerName ?? name },
       ...(values.env ? Object.entries(values.env).map(([k, v]) => ({ name: k, value: v })) : []),
-      // Pin structural env last — a user-supplied HOME would point nix at an
-      // unwritable directory (k8s resolves duplicate env names last-wins).
-      { name: 'HOME', value: '/runner/home' },
     ];
 
     new ApiObject(this, 'deployment', {
