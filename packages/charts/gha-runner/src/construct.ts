@@ -85,17 +85,26 @@ exec ./run.sh
 const INIT_SCRIPT = `#!/bin/sh
 set -eu
 set -o pipefail
+# Serialize seeding across replicas: two init containers on an unseeded
+# PVC could otherwise seed concurrently and corrupt the db. The fd form
+# of flock spawns no shell (flock -c fails for arbitrary OpenShift UIDs
+# with no passwd entry) and releases automatically if the init dies, so
+# a crashed seed can't wedge the PVC.
+exec 9>/nix-pvc/.seed.lock
+flock -w 600 9 || { echo "Timed out waiting for the seed lock" >&2; exit 1; }
 if [ ! -f /nix-pvc/.seed-complete ]; then
   echo "Seeding /nix on PVC (one-time, may take a few minutes)..."
-  # Heal permissions on a reused partial tree first: stale dirs can be
-  # read-only and tar must be able to unlink their contents. The PVC root
-  # stays root-owned (fsGroup only makes it group-writable) — chmod only
-  # the subdirs this seed creates.
+  # Heal a reused partial tree first: stale dirs can be read-only and tar
+  # must be able to unlink their contents. The PVC root stays root-owned
+  # (fsGroup only makes it group-writable) — chmod only the subdirs this
+  # seed creates. chmod needs ownership, so a tree left by a different
+  # SCC uid is wiped instead — deletion only needs the group-writable
+  # parents that fsGroup provides.
   if [ -d /nix-pvc/store ]; then
-    chmod -R u+rwX /nix-pvc/store
+    chmod -R u+rwX /nix-pvc/store 2>/dev/null || rm -rf /nix-pvc/store
   fi
   if [ -d /nix-pvc/var ]; then
-    chmod -R u+rwX /nix-pvc/var
+    chmod -R u+rwX /nix-pvc/var 2>/dev/null || rm -rf /nix-pvc/var
   fi
   mkdir -p /nix-pvc/store /nix-pvc/var/nix/db /nix-pvc/var/nix/gcroots /nix-pvc/var/nix/temproots /nix-pvc/var/nix/userpool
   # The db carries all store-path registrations; without it the seeded
