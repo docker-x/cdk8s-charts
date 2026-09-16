@@ -86,11 +86,12 @@ const INIT_SCRIPT = `#!/bin/sh
 set -eu
 set -o pipefail
 # Serialize seeding across replicas: two init containers on an unseeded
-# PVC could otherwise seed concurrently and corrupt the db. The fd form
-# of flock spawns no shell (flock -c fails for arbitrary OpenShift UIDs
-# with no passwd entry) and releases automatically if the init dies, so
-# a crashed seed can't wedge the PVC.
-exec 9>/nix-pvc/.seed.lock
+# PVC could otherwise seed concurrently and corrupt the db. flock works
+# on a read-only fd, so locking the PVC root directory avoids a lock
+# file entirely — no ownership or permission concerns when the SCC uid
+# changes between pods. The lock releases automatically if the init
+# dies, so a crashed seed can't wedge the PVC.
+exec 9</nix-pvc
 flock -w 600 9 || { echo "Timed out waiting for the seed lock" >&2; exit 1; }
 if [ ! -f /nix-pvc/.seed-complete ]; then
   echo "Seeding /nix on PVC (one-time, may take a few minutes)..."
