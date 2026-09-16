@@ -93,9 +93,9 @@ if [ ! -f /nix-pvc/.seed-complete ]; then
   # the subdirs this seed creates.
   if [ -d /nix-pvc/store ]; then
     chmod -R u+rwX /nix-pvc/store
-    if [ -d /nix-pvc/var ]; then
-      chmod -R u+rwX /nix-pvc/var
-    fi
+  fi
+  if [ -d /nix-pvc/var ]; then
+    chmod -R u+rwX /nix-pvc/var
   fi
   mkdir -p /nix-pvc/store /nix-pvc/var/nix/db /nix-pvc/var/nix/gcroots /nix-pvc/var/nix/temproots /nix-pvc/var/nix/userpool
   # The db carries all store-path registrations; without it the seeded
@@ -118,6 +118,11 @@ if [ ! -f /nix-pvc/.seed-complete ]; then
   # still read and write the db, create profiles and add store paths.
   # Failure aborts the init before .seed-complete so a retry can heal it.
   chmod -R g+rwX /nix-pvc/var/nix
+  # Restore the store's read-only invariant after seeding (and after the
+  # u+rwX heal above): runner jobs must not be able to tamper with the
+  # seeded binaries. The store root itself stays writable — nix adds new
+  # paths there — only seeded paths become immutable.
+  find /nix-pvc/store -mindepth 1 -exec chmod a-w {} +
   chmod g+rwX /nix-pvc/store
   touch /nix-pvc/.seed-complete
   echo "Nix store seeded."
