@@ -94,10 +94,11 @@ if [ ! -f /nix-pvc/.seed-complete ]; then
   rm -f /nix-pvc/var/nix/db/big-lock /nix-pvc/var/nix/db/reserved /nix-pvc/var/nix/db/db.sqlite-wal /nix-pvc/var/nix/db/db.sqlite-shm
   [ -f /nix/var/nix/db/db.sqlite ] && cp -f /nix/var/nix/db/db.sqlite /nix-pvc/var/nix/db/
   [ -f /nix/var/nix/db/schema ] && cp -f /nix/var/nix/db/schema /nix-pvc/var/nix/db/
-  # Group-writable state dirs so a different SCC uid (same fsGroup) can
-  # still write the db, create profiles and add store paths.
-  chmod -R g+w /nix-pvc/var/nix 2>/dev/null || true
-  chmod g+w /nix-pvc /nix-pvc/store 2>/dev/null || true
+  # Group-accessible state dirs so a different SCC uid (same fsGroup) can
+  # still read and write the db, create profiles and add store paths.
+  # Failure aborts the init before .seed-complete so a retry can heal it.
+  chmod -R g+rwX /nix-pvc/var/nix
+  chmod g+rwX /nix-pvc /nix-pvc/store
   touch /nix-pvc/.seed-complete
   echo "Nix store seeded."
 else
