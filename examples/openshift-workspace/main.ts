@@ -1,5 +1,5 @@
-import { App } from 'cdk8s';
 import { OpenShiftWorkspace } from '@cdk8s-charts/openshift-workspace';
+import { App } from 'cdk8s';
 
 // Read sensitive values from environment variables.
 // Copy .env.example to .env, fill in real values, then:
@@ -7,7 +7,10 @@ import { OpenShiftWorkspace } from '@cdk8s-charts/openshift-workspace';
 const env = process.env;
 const required = (name: string): string => {
   const v = env[name];
-  if (!v) throw new Error(`Environment variable ${name} is required. Copy .env.example to .env and fill in real values.`);
+  if (!v)
+    throw new Error(
+      `Environment variable ${name} is required. Copy .env.example to .env and fill in real values.`,
+    );
   return v;
 };
 
@@ -21,10 +24,18 @@ if (!Number.isInteger(backupKeep) || backupKeep < 1) {
 }
 
 // Detect any R2 credential; require all five if any are present.
-const r2Fields = [env.R2_ACCOUNT_ID, env.R2_ACCESS_KEY_ID, env.R2_SECRET_ACCESS_KEY, env.R2_BUCKET_NAME, env.RESTIC_PASSWORD];
+const r2Fields = [
+  env.R2_ACCOUNT_ID,
+  env.R2_ACCESS_KEY_ID,
+  env.R2_SECRET_ACCESS_KEY,
+  env.R2_BUCKET_NAME,
+  env.RESTIC_PASSWORD,
+];
 const r2Provided = r2Fields.filter(Boolean).length;
 if (r2Provided > 0 && r2Provided < r2Fields.length) {
-  throw new Error('Partial R2 credentials: provide all of R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, RESTIC_PASSWORD — or none to disable backup.');
+  throw new Error(
+    'Partial R2 credentials: provide all of R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, RESTIC_PASSWORD — or none to disable backup.',
+  );
 }
 
 const chart = new OpenShiftWorkspace(app, 'workspace', {
@@ -44,13 +55,15 @@ const chart = new OpenShiftWorkspace(app, 'workspace', {
   backup: {
     schedule: env.BACKUP_SCHEDULE ?? '0 2 * * *',
     keep: backupKeep,
-    ...(env.R2_ACCOUNT_ID ? {
-      r2AccountId: env.R2_ACCOUNT_ID,
-      r2AccessKeyId: env.R2_ACCESS_KEY_ID,
-      r2SecretAccessKey: env.R2_SECRET_ACCESS_KEY,
-      r2BucketName: env.R2_BUCKET_NAME || 'workspace-backups',
-      resticPassword: env.RESTIC_PASSWORD,
-    } : {}),
+    ...(env.R2_ACCOUNT_ID
+      ? {
+          r2AccountId: env.R2_ACCOUNT_ID,
+          r2AccessKeyId: env.R2_ACCESS_KEY_ID,
+          r2SecretAccessKey: env.R2_SECRET_ACCESS_KEY,
+          r2BucketName: env.R2_BUCKET_NAME || 'workspace-backups',
+          resticPassword: env.RESTIC_PASSWORD,
+        }
+      : {}),
   },
   keepalive: { enabled: true, schedule: '*/2 * * * *' },
   paseoAutoResume: { enabled: true },

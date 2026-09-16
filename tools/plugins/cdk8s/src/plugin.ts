@@ -5,10 +5,7 @@ const PLUGIN_SCOPE = 'cdk8s-charts/cdk8s';
 const SYNTH_COMMAND = 'npx cdk8s synth';
 
 function isVerbose(): boolean {
-  return (
-    process.argv.includes('--verbose') ||
-    process.env.NX_VERBOSE_LOGGING === 'true'
-  );
+  return process.argv.includes('--verbose') || process.env.NX_VERBOSE_LOGGING === 'true';
 }
 
 function logDebug(message: string): void {
