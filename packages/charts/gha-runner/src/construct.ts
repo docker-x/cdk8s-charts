@@ -15,7 +15,12 @@ const DEFAULT_RUNNER_CLASS = 'gp3';
 const ENTRYPOINT_SCRIPT = `#!/bin/sh
 set -eu
 
-export PATH="/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+# Per-UID home: the SCC UID can change across pod recreations, and nix
+# requires $HOME to be owned by the current euid.
+export HOME="/runner/home/$(id -u)"
+# Append the writable nix profile LAST: its directory is on the PVC, so
+# prepending would let installed tools shadow trusted system binaries.
+export PATH="/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:$PATH:$HOME/.nix-profile/bin"
 
 # Install tools if not available (persists in /nix PVC)
 if ! command -v curl >/dev/null 2>&1; then
@@ -72,15 +77,37 @@ echo "Starting runner..."
 exec ./run.sh
 `;
 
+// OpenShift restricted SCC runs the pod as an arbitrary UID, so the whole
+// /nix tree must live on the PVC (the image's /nix/var/nix/db is root-owned
+// and unwritable). The image's db lock files are 0600 and cannot be copied,
+// but db.sqlite + schema are world-readable and carry all store-path
+// registrations — copying them keeps the prewarmed store paths valid.
 const INIT_SCRIPT = `#!/bin/sh
 set -eu
-if [ ! -d /nix-pvc/store ]; then
-  echo "First boot: copying nix store from image to PVC..."
-  cp -rd /nix/* /nix-pvc/ 2>/dev/null || cp -r /nix/* /nix-pvc/
-  echo "Nix store copied."
+if [ ! -f /nix-pvc/.seed-complete ]; then
+  echo "Seeding /nix on PVC (one-time, may take a few minutes)..."
+  mkdir -p /nix-pvc/store /nix-pvc/var/nix/db /nix-pvc/var/nix/gcroots /nix-pvc/var/nix/temproots /nix-pvc/var/nix/userpool
+  cp -a /nix/store/. /nix-pvc/store/
+  [ -d /nix/var/nix/profiles ] && cp -a /nix/var/nix/profiles /nix-pvc/var/nix/
+  # Re-copy unconditionally: a PVC from the old seed may hold a partial or
+  # stale db.sqlite, and stale lock/WAL sidecars corrupt later operations.
+  rm -f /nix-pvc/var/nix/db/big-lock /nix-pvc/var/nix/db/reserved /nix-pvc/var/nix/db/db.sqlite-wal /nix-pvc/var/nix/db/db.sqlite-shm
+  [ -f /nix/var/nix/db/db.sqlite ] && cp -f /nix/var/nix/db/db.sqlite /nix-pvc/var/nix/db/
+  [ -f /nix/var/nix/db/schema ] && cp -f /nix/var/nix/db/schema /nix-pvc/var/nix/db/
+  # Group-accessible state dirs so a different SCC uid (same fsGroup) can
+  # still read and write the db, create profiles and add store paths.
+  # Failure aborts the init before .seed-complete so a retry can heal it.
+  chmod -R g+rwX /nix-pvc/var/nix
+  chmod g+rwX /nix-pvc /nix-pvc/store
+  touch /nix-pvc/.seed-complete
+  echo "Nix store seeded."
 else
-  echo "Nix store already populated."
+  echo "Nix store already seeded."
 fi
+# nix requires $HOME to be owned by the container UID; the PVC root is
+# root-owned and the SCC uid can change across recreations, so create a
+# per-uid home dir (init runs as the same uid as the main container).
+mkdir -p "/runner/home/$(id -u)"
 `;
 
 function buildLabels(name: string): Record<string, string> {
@@ -200,7 +227,15 @@ export class GhaRunner extends Chart {
           spec: {
             serviceAccountName: values.serviceAccountName ?? `${name}-sa`,
             ...(values.fsGroup !== undefined
-              ? { securityContext: { fsGroup: values.fsGroup } }
+              ? {
+                  securityContext: {
+                    fsGroup: values.fsGroup,
+                    // Only chown the volume when the root dir isn't already
+                    // group-owned — avoids re-chowning a large nix store on
+                    // every pod start.
+                    fsGroupChangePolicy: 'OnRootMismatch',
+                  },
+                }
               : {}),
             initContainers: [
               {
@@ -214,6 +249,7 @@ export class GhaRunner extends Chart {
                 },
                 volumeMounts: [
                   { name: 'nix-store', mountPath: '/nix-pvc' },
+                  { name: 'runner-home', mountPath: '/runner' },
                   { name: 'scripts', mountPath: '/scripts', readOnly: true },
                 ],
                 resources: {
