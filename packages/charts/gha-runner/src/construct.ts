@@ -83,8 +83,12 @@ if [ ! -f /nix-pvc/.seed-complete ]; then
   echo "Seeding /nix on PVC (one-time, may take a few minutes)..."
   mkdir -p /nix-pvc/store /nix-pvc/var/nix/db /nix-pvc/var/nix/gcroots /nix-pvc/var/nix/temproots /nix-pvc/var/nix/userpool
   cp -a /nix/store/. /nix-pvc/store/
-  cp -a /nix/var/nix/profiles /nix-pvc/var/nix/
-  cp /nix/var/nix/db/db.sqlite /nix/var/nix/db/schema /nix-pvc/var/nix/db/
+  [ -d /nix/var/nix/profiles ] && cp -a /nix/var/nix/profiles /nix-pvc/var/nix/
+  # Re-copy unconditionally: a PVC from the old seed may hold a partial or
+  # stale db.sqlite, and stale 0600 lock files break later nix operations.
+  rm -f /nix-pvc/var/nix/db/big-lock /nix-pvc/var/nix/db/reserved
+  [ -f /nix/var/nix/db/db.sqlite ] && cp -f /nix/var/nix/db/db.sqlite /nix-pvc/var/nix/db/
+  [ -f /nix/var/nix/db/schema ] && cp -f /nix/var/nix/db/schema /nix-pvc/var/nix/db/
   touch /nix-pvc/.seed-complete
   echo "Nix store seeded."
 else
@@ -181,9 +185,6 @@ export class GhaRunner extends Chart {
     const deploymentName = name;
     const containerEnv = [
       { name: 'GITHUB_OWNER', value: values.githubOwner ?? '' },
-      // nix requires an owned $HOME; the init container creates /runner/home
-      // as the pod UID on the writable PVC.
-      { name: 'HOME', value: '/runner/home' },
       {
         name: 'GITHUB_APP_ID',
         valueFrom: { secretKeyRef: { name: secretName, key: 'github-app-id' } },
@@ -196,6 +197,9 @@ export class GhaRunner extends Chart {
       { name: 'RUNNER_LABELS', value: (values.runnerLabels ?? DEFAULT_LABELS).join(',') },
       { name: 'RUNNER_NAME', value: values.runnerName ?? name },
       ...(values.env ? Object.entries(values.env).map(([k, v]) => ({ name: k, value: v })) : []),
+      // Pin structural env last — a user-supplied HOME would point nix at an
+      // unwritable directory (k8s resolves duplicate env names last-wins).
+      { name: 'HOME', value: '/runner/home' },
     ];
 
     new ApiObject(this, 'deployment', {
