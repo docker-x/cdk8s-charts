@@ -61,6 +61,12 @@ if [ ! -f ./config.sh ]; then
   curl -sfL "https://github.com/actions/runner/releases/download/v\${RUNNER_VERSION}/actions-runner-linux-x64-\${RUNNER_VERSION}.tar.gz" | tar xz
 fi
 
+# The image has no /bin/bash — runner scripts are exec'd via shebang,
+# so rewrite them to env-resolved bash (the nix profile is on PATH).
+for f in ./config.sh ./run.sh ./env.sh ./run-helper.sh ./runsvc.sh ./svc.sh ./bin/*.sh; do
+  [ -f "$f" ] && sed -i 's|^#!/bin/bash|#!/usr/bin/env bash|' "$f"
+done
+
 # Configure runner if not already configured
 if [ ! -f .runner ]; then
   echo "Registering runner..."
