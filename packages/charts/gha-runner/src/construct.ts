@@ -21,11 +21,28 @@ export HOME="/runner/home/$(id -u)"
 # Append the writable nix profile LAST: its directory is on the PVC, so
 # prepending would let installed tools shadow trusted system binaries.
 export PATH="/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:$PATH:$HOME/.nix-profile/bin"
+# The runner's foreign ELF binaries resolve their shared-lib deps from
+# the nix profile, not the default search path. .nix-compat holds
+# soname symlinks nixpkgs doesn't ship (e.g. liblttng-ust.so.0).
+export LD_LIBRARY_PATH="$HOME/.nix-profile/lib:$HOME/.nix-compat/lib"
+
+# A store re-seed replaces db.sqlite with the image's, so store paths
+# the profile installed earlier stay physically present but become
+# unregistered — 'nix profile install' then dies with "path is not
+# valid". Repair re-registers them from the substituter before
+# installing anything. Guarded by jq: a cold profile has nothing to
+# repair and jq may not be installed yet.
+if [ -e "$HOME/.nix-profile" ] && command -v jq >/dev/null 2>&1; then
+  nix profile list --json 2>/dev/null | jq -r '.elements[].storePaths[]' 2>/dev/null |
+  while read -r p; do
+    nix path-info "$p" >/dev/null 2>&1 || nix store repair "$p" >/dev/null 2>&1 || true
+  done
+fi
 
 # Install tools if not available (persists in /nix PVC). Checked per
 # package so a warm profile only installs what's missing — ldd comes
 # from glibc.bin and is required by config.sh's dependency check.
-for tool in curl jq openssl; do
+for tool in curl jq openssl patchelf; do
   command -v "$tool" >/dev/null 2>&1 || nix profile install "nixpkgs#$tool" 2>/dev/null || true
 done
 command -v ldd >/dev/null 2>&1 || nix profile install nixpkgs#glibc.bin 2>/dev/null || true
@@ -61,6 +78,32 @@ cd /runner
 if [ ! -f ./config.sh ]; then
   echo "Downloading runner agent v\${RUNNER_VERSION}..."
   curl -sfL "https://github.com/actions/runner/releases/download/v\${RUNNER_VERSION}/actions-runner-linux-x64-\${RUNNER_VERSION}.tar.gz" | tar xz
+fi
+
+# The runner ships foreign ELF binaries whose interpreter is
+# /lib64/ld-linux-x86-64.so.2 (musl for the alpine node variants) and
+# whose .so deps (libstdc++, zlib, lttng-ust, icu — checked by
+# config.sh) are not on the default search path. Install the deps into
+# the profile and point each binary's interpreter at the nix loader.
+if [ -f ./bin/Runner.Listener ]; then
+  nix profile install nixpkgs#stdenv.cc.cc.lib nixpkgs#zlib "nixpkgs#lttng-ust^out" nixpkgs#icu 2>/dev/null || true
+  # nixpkgs lttng-ust ships .so.1 but libcoreclrtraceptprovider.so wants
+  # .so.0 — bridge with a soname symlink on LD_LIBRARY_PATH.
+  if [ ! -e "$HOME/.nix-compat/lib/liblttng-ust.so.0" ] && [ -e "$HOME/.nix-profile/lib/liblttng-ust.so.1" ]; then
+    mkdir -p "$HOME/.nix-compat/lib"
+    ln -sf "$HOME/.nix-profile/lib/liblttng-ust.so.1" "$HOME/.nix-compat/lib/liblttng-ust.so.0" || true
+  fi
+  if command -v patchelf >/dev/null 2>&1 && command -v ldd >/dev/null 2>&1; then
+    # glibc's ldd script embeds its own ld.so path — read it from there.
+    GLIBC_LD=$(grep -o '/nix/store/[^" ]*/lib64/ld-linux-x86-64.so.2' "$(command -v ldd)" | head -1)
+    MUSL_LD=$(nix build --no-link --print-out-paths "nixpkgs#musl^out" 2>/dev/null || true)/lib/ld-musl-x86_64.so.1
+    for f in ./bin/* ./externals/*/bin/*; do
+      case "$(patchelf --print-interpreter "$f" 2>/dev/null)" in
+        */ld-linux-x86-64.so.2) [ -n "$GLIBC_LD" ] && patchelf --set-interpreter "$GLIBC_LD" "$f" || true ;;
+        */ld-musl-*) [ -f "$MUSL_LD" ] && patchelf --set-interpreter "$MUSL_LD" "$f" || true ;;
+      esac
+    done
+  fi
 fi
 
 # The default image has no /bin/bash — runner scripts are exec'd via
