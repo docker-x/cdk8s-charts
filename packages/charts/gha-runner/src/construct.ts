@@ -70,23 +70,22 @@ if [ -z "$INSTALLATION_ID" ]; then
   INSTALLATION_ID=$(curl -sf -H "Authorization: Bearer $JWT" \\
     -H "Accept: application/vnd.github+json" \\
     "https://api.github.com/orgs/\${GITHUB_OWNER}/installation" | jq -r '.id // empty' || true)
-  [ -n "$INSTALLATION_ID" ] || INSTALLATION_ID=$(curl -sf -H "Authorization: Bearer $JWT" \\
-    -H "Accept: application/vnd.github+json" \\
-    "https://api.github.com/users/\${GITHUB_OWNER}/installation" | jq -r '.id // empty' || true)
 fi
-[ -n "$INSTALLATION_ID" ] || { echo "ERROR: GitHub App is not installed on \${GITHUB_OWNER}" >&2; exit 1; }
+[ -n "$INSTALLATION_ID" ] || { echo "ERROR: GitHub App is not installed on org \${GITHUB_OWNER}" >&2; exit 1; }
 
 # Get installation token
 INSTALLATION_TOKEN=$(curl -sf -X POST \\
   -H "Authorization: Bearer $JWT" \\
   -H "Accept: application/vnd.github+json" \\
   "https://api.github.com/app/installations/\${INSTALLATION_ID}/access_tokens" | jq -r '.token')
+[ -n "$INSTALLATION_TOKEN" ] || { echo "ERROR: failed to get installation token" >&2; exit 1; }
 
 # Get registration token
 REGISTRATION_TOKEN=$(curl -sf -X POST \\
   -H "Authorization: token $INSTALLATION_TOKEN" \\
   -H "Accept: application/vnd.github+json" \\
   "https://api.github.com/orgs/\${GITHUB_OWNER}/actions/runners/registration-token" | jq -r '.token')
+[ -n "$REGISTRATION_TOKEN" ] || { echo "ERROR: failed to get registration token (app needs 'Self-hosted runners' org permission)" >&2; exit 1; }
 
 # Download runner agent if not present
 cd /runner
@@ -278,8 +277,8 @@ export class GhaRunner extends Chart {
       stringData: {
         'github-app.pem': props.githubAppPem,
         'github-app-id': props.githubAppId,
-        ...(props.githubAppInstallationId
-          ? { 'github-app-installation-id': props.githubAppInstallationId }
+        ...(values.githubAppInstallationId
+          ? { 'github-app-installation-id': values.githubAppInstallationId }
           : {}),
       },
     });
@@ -318,7 +317,7 @@ export class GhaRunner extends Chart {
         name: 'GITHUB_APP_ID',
         valueFrom: { secretKeyRef: { name: secretName, key: 'github-app-id' } },
       },
-      ...(props.githubAppInstallationId
+      ...(values.githubAppInstallationId
         ? [
             {
               name: 'GITHUB_APP_INSTALLATION_ID',
