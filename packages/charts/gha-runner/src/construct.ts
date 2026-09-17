@@ -8,9 +8,7 @@ const DEFAULT_IMAGE_TAG = 'latest';
 const DEFAULT_RUNNER_VERSION = '2.317.0';
 const DEFAULT_LABELS = ['self-hosted', 'linux', 'x64', 'openshift', 'nix'];
 const DEFAULT_NIX_SIZE = '30Gi';
-const DEFAULT_NIX_CLASS = 'gp3';
 const DEFAULT_RUNNER_SIZE = '10Gi';
-const DEFAULT_RUNNER_CLASS = 'gp3';
 
 const ENTRYPOINT_SCRIPT = `#!/bin/sh
 set -eu
@@ -442,9 +440,9 @@ export class GhaRunner extends Chart {
       runnerName: props.runnerName ?? name,
       runnerVersion: props.runnerVersion ?? DEFAULT_RUNNER_VERSION,
       nixStorageSize: props.nixStorageSize ?? DEFAULT_NIX_SIZE,
-      nixStorageClass: props.nixStorageClass ?? DEFAULT_NIX_CLASS,
+      nixStorageClass: props.nixStorageClass,
       runnerStorageSize: props.runnerStorageSize ?? DEFAULT_RUNNER_SIZE,
-      runnerStorageClass: props.runnerStorageClass ?? DEFAULT_RUNNER_CLASS,
+      runnerStorageClass: props.runnerStorageClass,
       env: props.env,
       resources: props.resources,
       replicas: props.replicas ?? 1,

@@ -1009,7 +1009,7 @@ following the same pattern as `@cdk8s-charts/devpod` and `@cdk8s-charts/gascity`
 | `imageDigest` | `string` | no | Image digest for rollout annotation (default: `unknown`) |
 | `command` | `string[]` | no | Container command override (default: `["/usr/local/bin/entrypoint.sh"]`) |
 | `storageSize` | `string` | no | PVC size (default: `30Gi`) |
-| `storageClass` | `string` | no | Storage class for PVC (default: `gp3`) |
+| `storageClass` | `string` | no | Storage class for PVC (default: cluster default) |
 | `homeMountPath` | `string` | no | Where the PVC is mounted (default: `/home/vscode`) |
 | `sshPort` | `number` | no | SSH port (default: `2222`) |
 | `previewPort` | `number` | no | Preview port for web UIs (default: `3000`) |
@@ -1086,7 +1086,7 @@ production remote workspace:
 | `oauthCookieSecret` | `string` | yes | OAuth proxy cookie secret (base64) |
 | `ghcrPullSecret` | `string` | no | Base64 docker config JSON |
 | `pvcSize` | `string` | no | PVC size (default: `30Gi`) |
-| `pvcStorageClass` | `string` | no | Storage class (default: `gp3`) |
+| `pvcStorageClass` | `string` | no | Storage class (default: cluster default) |
 | `name` | `string` | no | Resource name prefix (default: `workspace`) |
 | `env` | `Record<string, string>` | no | Extra env vars for the workspace container |
 | `resources` | `ResourceValues` | no | Workspace container resources |
@@ -1133,7 +1133,7 @@ following the same pattern as `@cdk8s-charts/devcontainer`.
 | `imageDigest` | `string` | no | Image digest for rollout annotation (default: `unknown`) |
 | `command` | `string[]` | no | Container command override (default: `["devenv", "up"]`) |
 | `storageSize` | `string` | no | PVC size (default: `30Gi`) |
-| `storageClass` | `string` | no | Storage class for PVC (default: `gp3`) |
+| `storageClass` | `string` | no | Storage class for PVC (default: cluster default) |
 | `existingPvcName` | `string` | no | Use an existing PVC instead of creating one |
 | `homeMountPath` | `string` | no | Where the PVC is mounted (default: `/home/devenv`) |
 | `sshPort` | `number` | no | SSH port — devenv sshd process (default: `2222`) |
@@ -1246,7 +1246,7 @@ but using the Devenv chart:
 | `oauthCookieSecret` | `string` | yes | OAuth proxy cookie secret (base64) |
 | `ghcrPullSecret` | `string` | no | Base64 docker config JSON |
 | `pvcSize` | `string` | no | PVC size (default: `30Gi`) |
-| `pvcStorageClass` | `string` | no | Storage class (default: `gp3`) |
+| `pvcStorageClass` | `string` | no | Storage class (default: cluster default) |
 | `existingPvcName` | `string` | no | Use an existing PVC |
 | `homeMountPath` | `string` | no | Home mount path (default: `/home/devenv`) |
 | `name` | `string` | no | Resource name prefix (default: `devenv`) |
