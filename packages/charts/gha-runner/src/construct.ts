@@ -45,6 +45,16 @@ for tool in curl jq openssl patchelf; do
 done
 command -v ldd >/dev/null 2>&1 || nix profile install nixpkgs#glibc.bin 2>/dev/null || true
 
+# Validate required inputs up front — cryptic openssl/curl errors later
+# otherwise hide a misconfigured deployment.
+for v in GITHUB_APP_ID GITHUB_OWNER RUNNER_NAME RUNNER_VERSION; do
+  if [ -z "$(printenv "$v")" ]; then
+    echo "ERROR: required env $v is not set" >&2
+    exit 1
+  fi
+done
+[ -r /secrets/github-app.pem ] || { echo "ERROR: GitHub App PEM not readable at /secrets/github-app.pem" >&2; exit 1; }
+
 # Generate GitHub App JWT
 NOW=$(date +%s)
 EXP=$((NOW + 600))
@@ -65,24 +75,26 @@ JWT="\${SIGNING_INPUT}.\${SIGNATURE}"
 # override for cases the lookup can't cover.
 INSTALLATION_ID="\${GITHUB_APP_INSTALLATION_ID:-}"
 if [ -z "$INSTALLATION_ID" ]; then
-  INSTALLATION_ID=$(curl -sf -H "Authorization: Bearer $JWT" \\
+  INSTALLATION_ID=$(curl -sfS -H "Authorization: Bearer $JWT" \\
     -H "Accept: application/vnd.github+json" \\
     "https://api.github.com/orgs/\${GITHUB_OWNER}/installation" | jq -r '.id // empty' || true)
 fi
 [ -n "$INSTALLATION_ID" ] || { echo "ERROR: GitHub App is not installed on org \${GITHUB_OWNER}" >&2; exit 1; }
 
-# Get installation token
-INSTALLATION_TOKEN=$(curl -sf -X POST \\
+# Get installation token. '.token // empty': a missing field prints
+# literal "null" otherwise, which passes a plain [ -n ] check and fails
+# far downstream with a cryptic 401 instead of here.
+INSTALLATION_TOKEN=$(curl -sfS -X POST \\
   -H "Authorization: Bearer $JWT" \\
   -H "Accept: application/vnd.github+json" \\
-  "https://api.github.com/app/installations/\${INSTALLATION_ID}/access_tokens" | jq -r '.token')
+  "https://api.github.com/app/installations/\${INSTALLATION_ID}/access_tokens" | jq -r '.token // empty')
 [ -n "$INSTALLATION_TOKEN" ] || { echo "ERROR: failed to get installation token" >&2; exit 1; }
 
-# Get registration token
-REGISTRATION_TOKEN=$(curl -sf -X POST \\
+# Get registration token (same // empty guard)
+REGISTRATION_TOKEN=$(curl -sfS -X POST \\
   -H "Authorization: token $INSTALLATION_TOKEN" \\
   -H "Accept: application/vnd.github+json" \\
-  "https://api.github.com/orgs/\${GITHUB_OWNER}/actions/runners/registration-token" | jq -r '.token')
+  "https://api.github.com/orgs/\${GITHUB_OWNER}/actions/runners/registration-token" | jq -r '.token // empty')
 [ -n "$REGISTRATION_TOKEN" ] || { echo "ERROR: failed to get registration token (app needs 'Self-hosted runners' org permission)" >&2; exit 1; }
 
 # Download runner agent if not present
