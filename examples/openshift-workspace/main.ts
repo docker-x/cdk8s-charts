@@ -39,10 +39,10 @@ if (r2Provided > 0 && r2Provided < r2Fields.length) {
 }
 
 const chart = new OpenShiftWorkspace(app, 'workspace', {
-  namespace: env.NAMESPACE ?? 'theplenkov-dev',
+  namespace: required('NAMESPACE'),
   image: env.WORKSPACE_IMAGE ?? 'ghcr.io/theplenkov-infra/devcontainer/workspace:latest',
   imageDigest: env.WORKSPACE_IMAGE_DIGEST ?? 'unknown',
-  appsDomain: env.APPS_DOMAIN ?? 'apps.rm3.7wse.p1.openshiftapps.com',
+  appsDomain: required('APPS_DOMAIN'),
   sshAuthorizedKeys: required('SSH_AUTHORIZED_KEYS'),
   oauthCookieSecret: required('OAUTH_COOKIE_SECRET'),
   ghcrPullSecret: env.GHCR_PULL_SECRET,
