@@ -62,8 +62,8 @@ export interface TemporalValues {
 
 export interface TemporalProps {
   namespace: string;
-  /** PostgreSQL password for Temporal databases (default: temporal). */
-  postgresPassword?: string;
+  /** PostgreSQL password for Temporal databases — required, no default. */
+  postgresPassword: string;
   /** Value overrides (deep-merged into computed values). */
   values?: DeepPartial<TemporalValues>;
 }

@@ -29,7 +29,8 @@ const chart = new Chart(app, 'my-chart', { namespace: 'plane' });
 
 const plane = new PlaneCe(chart, 'plane', {
   namespace: 'plane',
-  secretKey: 'my-django-secret-key',
+  secretKey: 'my-django-secret-key',        // required — e.g. openssl rand -hex 32
+  liveSecretKey: 'my-live-secret-key',      // required
   ingress: {
     enabled: true,
     appHost: 'plane.example.com',
@@ -52,6 +53,8 @@ Point the chart at existing infrastructure instead of spinning up built-in State
 ```typescript
 new PlaneCe(chart, 'plane', {
   namespace: 'plane',
+  secretKey: 'my-django-secret-key',
+  liveSecretKey: 'my-live-secret-key',
   externalPostgres: {
     url: 'postgresql://user:pass@pg-host:5432/plane',
   },

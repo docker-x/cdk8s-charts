@@ -26,7 +26,6 @@ const DEFAULTS: TemporalValues = {
   },
   postgresql: {
     image: { repository: 'postgres', tag: '16-alpine' },
-    password: 'temporal',
     resources: {
       requests: { cpu: '100m', memory: '128Mi' },
       limits: { memory: '256Mi' },
@@ -50,11 +49,15 @@ export class Temporal extends Construct {
   constructor(scope: Construct, id: string, props: TemporalProps) {
     super(scope, id);
 
+    if (!props.postgresPassword) {
+      throw new Error('Temporal: postgresPassword is required — no default is provided');
+    }
+
     const computed: TemporalValues = {
       ...DEFAULTS,
       postgresql: {
         ...DEFAULTS.postgresql,
-        ...(props.postgresPassword ? { password: props.postgresPassword } : {}),
+        password: props.postgresPassword,
       },
     };
 
@@ -62,7 +65,7 @@ export class Temporal extends Construct {
       ? deepMerge(computed, props.values as DeepPartial<TemporalValues>)
       : computed;
 
-    const pgPassword = v.postgresql?.password ?? 'temporal';
+    const pgPassword = v.postgresql?.password ?? props.postgresPassword;
     const svcType = v.service?.type ?? 'ClusterIP';
 
     const pgSvcName = `${id}-postgresql`;

@@ -334,6 +334,7 @@ export class AgentPlatform extends Construct {
         namespace,
         version: planeConf.version,
         secretKey: planeConf.secretKey,
+        liveSecretKey: planeConf.liveSecretKey,
         externalRedis: { url: redisUrl(1) },
         ingress: {
           ...planeConf.ingress,

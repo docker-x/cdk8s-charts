@@ -13,6 +13,12 @@ export class PlaneCe extends HelmConstruct<PlaneCeValues> {
   constructor(scope: Construct, id: string, props: PlaneCeProps) {
     super(scope, id);
 
+    if (!props.secretKey || !props.liveSecretKey) {
+      throw new Error(
+        'PlaneCe: secretKey and liveSecretKey are required — no defaults are provided',
+      );
+    }
+
     // Determine which resources are external vs local
     const useExternalPg = !!props.externalPostgres;
     const useExternalRedis = !!props.externalRedis;
@@ -31,8 +37,8 @@ export class PlaneCe extends HelmConstruct<PlaneCeValues> {
       rabbitmq: { local_setup: !useExternalRabbitmq },
       minio: { local_setup: !useExternalS3 },
       env: {
-        secret_key: props.secretKey ?? '60gp0byfz2dvffa45cxl20p1scy9xbpf6d8c5y0geejgkyp1b5',
-        live_server_secret_key: props.liveSecretKey ?? 'htbqvBJAgpm9bzvf3r4urJer0ENReatceh',
+        secret_key: props.secretKey,
+        live_server_secret_key: props.liveSecretKey,
         ...(useExternalPg ? { pgdb_remote_url: props.externalPostgres!.url } : {}),
         ...(useExternalRedis ? { remote_redis_url: props.externalRedis!.url } : {}),
         ...(useExternalS3

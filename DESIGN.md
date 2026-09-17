@@ -514,8 +514,8 @@ features: {
 | `namespace` | `string` | yes | K8s namespace |
 | `version` | `string` | no | App version tag (default: `v1.3.1`) |
 | `chartVersion` | `string` | no | Helm chart version pin (default: `1.6.1`) |
-| `secretKey` | `string` | no | Django secret key |
-| `liveSecretKey` | `string` | no | Live collaboration secret key |
+| `secretKey` | `string` | yes | Django secret key — no default; must be supplied per deployment |
+| `liveSecretKey` | `string` | yes | Live collaboration secret key — no default; must be supplied |
 | `externalPostgres` | `{ url }` | no | Use external PostgreSQL |
 | `externalRedis` | `{ url }` | no | Use external Redis |
 | `externalRabbitmq` | `{ url }` | no | Use external RabbitMQ |
@@ -552,8 +552,8 @@ Composes LiteLLM + Plane CE with:
 | `litellmCallbacks` | `{ mountPath, files }` | no | Python callbacks |
 | `litellmValues` | `DeepPartial<LitellmValues>` | no | LiteLLM Helm overrides |
 | `planeVersion` | `string` | no | Plane CE version |
-| `planeSecretKey` | `string` | no | Django secret key |
-| `planeLiveSecretKey` | `string` | no | Live secret key |
+| `planeSecretKey` | `string` | yes | Django secret key |
+| `planeLiveSecretKey` | `string` | yes | Live secret key |
 | `planeIngress` | `{ enabled, appHost, ingressClass }` | no | Plane ingress |
 | `planeValues` | `DeepPartial<PlaneCeValues>` | no | Plane Helm overrides |
 | `agents` | `A2aAgentConfig[]` | no | A2A agents to register |
@@ -1271,6 +1271,23 @@ but using the Devenv chart:
 | `backupCronJobName` | `string` | Backup CronJob name |
 | `keepaliveCronJobName` | `string` | Keepalive CronJob name |
 | `tfDeployerSaName` | `string` | TF deployer ServiceAccount name |
+
+### 3.21 Temporal Construct
+
+**Package**: `@cdk8s-charts/temporal`
+
+Deploys Temporal Server via the `temporalio/auto-setup` image with a bundled
+PostgreSQL StatefulSet — plain ApiObjects, no Helm chart.
+
+**Props** (`TemporalProps`):
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `postgresPassword` | `string` | yes | PostgreSQL password — no default; must be supplied per deployment |
+| `values` | `DeepPartial<TemporalValues>` | no | Overrides for server/web/postgresql/service blocks |
+
+**Exports** (`TemporalExports`): `frontendHost`, `frontendPort`, `webHost`, `webPort`.
 
 ## 4. Memory bank configuration
 

@@ -66,11 +66,11 @@ export interface LitellmWithPlaneProps {
   /** Plane application version (e.g. 'v1.2.3'). */
   planeVersion?: string;
 
-  /** Django secret key for Plane. */
-  planeSecretKey?: string;
+  /** Django secret key for Plane — required, no default. */
+  planeSecretKey: string;
 
-  /** Live collaboration secret key for Plane. */
-  planeLiveSecretKey?: string;
+  /** Live collaboration secret key for Plane — required, no default. */
+  planeLiveSecretKey: string;
 
   /** Ingress config for Plane CE. */
   planeIngress?: {
