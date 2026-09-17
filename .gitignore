@@ -39,3 +39,6 @@ Thumbs.db
 .nx/
 bun.lock
 tsconfig.tsbuildinfo
+
+# bro review-debt collector artifacts — local only, beads is the queue
+.agents/review-debt/
