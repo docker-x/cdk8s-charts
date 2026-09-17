@@ -130,8 +130,10 @@ fi
 # shebang, so rewrite them to env-resolved bash (the nix profile is on
 # PATH). Guarded: a custom image with real /bin/bash doesn't need this,
 # and one lacking sed/bash would fail the rewrite under set -e.
+# *.sh.template is included because run.sh regenerates run-helper.sh
+# from it on every start — the generated copy must inherit the rewrite.
 if command -v sed >/dev/null 2>&1 && command -v bash >/dev/null 2>&1 && [ ! -e /bin/bash ]; then
-  for f in ./config.sh ./run.sh ./env.sh ./run-helper.sh ./runsvc.sh ./svc.sh ./bin/*.sh; do
+  for f in ./*.sh ./*.sh.template ./bin/*.sh; do
     [ -f "$f" ] && sed -i 's|^#!/bin/bash|#!/usr/bin/env bash|' "$f"
   done
 fi
