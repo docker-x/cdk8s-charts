@@ -24,7 +24,7 @@ export PATH="/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:$PAT
 # The runner's foreign ELF binaries resolve their shared-lib deps from
 # the nix profile, not the default search path. .nix-compat holds
 # soname symlinks nixpkgs doesn't ship (e.g. liblttng-ust.so.0).
-export LD_LIBRARY_PATH="$HOME/.nix-profile/lib:$HOME/.nix-compat/lib"
+export LD_LIBRARY_PATH="$HOME/.nix-profile/lib:$HOME/.nix-compat/lib\${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 # A store re-seed replaces db.sqlite with the image's, so store paths
 # the profile installed earlier stay physically present but become
@@ -98,6 +98,7 @@ if [ -f ./bin/Runner.Listener ]; then
     GLIBC_LD=$(grep -o '/nix/store/[^" ]*/lib64/ld-linux-x86-64.so.2' "$(command -v ldd)" | head -1)
     MUSL_LD=$(nix build --no-link --print-out-paths "nixpkgs#musl^out" 2>/dev/null || true)/lib/ld-musl-x86_64.so.1
     for f in ./bin/* ./externals/*/bin/*; do
+      [ -f "$f" ] || continue
       case "$(patchelf --print-interpreter "$f" 2>/dev/null)" in
         */ld-linux-x86-64.so.2) [ -n "$GLIBC_LD" ] && patchelf --set-interpreter "$GLIBC_LD" "$f" || true ;;
         */ld-musl-*) [ -f "$MUSL_LD" ] && patchelf --set-interpreter "$MUSL_LD" "$f" || true ;;
