@@ -260,12 +260,12 @@ export interface PlaneCeProps {
   /** Plane CE Helm chart version (default: 1.8.1). */
   chartVersion?: string;
   /**
-   * Django secret key for hashing/encryption.
-   * If not provided, a default is used (NOT for production).
+   * Django secret key for hashing/encryption — required, no default.
+   * Generate per deployment, e.g. `openssl rand -hex 32`.
    */
-  secretKey?: string;
-  /** Live collaboration secret key. */
-  liveSecretKey?: string;
+  secretKey: string;
+  /** Live collaboration secret key — required, no default. */
+  liveSecretKey: string;
   /** Use an external PostgreSQL instead of the chart's built-in StatefulSet. */
   externalPostgres?: { url: string };
   /** Use an external Redis instead of the chart's built-in StatefulSet. */

@@ -116,7 +116,8 @@ export interface AgentPlatformProps {
 
   temporal?:
     | {
-        postgresPassword?: string;
+        /** PostgreSQL password — required when Temporal is enabled. */
+        postgresPassword: string;
         values?: DeepPartial<TemporalValues>;
       }
     | false;
@@ -151,7 +152,10 @@ export interface AgentPlatformProps {
   plane?:
     | {
         version?: string;
-        secretKey?: string;
+        /** Django secret key — required when Plane is enabled. */
+        secretKey: string;
+        /** Live collaboration secret key — required when Plane is enabled. */
+        liveSecretKey: string;
         ingress?: { enabled?: boolean; appHost?: string; ingressClass?: string };
         /** MCP server config (enables Plane MCP + LiteLLM proxy). */
         mcp?: {
