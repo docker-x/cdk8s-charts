@@ -40,6 +40,7 @@ new LitellmWithPlane(chart, 'stack', {
     OPENAI_API_KEY: process.env.OPENAI_API_KEY!,
   },
   planeSecretKey: process.env.PLANE_SECRET_KEY!,
+  planeLiveSecretKey: process.env.PLANE_LIVE_SECRET_KEY!,
   agents: [
     {
       name: 'workflow-agent',
