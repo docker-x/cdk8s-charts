@@ -121,17 +121,33 @@ REGISTRATION_TOKEN=$(printf '%s' "$RESPONSE" | jq -r '.token // empty')
 
 # Multiple replicas share the runner PVC (RWO is per-node), so each pod
 # needs its own workdir and runner identity — otherwise all pods share
-# ./.runner/.env and register as a single runner. Runner names follow
-# the pod name; --ephemeral keeps recreated pods' dead identities from
-# lingering as offline entries in the org's runner list.
+# ./.runner/.env and register as a single runner. The runner name gets
+# only the pod's last segment: the full pod name duplicates the
+# deployment name plus a replicaset hash and would blow GitHub's 64-char
+# runner-name limit. --ephemeral keeps recreated pods' dead identities
+# from lingering as offline entries in the org's runner list.
 RUNNER_WORKDIR="/runner"
 EPHEMERAL=""
 if [ "\${REPLICAS:-1}" -gt 1 ]; then
   POD_ID="\${POD_NAME:-$(hostname)}"
+  POD_ID="\${POD_ID##*-}"
   RUNNER_WORKDIR="/runner/home/$POD_ID"
   mkdir -p "$RUNNER_WORKDIR"
   RUNNER_NAME="\${RUNNER_NAME}-$POD_ID"
   EPHEMERAL="yes"
+  # Hold a lock on our own workdir for the pod's lifetime — it marks the
+  # dir as in-use so the prune below (and sibling pods) never delete a
+  # live replica's files. fd 8 stays open across exec on purpose.
+  exec 8<"$RUNNER_WORKDIR"
+  flock -n 8 || { echo "ERROR: workdir $RUNNER_WORKDIR is held by another pod" >&2; exit 1; }
+  # Prune workdirs left by dead pods: recreated pods get new names, and
+  # each stale dir holds a full agent copy (~400MB). flock -n succeeds
+  # only when no live pod holds the dir. The $(id -u) dir is the nix
+  # home, not a workdir — never touch it.
+  for d in /runner/home/*/; do
+    case "$d" in "/runner/home/$(id -u)/"|"$RUNNER_WORKDIR/") continue ;; esac
+    flock -n "$d" -c true 2>/dev/null && rm -rf "$d"
+  done
 fi
 
 # Download runner agent if not present
