@@ -61,17 +61,31 @@ SIGNING_INPUT="\${HEADER_B64}.\${PAYLOAD_B64}"
 SIGNATURE=$(printf '%s' "$SIGNING_INPUT" | openssl dgst -sha256 -sign /secrets/github-app.pem | b64enc)
 JWT="\${SIGNING_INPUT}.\${SIGNATURE}"
 
+# Resolve the app installation for the target account — the app may be
+# installed on several orgs/users, so the ID is looked up via the JWT
+# rather than configured. GITHUB_APP_INSTALLATION_ID stays an optional
+# override for cases the lookup can't cover.
+INSTALLATION_ID="\${GITHUB_APP_INSTALLATION_ID:-}"
+if [ -z "$INSTALLATION_ID" ]; then
+  INSTALLATION_ID=$(curl -sf -H "Authorization: Bearer $JWT" \\
+    -H "Accept: application/vnd.github+json" \\
+    "https://api.github.com/orgs/\${GITHUB_OWNER}/installation" | jq -r '.id // empty' || true)
+fi
+[ -n "$INSTALLATION_ID" ] || { echo "ERROR: GitHub App is not installed on org \${GITHUB_OWNER}" >&2; exit 1; }
+
 # Get installation token
 INSTALLATION_TOKEN=$(curl -sf -X POST \\
   -H "Authorization: Bearer $JWT" \\
   -H "Accept: application/vnd.github+json" \\
-  "https://api.github.com/app/installations/\${GITHUB_APP_INSTALLATION_ID}/access_tokens" | jq -r '.token')
+  "https://api.github.com/app/installations/\${INSTALLATION_ID}/access_tokens" | jq -r '.token')
+[ -n "$INSTALLATION_TOKEN" ] || { echo "ERROR: failed to get installation token" >&2; exit 1; }
 
 # Get registration token
 REGISTRATION_TOKEN=$(curl -sf -X POST \\
   -H "Authorization: token $INSTALLATION_TOKEN" \\
   -H "Accept: application/vnd.github+json" \\
   "https://api.github.com/orgs/\${GITHUB_OWNER}/actions/runners/registration-token" | jq -r '.token')
+[ -n "$REGISTRATION_TOKEN" ] || { echo "ERROR: failed to get registration token (app needs 'Self-hosted runners' org permission)" >&2; exit 1; }
 
 # Download runner agent if not present
 cd /runner
@@ -87,6 +101,11 @@ fi
 # the profile and point each binary's interpreter at the nix loader.
 if [ -f ./bin/Runner.Listener ]; then
   nix profile install nixpkgs#stdenv.cc.cc.lib nixpkgs#zlib "nixpkgs#lttng-ust^out" nixpkgs#icu 2>/dev/null || true
+  # libssl/libcrypto live in openssl's out output; 'nix profile install'
+  # dedupes by attr so the already-installed bin output blocks adding it
+  # — resolve the store path straight onto LD_LIBRARY_PATH instead.
+  SSL_OUT=$(nix build --no-link --print-out-paths "nixpkgs#openssl^out" 2>/dev/null || true)
+  [ -d "$SSL_OUT/lib" ] && export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$SSL_OUT/lib" || true
   # nixpkgs lttng-ust ships .so.1 but libcoreclrtraceptprovider.so wants
   # .so.0 — bridge with a soname symlink on LD_LIBRARY_PATH.
   if [ ! -e "$HOME/.nix-compat/lib/liblttng-ust.so.0" ] && [ -e "$HOME/.nix-profile/lib/liblttng-ust.so.1" ]; then
@@ -258,7 +277,9 @@ export class GhaRunner extends Chart {
       stringData: {
         'github-app.pem': props.githubAppPem,
         'github-app-id': props.githubAppId,
-        'github-app-installation-id': props.githubAppInstallationId,
+        ...(values.githubAppInstallationId
+          ? { 'github-app-installation-id': values.githubAppInstallationId }
+          : {}),
       },
     });
 
@@ -296,10 +317,14 @@ export class GhaRunner extends Chart {
         name: 'GITHUB_APP_ID',
         valueFrom: { secretKeyRef: { name: secretName, key: 'github-app-id' } },
       },
-      {
-        name: 'GITHUB_APP_INSTALLATION_ID',
-        valueFrom: { secretKeyRef: { name: secretName, key: 'github-app-installation-id' } },
-      },
+      ...(values.githubAppInstallationId
+        ? [
+            {
+              name: 'GITHUB_APP_INSTALLATION_ID',
+              valueFrom: { secretKeyRef: { name: secretName, key: 'github-app-installation-id' } },
+            },
+          ]
+        : []),
       { name: 'RUNNER_VERSION', value: values.runnerVersion ?? DEFAULT_RUNNER_VERSION },
       { name: 'RUNNER_LABELS', value: (values.runnerLabels ?? DEFAULT_LABELS).join(',') },
       { name: 'RUNNER_NAME', value: values.runnerName ?? name },

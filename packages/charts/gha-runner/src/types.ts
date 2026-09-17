@@ -32,15 +32,11 @@ export interface Values {
 }
 
 export interface Props
-  extends Omit<
-    Values,
-    'image' | 'githubOwner' | 'githubAppId' | 'githubAppInstallationId' | 'githubAppPem'
-  > {
+  extends Omit<Values, 'image' | 'githubOwner' | 'githubAppId' | 'githubAppPem'> {
   namespace: string;
   image: string;
   githubOwner: string;
   githubAppId: string;
-  githubAppInstallationId: string;
   githubAppPem: string;
   values?: DeepPartial<Values>;
 }
