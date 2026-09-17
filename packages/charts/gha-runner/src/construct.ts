@@ -148,6 +148,15 @@ if [ ! -f .runner ]; then
     --replace
 fi
 
+# config.sh persists a snapshot of the environment into .env and run.sh
+# re-sources it on every start — a stale LD_LIBRARY_PATH there would mask
+# the entrypoint's freshly resolved one (e.g. the openssl lib dir added
+# after an earlier registration) and crash Runner.Worker on libssl.
+# The entrypoint re-exports it on every boot, so drop the persisted copy.
+if [ -f .env ] && command -v sed >/dev/null 2>&1; then
+  sed -i '/^LD_LIBRARY_PATH=/d' .env
+fi
+
 echo "Starting runner..."
 exec ./run.sh
 `;
