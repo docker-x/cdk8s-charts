@@ -47,8 +47,10 @@ describe('GhaRunner construct', () => {
     const cm = findManifest(m, 'ConfigMap', 'runner-scripts');
     const entrypoint = (cm.data as Record<string, string>)['entrypoint.sh'];
     expect(entrypoint).toContain('#!/usr/bin/env bash');
-    expect(entrypoint).toContain('./config.sh');
     expect(entrypoint).toContain('command -v bash');
+    // run.sh regenerates run-helper.sh from the template on every start,
+    // and run-helper.sh execs safe_sleep.sh — the rewrite must cover both.
+    expect(entrypoint).toContain('./*.sh.template');
   });
 
   it('creates a ServiceAccount with token automount disabled by default', () => {
