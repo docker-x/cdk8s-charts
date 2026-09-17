@@ -24,6 +24,16 @@ export PATH="/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:$PAT
 # soname symlinks nixpkgs doesn't ship (e.g. liblttng-ust.so.0).
 export LD_LIBRARY_PATH="$HOME/.nix-profile/lib:$HOME/.nix-compat/lib\${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
+# Validate required inputs before any setup work — a misconfigured pod
+# should fail immediately, not after minutes of PVC/nix operations.
+# Plain parameter expansion only: printenv is an external binary a
+# custom image might not ship.
+[ -n "\${GITHUB_APP_ID:-}" ] || { echo "ERROR: required env GITHUB_APP_ID is not set" >&2; exit 1; }
+[ -n "\${GITHUB_OWNER:-}" ] || { echo "ERROR: required env GITHUB_OWNER is not set" >&2; exit 1; }
+[ -n "\${RUNNER_NAME:-}" ] || { echo "ERROR: required env RUNNER_NAME is not set" >&2; exit 1; }
+[ -n "\${RUNNER_VERSION:-}" ] || { echo "ERROR: required env RUNNER_VERSION is not set" >&2; exit 1; }
+[ -r /secrets/github-app.pem ] || { echo "ERROR: GitHub App PEM not readable at /secrets/github-app.pem" >&2; exit 1; }
+
 # A store re-seed replaces db.sqlite with the image's, so store paths
 # the profile installed earlier stay physically present but become
 # unregistered — 'nix profile install' then dies with "path is not
@@ -65,24 +75,40 @@ JWT="\${SIGNING_INPUT}.\${SIGNATURE}"
 # override for cases the lookup can't cover.
 INSTALLATION_ID="\${GITHUB_APP_INSTALLATION_ID:-}"
 if [ -z "$INSTALLATION_ID" ]; then
-  INSTALLATION_ID=$(curl -sf -H "Authorization: Bearer $JWT" \\
+  # --fail-with-body keeps the HTTP error JSON in RESPONSE so a 4xx
+  # stays diagnosable — -f alone would discard it.
+  RESPONSE=$(curl -sS --fail-with-body -H "Authorization: Bearer $JWT" \\
     -H "Accept: application/vnd.github+json" \\
-    "https://api.github.com/orgs/\${GITHUB_OWNER}/installation" | jq -r '.id // empty' || true)
+    "https://api.github.com/orgs/\${GITHUB_OWNER}/installation") || {
+    echo "ERROR: installation lookup failed: $RESPONSE" >&2
+    exit 1
+  }
+  INSTALLATION_ID=$(printf '%s' "$RESPONSE" | jq -r '.id // empty')
 fi
 [ -n "$INSTALLATION_ID" ] || { echo "ERROR: GitHub App is not installed on org \${GITHUB_OWNER}" >&2; exit 1; }
 
-# Get installation token
-INSTALLATION_TOKEN=$(curl -sf -X POST \\
+# Get installation token. '.token // empty': a missing field prints
+# literal "null" otherwise, which passes a plain [ -n ] check and fails
+# far downstream with a cryptic 401 instead of here.
+RESPONSE=$(curl -sS --fail-with-body -X POST \\
   -H "Authorization: Bearer $JWT" \\
   -H "Accept: application/vnd.github+json" \\
-  "https://api.github.com/app/installations/\${INSTALLATION_ID}/access_tokens" | jq -r '.token')
+  "https://api.github.com/app/installations/\${INSTALLATION_ID}/access_tokens") || {
+  echo "ERROR: installation token request failed: $RESPONSE" >&2
+  exit 1
+}
+INSTALLATION_TOKEN=$(printf '%s' "$RESPONSE" | jq -r '.token // empty')
 [ -n "$INSTALLATION_TOKEN" ] || { echo "ERROR: failed to get installation token" >&2; exit 1; }
 
-# Get registration token
-REGISTRATION_TOKEN=$(curl -sf -X POST \\
+# Get registration token (same --fail-with-body + // empty guards)
+RESPONSE=$(curl -sS --fail-with-body -X POST \\
   -H "Authorization: token $INSTALLATION_TOKEN" \\
   -H "Accept: application/vnd.github+json" \\
-  "https://api.github.com/orgs/\${GITHUB_OWNER}/actions/runners/registration-token" | jq -r '.token')
+  "https://api.github.com/orgs/\${GITHUB_OWNER}/actions/runners/registration-token") || {
+  echo "ERROR: registration token request failed: $RESPONSE" >&2
+  exit 1
+}
+REGISTRATION_TOKEN=$(printf '%s' "$RESPONSE" | jq -r '.token // empty')
 [ -n "$REGISTRATION_TOKEN" ] || { echo "ERROR: failed to get registration token (app needs 'Self-hosted runners' org permission)" >&2; exit 1; }
 
 # Download runner agent if not present
