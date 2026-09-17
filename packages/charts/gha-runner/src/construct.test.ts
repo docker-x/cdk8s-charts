@@ -50,7 +50,9 @@ describe('GhaRunner construct', () => {
     expect(entrypoint).toContain('command -v bash');
     // run.sh regenerates run-helper.sh from the template on every start,
     // and run-helper.sh execs safe_sleep.sh — the rewrite must cover both.
+    expect(entrypoint).toContain('./*.sh');
     expect(entrypoint).toContain('./*.sh.template');
+    expect(entrypoint).toContain('./bin/*.sh');
   });
 
   it('creates a ServiceAccount with token automount disabled by default', () => {
