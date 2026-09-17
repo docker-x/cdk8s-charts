@@ -119,8 +119,39 @@ RESPONSE=$(curl -sS --fail-with-body -X POST \\
 REGISTRATION_TOKEN=$(printf '%s' "$RESPONSE" | jq -r '.token // empty')
 [ -n "$REGISTRATION_TOKEN" ] || { echo "ERROR: failed to get registration token (app needs 'Self-hosted runners' org permission)" >&2; exit 1; }
 
+# Multiple replicas share the runner PVC (RWO is per-node), so each pod
+# needs its own workdir and runner identity — otherwise all pods share
+# ./.runner/.env and register as a single runner. The runner name gets
+# only the pod's last segment: the full pod name duplicates the
+# deployment name plus a replicaset hash and would blow GitHub's 64-char
+# runner-name limit. --ephemeral keeps recreated pods' dead identities
+# from lingering as offline entries in the org's runner list.
+RUNNER_WORKDIR="/runner"
+EPHEMERAL=""
+if [ "\${REPLICAS:-1}" -gt 1 ]; then
+  POD_ID="\${POD_NAME:-$(hostname)}"
+  POD_ID="\${POD_ID##*-}"
+  RUNNER_WORKDIR="/runner/home/$POD_ID"
+  mkdir -p "$RUNNER_WORKDIR"
+  RUNNER_NAME="\${RUNNER_NAME}-$POD_ID"
+  EPHEMERAL="yes"
+  # Hold a lock on our own workdir for the pod's lifetime — it marks the
+  # dir as in-use so the prune below (and sibling pods) never delete a
+  # live replica's files. fd 8 stays open across exec on purpose.
+  exec 8<"$RUNNER_WORKDIR"
+  flock -n 8 || { echo "ERROR: workdir $RUNNER_WORKDIR is held by another pod" >&2; exit 1; }
+  # Prune workdirs left by dead pods: recreated pods get new names, and
+  # each stale dir holds a full agent copy (~400MB). flock -n succeeds
+  # only when no live pod holds the dir. The $(id -u) dir is the nix
+  # home, not a workdir — never touch it.
+  for d in /runner/home/*/; do
+    case "$d" in "/runner/home/$(id -u)/"|"$RUNNER_WORKDIR/") continue ;; esac
+    flock -n "$d" -c true 2>/dev/null && rm -rf "$d"
+  done
+fi
+
 # Download runner agent if not present
-cd /runner
+cd "$RUNNER_WORKDIR"
 if [ ! -f ./config.sh ]; then
   echo "Downloading runner agent v\${RUNNER_VERSION}..."
   curl -sfL "https://github.com/actions/runner/releases/download/v\${RUNNER_VERSION}/actions-runner-linux-x64-\${RUNNER_VERSION}.tar.gz" | tar xz
@@ -175,14 +206,19 @@ if command -v sed >/dev/null 2>&1 && command -v bash >/dev/null 2>&1 && [ ! -e /
   done
 fi
 
-# Configure runner if not already configured
-if [ ! -f .runner ]; then
+# Configure runner if not already configured. Ephemeral runners always
+# re-register: a completed job deletes the identity server-side, so a
+# leftover .runner from a previous pod would point run.sh at a runner
+# that no longer exists.
+if [ ! -f .runner ] || [ -n "$EPHEMERAL" ]; then
+  rm -f .runner .credentials .credentials_rsaparams .env 2>/dev/null || true
   echo "Registering runner..."
   ./config.sh \\
     --url "https://github.com/\${GITHUB_OWNER}" \\
     --token "$REGISTRATION_TOKEN" \\
     --labels "\${RUNNER_LABELS}" \\
     --name "\${RUNNER_NAME}" \\
+    \${EPHEMERAL:+--ephemeral} \\
     --unattended \\
     --replace
 fi
@@ -387,6 +423,11 @@ export class GhaRunner extends Chart {
       { name: 'RUNNER_VERSION', value: values.runnerVersion ?? DEFAULT_RUNNER_VERSION },
       { name: 'RUNNER_LABELS', value: (values.runnerLabels ?? DEFAULT_LABELS).join(',') },
       { name: 'RUNNER_NAME', value: values.runnerName ?? name },
+      { name: 'REPLICAS', value: String(values.replicas ?? 1) },
+      {
+        name: 'POD_NAME',
+        valueFrom: { fieldRef: { fieldPath: 'metadata.name' } },
+      },
       ...(values.env ? Object.entries(values.env).map(([k, v]) => ({ name: k, value: v })) : []),
     ];
 
@@ -401,10 +442,37 @@ export class GhaRunner extends Chart {
       },
       spec: {
         replicas: values.replicas ?? 1,
+        // Recreate, not RollingUpdate: both PVCs are RWO, so a rolling
+        // update would briefly run old and new pods on the same volumes
+        // — and with replicas=1 they would register the same runner
+        // identity twice.
+        strategy: { type: 'Recreate' },
         selector: { matchLabels: labels },
         template: {
           metadata: { labels, annotations: props.annotations },
           spec: {
+            // Keep replicas on one node: both PVCs are ReadWriteOnce, so
+            // pods on different nodes cannot attach them and would stay
+            // Pending forever. Preferred, not required — a required rule
+            // can't be satisfied by the first pod itself and would
+            // deadlock the whole deployment.
+            ...((values.replicas ?? 1) > 1
+              ? {
+                  affinity: {
+                    podAffinity: {
+                      preferredDuringSchedulingIgnoredDuringExecution: [
+                        {
+                          weight: 100,
+                          podAffinityTerm: {
+                            labelSelector: { matchLabels: labels },
+                            topologyKey: 'kubernetes.io/hostname',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                }
+              : {}),
             serviceAccountName: values.serviceAccountName ?? `${name}-sa`,
             ...(values.fsGroup !== undefined
               ? {
