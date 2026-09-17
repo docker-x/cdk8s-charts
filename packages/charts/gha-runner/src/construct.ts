@@ -119,8 +119,23 @@ RESPONSE=$(curl -sS --fail-with-body -X POST \\
 REGISTRATION_TOKEN=$(printf '%s' "$RESPONSE" | jq -r '.token // empty')
 [ -n "$REGISTRATION_TOKEN" ] || { echo "ERROR: failed to get registration token (app needs 'Self-hosted runners' org permission)" >&2; exit 1; }
 
+# Multiple replicas share the runner PVC (RWO is per-node), so each pod
+# needs its own workdir and runner identity — otherwise all pods share
+# ./.runner/.env and register as a single runner. Runner names follow
+# the pod name; --ephemeral keeps recreated pods' dead identities from
+# lingering as offline entries in the org's runner list.
+RUNNER_WORKDIR="/runner"
+EPHEMERAL=""
+if [ "\${REPLICAS:-1}" -gt 1 ]; then
+  POD_ID="\${POD_NAME:-$(hostname)}"
+  RUNNER_WORKDIR="/runner/home/$POD_ID"
+  mkdir -p "$RUNNER_WORKDIR"
+  RUNNER_NAME="\${RUNNER_NAME}-$POD_ID"
+  EPHEMERAL="yes"
+fi
+
 # Download runner agent if not present
-cd /runner
+cd "$RUNNER_WORKDIR"
 if [ ! -f ./config.sh ]; then
   echo "Downloading runner agent v\${RUNNER_VERSION}..."
   curl -sfL "https://github.com/actions/runner/releases/download/v\${RUNNER_VERSION}/actions-runner-linux-x64-\${RUNNER_VERSION}.tar.gz" | tar xz
@@ -183,6 +198,7 @@ if [ ! -f .runner ]; then
     --token "$REGISTRATION_TOKEN" \\
     --labels "\${RUNNER_LABELS}" \\
     --name "\${RUNNER_NAME}" \\
+    \${EPHEMERAL:+--ephemeral} \\
     --unattended \\
     --replace
 fi
@@ -387,6 +403,11 @@ export class GhaRunner extends Chart {
       { name: 'RUNNER_VERSION', value: values.runnerVersion ?? DEFAULT_RUNNER_VERSION },
       { name: 'RUNNER_LABELS', value: (values.runnerLabels ?? DEFAULT_LABELS).join(',') },
       { name: 'RUNNER_NAME', value: values.runnerName ?? name },
+      { name: 'REPLICAS', value: String(values.replicas ?? 1) },
+      {
+        name: 'POD_NAME',
+        valueFrom: { fieldRef: { fieldPath: 'metadata.name' } },
+      },
       ...(values.env ? Object.entries(values.env).map(([k, v]) => ({ name: k, value: v })) : []),
     ];
 
@@ -401,6 +422,11 @@ export class GhaRunner extends Chart {
       },
       spec: {
         replicas: values.replicas ?? 1,
+        // Recreate, not RollingUpdate: both PVCs are RWO, so a rolling
+        // update would briefly run old and new pods on the same volumes
+        // — and with replicas=1 they would register the same runner
+        // identity twice.
+        strategy: { type: 'Recreate' },
         selector: { matchLabels: labels },
         template: {
           metadata: { labels, annotations: props.annotations },
