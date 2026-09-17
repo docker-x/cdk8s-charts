@@ -1,0 +1,2 @@
+{"thread_id":"PRRT_kwDOR-17m86hPaEd","status":"done","fix_pr":null,"fixed_at":"2026-09-17T18:19:34.852Z","notes":"stale: devenv construct.ts is now 67 lines, mounts built via initWorkspaceChart — pointed-at code no longer exists"}
+{"thread_id":"PRRT_kwDOR-17m86hPaES","status":"done","fix_pr":null,"fixed_at":"2026-09-17T18:19:33.706Z","notes":"already fixed in tree: buildLifecycle takes homeMountPath param, PASEO_HOME uses it (openshift-recipe.ts:320,325)"}
