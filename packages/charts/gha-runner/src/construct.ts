@@ -154,8 +154,9 @@ fi
 # after an earlier registration) and crash Runner.Worker on libssl.
 # The entrypoint re-exports it on every boot, so drop the persisted copy.
 if [ -f .env ] && command -v sed >/dev/null 2>&1; then
-  sed -i '/^LD_LIBRARY_PATH=/d' .env \
-    || echo "warn: could not strip LD_LIBRARY_PATH from .env — continuing"
+  sed -i '/^LD_LIBRARY_PATH=/d' .env 2>/dev/null || {
+    chmod u+w .env 2>/dev/null && sed -i '/^LD_LIBRARY_PATH=/d' .env
+  } || echo "warn: could not strip LD_LIBRARY_PATH from .env — continuing"
 fi
 
 echo "Starting runner..."
