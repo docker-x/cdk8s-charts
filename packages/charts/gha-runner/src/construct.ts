@@ -198,6 +198,11 @@ if [ -f .env ] && command -v sed >/dev/null 2>&1; then
   } || echo "warn: could not strip LD_LIBRARY_PATH from .env — continuing"
 fi
 
+# Release the setup lock before handing off — fd 9 is inherited by exec,
+# so leaving it open would hold the lock for run.sh's whole lifetime and
+# block other replicas from ever finishing setup.
+exec 9<&-
+
 echo "Starting runner..."
 exec ./run.sh
 `;
