@@ -195,7 +195,7 @@ with all services enabled.
 
 | Service | Chart/Package | Default Port | Enable |
 |---------|---------------|:------------:|--------|
-| **Temporal** | `@cdk8s-charts/temporal` | 7233 (gRPC), 8082 (Web) | `temporal: {}` |
+| **Temporal** | `@cdk8s-charts/temporal` | 7233 (gRPC), 8082 (Web) | `temporal: { postgresPassword }` |
 | **Qdrant** | `@cdk8s-charts/qdrant` | 6333 (HTTP), 6334 (gRPC) | `qdrant: {}` |
 | **Langfuse** | `@cdk8s-charts/langfuse` | 3100 | `langfuse: {}` |
 | **Plane CE** | `@cdk8s-charts/plane-ce` | 8000 (API), 3000 (Web) | `plane: { ... }` |
@@ -415,7 +415,7 @@ configures the password.  If omitted, the default password is used.
 
 ```typescript
 temporal?: {
-  postgresPassword?: string;                // default: 'temporal'
+  postgresPassword: string;                 // required — no default
   values?: DeepPartial<TemporalValues>;     // Value overrides
 } | false;
 ```
@@ -474,7 +474,8 @@ development.  **Override them in production.**
 ```typescript
 plane?: {
   version?: string;       // e.g. 'v1.2.3'
-  secretKey?: string;     // Django secret key
+  secretKey: string;      // Django secret key — required, no default
+  liveSecretKey: string;  // Live collaboration secret key — required
   ingress?: {
     enabled?: boolean;
     appHost?: string;     // default: 'localhost:8081'
@@ -751,7 +752,7 @@ new AgentPlatform(this, 'p', {
 // 3. Set to empty object to enable with defaults
 new AgentPlatform(this, 'p', {
   // ...
-  temporal: {},        // enabled, default postgres password
+  temporal: { postgresPassword: 'changeme' },  // enabled — password required
   qdrant: {},          // enabled, 10Gi storage, no auth
   langfuse: {},        // enabled, dev defaults
   headlamp: {},        // enabled
@@ -938,7 +939,7 @@ class AgentWorkspace extends Chart {
       },
 
       redis: { password: 'agent-workspace-redis' },
-      temporal: {},
+      temporal: { postgresPassword: secrets.temporalPgPassword },
       qdrant: {
         storageSize: config.qdrant?.storageSize,
         apiKey: config.qdrant?.apiKey,
@@ -951,6 +952,7 @@ class AgentWorkspace extends Chart {
       plane: {
         version: config.plane?.version,
         secretKey: secrets.planeSecretKey,
+        liveSecretKey: secrets.planeLiveSecretKey,
         ingress: config.plane?.ingress,
         mcp: {
           apiKey: secrets.planeApiToken,
