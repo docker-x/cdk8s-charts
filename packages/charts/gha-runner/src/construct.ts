@@ -190,8 +190,12 @@ if command -v sed >/dev/null 2>&1 && command -v bash >/dev/null 2>&1 && [ ! -e /
   done
 fi
 
-# Configure runner if not already configured
-if [ ! -f .runner ]; then
+# Configure runner if not already configured. Ephemeral runners always
+# re-register: a completed job deletes the identity server-side, so a
+# leftover .runner from a previous pod would point run.sh at a runner
+# that no longer exists.
+if [ ! -f .runner ] || [ -n "$EPHEMERAL" ]; then
+  rm -f .runner .credentials .credentials_rsaparams .env 2>/dev/null || true
   echo "Registering runner..."
   ./config.sh \\
     --url "https://github.com/\${GITHUB_OWNER}" \\
@@ -431,6 +435,28 @@ export class GhaRunner extends Chart {
         template: {
           metadata: { labels, annotations: props.annotations },
           spec: {
+            // Keep replicas on one node: both PVCs are ReadWriteOnce, so
+            // pods on different nodes cannot attach them and would stay
+            // Pending forever. Preferred, not required — a required rule
+            // can't be satisfied by the first pod itself and would
+            // deadlock the whole deployment.
+            ...((values.replicas ?? 1) > 1
+              ? {
+                  affinity: {
+                    podAffinity: {
+                      preferredDuringSchedulingIgnoredDuringExecution: [
+                        {
+                          weight: 100,
+                          podAffinityTerm: {
+                            labelSelector: { matchLabels: labels },
+                            topologyKey: 'kubernetes.io/hostname',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                }
+              : {}),
             serviceAccountName: values.serviceAccountName ?? `${name}-sa`,
             ...(values.fsGroup !== undefined
               ? {
