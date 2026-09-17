@@ -49,6 +49,10 @@ export class Temporal extends Construct {
   constructor(scope: Construct, id: string, props: TemporalProps) {
     super(scope, id);
 
+    if (!props.postgresPassword) {
+      throw new Error('Temporal: postgresPassword is required — no default is provided');
+    }
+
     const computed: TemporalValues = {
       ...DEFAULTS,
       postgresql: {

@@ -13,6 +13,12 @@ export class PlaneCe extends HelmConstruct<PlaneCeValues> {
   constructor(scope: Construct, id: string, props: PlaneCeProps) {
     super(scope, id);
 
+    if (!props.secretKey || !props.liveSecretKey) {
+      throw new Error(
+        'PlaneCe: secretKey and liveSecretKey are required — no defaults are provided',
+      );
+    }
+
     // Determine which resources are external vs local
     const useExternalPg = !!props.externalPostgres;
     const useExternalRedis = !!props.externalRedis;
