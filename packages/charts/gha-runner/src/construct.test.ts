@@ -42,6 +42,15 @@ describe('GhaRunner construct', () => {
     expect(findManifest(m, 'PersistentVolumeClaim', 'runner-runner-home')).toBeDefined();
   });
 
+  it('entrypoint rewrites runner script shebangs to env-resolved bash', () => {
+    const m = synth(baseProps);
+    const cm = findManifest(m, 'ConfigMap', 'runner-scripts');
+    const entrypoint = (cm.data as Record<string, string>)['entrypoint.sh'];
+    expect(entrypoint).toContain('#!/usr/bin/env bash');
+    expect(entrypoint).toContain('./config.sh');
+    expect(entrypoint).toContain('command -v bash');
+  });
+
   it('creates a ServiceAccount with token automount disabled by default', () => {
     const m = synth(baseProps);
     const sa = findManifest(m, 'ServiceAccount', 'runner-sa');
