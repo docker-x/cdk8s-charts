@@ -292,7 +292,9 @@ export class GhaRunner extends Chart {
       spec: {
         accessModes: ['ReadWriteOnce'],
         resources: { requests: { storage: values.nixStorageSize ?? DEFAULT_NIX_SIZE } },
-        ...(values.nixStorageClass ? { storageClassName: values.nixStorageClass } : {}),
+        ...(values.nixStorageClass !== undefined
+          ? { storageClassName: values.nixStorageClass }
+          : {}),
       },
     });
 
@@ -305,7 +307,9 @@ export class GhaRunner extends Chart {
       spec: {
         accessModes: ['ReadWriteOnce'],
         resources: { requests: { storage: values.runnerStorageSize ?? DEFAULT_RUNNER_SIZE } },
-        ...(values.runnerStorageClass ? { storageClassName: values.runnerStorageClass } : {}),
+        ...(values.runnerStorageClass !== undefined
+          ? { storageClassName: values.runnerStorageClass }
+          : {}),
       },
     });
 

@@ -149,7 +149,7 @@ export function createWorkspacePvc(
     },
     spec: {
       accessModes: ['ReadWriteOnce'],
-      ...(values.storageClass ? { storageClassName: values.storageClass } : {}),
+      ...(values.storageClass !== undefined ? { storageClassName: values.storageClass } : {}),
       resources: { requests: { storage: values.storageSize } },
     },
   });
