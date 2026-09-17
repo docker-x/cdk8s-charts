@@ -38,11 +38,19 @@ if (r2Provided > 0 && r2Provided < r2Fields.length) {
   );
 }
 
+// APPS_DOMAIN must be a bare domain — no scheme, path, or trailing slash.
+const appsDomain = required('APPS_DOMAIN');
+if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(appsDomain)) {
+  throw new Error(
+    `APPS_DOMAIN must be a bare domain (e.g. apps.cluster.example.com), got: "${appsDomain}"`,
+  );
+}
+
 const chart = new OpenShiftWorkspace(app, 'workspace', {
-  namespace: env.NAMESPACE ?? 'theplenkov-dev',
+  namespace: required('NAMESPACE'),
   image: env.WORKSPACE_IMAGE ?? 'ghcr.io/theplenkov-infra/devcontainer/workspace:latest',
   imageDigest: env.WORKSPACE_IMAGE_DIGEST ?? 'unknown',
-  appsDomain: env.APPS_DOMAIN ?? 'apps.rm3.7wse.p1.openshiftapps.com',
+  appsDomain,
   sshAuthorizedKeys: required('SSH_AUTHORIZED_KEYS'),
   oauthCookieSecret: required('OAUTH_COOKIE_SECRET'),
   ghcrPullSecret: env.GHCR_PULL_SECRET,
