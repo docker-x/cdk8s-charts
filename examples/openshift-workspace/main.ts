@@ -55,7 +55,7 @@ const chart = new OpenShiftWorkspace(app, 'workspace', {
   oauthCookieSecret: required('OAUTH_COOKIE_SECRET'),
   ghcrPullSecret: env.GHCR_PULL_SECRET,
   pvcSize: env.PVC_SIZE ?? '30Gi',
-  pvcStorageClass: env.PVC_STORAGE_CLASS ?? 'gp3',
+  pvcStorageClass: env.PVC_STORAGE_CLASS || undefined,
   name: env.WORKSPACE_NAME ?? 'workspace',
   env: {
     AGENT_CONFIG_DIR: '/usr/local/share/agent-config',

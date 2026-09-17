@@ -149,7 +149,7 @@ export function createWorkspacePvc(
     },
     spec: {
       accessModes: ['ReadWriteOnce'],
-      storageClassName: values.storageClass,
+      ...(values.storageClass !== undefined ? { storageClassName: values.storageClass } : {}),
       resources: { requests: { storage: values.storageSize } },
     },
   });
@@ -438,7 +438,7 @@ export function buildWorkspaceComputedValues(
     imageDigest: props.imageDigest ?? 'unknown',
     command: props.command ?? defaults.command,
     storageSize: props.storageSize ?? '30Gi',
-    storageClass: props.storageClass ?? 'gp3',
+    storageClass: props.storageClass,
     existingPvcName: props.existingPvcName,
     homeMountPath: props.homeMountPath ?? defaults.homeMountPath,
     sshPort: props.sshPort ?? 2222,

@@ -61,7 +61,7 @@ export interface OpenShiftDevenvProps {
   ghcrPullSecret?: string;
   /** PVC size (default: 30Gi). */
   pvcSize?: string;
-  /** Storage class (default: gp3). */
+  /** Storage class (default: cluster default StorageClass). */
   pvcStorageClass?: string;
   /** Use an existing PVC instead of creating a new one. */
   existingPvcName?: string;

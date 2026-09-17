@@ -513,7 +513,7 @@ export function buildWorkspaceRecipeProps(
     imageDigest: props.imageDigest,
     name,
     storageSize: props.pvcSize ?? '30Gi',
-    storageClass: props.pvcStorageClass ?? 'gp3',
+    storageClass: props.pvcStorageClass,
     existingPvcName: props.existingPvcName,
     homeMountPath,
     sshAuthorizedKeys: props.sshAuthorizedKeys,

@@ -33,7 +33,7 @@ export interface Values {
   command?: string[];
   /** PVC size (default: 30Gi). */
   storageSize?: string;
-  /** Storage class for PVC (default: gp3). */
+  /** Storage class for PVC (default: cluster default StorageClass). */
   storageClass?: string;
   /** Use an existing PVC instead of creating a new one. Skips PVC creation. */
   existingPvcName?: string;
