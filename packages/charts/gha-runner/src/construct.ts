@@ -34,6 +34,14 @@ export LD_LIBRARY_PATH="$HOME/.nix-profile/lib:$HOME/.nix-compat/lib\${LD_LIBRAR
 [ -n "\${RUNNER_VERSION:-}" ] || { echo "ERROR: required env RUNNER_VERSION is not set" >&2; exit 1; }
 [ -r /secrets/github-app.pem ] || { echo "ERROR: GitHub App PEM not readable at /secrets/github-app.pem" >&2; exit 1; }
 
+# Serialize shared-PVC mutations: replicas or a rolling update can put
+# two pods on /runner and /nix at once (RWO is per-node), and concurrent
+# nix profile installs, tar extraction, and patchelf would race on the
+# same db/binaries. Same pattern as init-nix.sh — flock on a directory
+# fd, blocking so a crashed holder releases automatically.
+exec 9</runner
+flock 9
+
 # A store re-seed replaces db.sqlite with the image's, so store paths
 # the profile installed earlier stay physically present but become
 # unregistered — 'nix profile install' then dies with "path is not
@@ -139,7 +147,12 @@ if [ -f ./bin/Runner.Listener ]; then
   if command -v patchelf >/dev/null 2>&1 && command -v ldd >/dev/null 2>&1; then
     # glibc's ldd script embeds its own ld.so path — read it from there.
     GLIBC_LD=$(grep -o '/nix/store/[^" ]*/lib64/ld-linux-x86-64.so.2' "$(command -v ldd)" | head -1)
-    MUSL_LD=$(nix build --no-link --print-out-paths "nixpkgs#musl^out" 2>/dev/null || true)/lib/ld-musl-x86_64.so.1
+    # Keep the out-path and the loader path as separate variables — on a
+    # nix build failure the empty expansion must not collapse into a
+    # host path like /lib/ld-musl-x86_64.so.1 that could pass [ -f ] and
+    # point binaries at the wrong interpreter.
+    MUSL_OUT=$(nix build --no-link --print-out-paths "nixpkgs#musl^out" 2>/dev/null || true)
+    MUSL_LD="\${MUSL_OUT:+$MUSL_OUT/lib/ld-musl-x86_64.so.1}"
     for f in ./bin/* ./externals/*/bin/*; do
       [ -f "$f" ] || continue
       case "$(patchelf --print-interpreter "$f" 2>/dev/null)" in
