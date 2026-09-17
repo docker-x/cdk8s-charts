@@ -22,11 +22,13 @@ export HOME="/runner/home/$(id -u)"
 # prepending would let installed tools shadow trusted system binaries.
 export PATH="/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:$PATH:$HOME/.nix-profile/bin"
 
-# Install tools if not available (persists in /nix PVC)
-if ! command -v curl >/dev/null 2>&1; then
-  echo "Installing curl, jq, openssl into nix profile..."
-  nix profile install nixpkgs#curl nixpkgs#jq nixpkgs#openssl 2>/dev/null || true
-fi
+# Install tools if not available (persists in /nix PVC). Checked per
+# package so a warm profile only installs what's missing — ldd comes
+# from glibc.bin and is required by config.sh's dependency check.
+for tool in curl jq openssl; do
+  command -v "$tool" >/dev/null 2>&1 || nix profile install "nixpkgs#$tool" 2>/dev/null || true
+done
+command -v ldd >/dev/null 2>&1 || nix profile install nixpkgs#glibc.bin 2>/dev/null || true
 
 # Generate GitHub App JWT
 NOW=$(date +%s)
