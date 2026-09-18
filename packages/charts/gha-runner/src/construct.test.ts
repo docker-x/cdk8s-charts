@@ -127,6 +127,42 @@ describe('GhaRunner construct', () => {
     expect(runner.resources.limits.cpu).toBeDefined();
   });
 
+  it('emits a secret-env Secret and envFrom only when secretEnv is set', () => {
+    const withSecrets = synth({ ...baseProps, secretEnv: { MY_TOKEN: 's3cret' } });
+    const secret = findManifest(withSecrets, 'Secret', 'runner-secret-env');
+    expect((secret.stringData as Record<string, string>).MY_TOKEN).toBe('s3cret');
+    const dep = findManifest(withSecrets, 'Deployment', 'runner');
+    const spec = dep.spec as {
+      template: { spec: { containers: Array<{ envFrom?: unknown[] }> } };
+    };
+    expect(spec.template.spec.containers[0].envFrom).toEqual([
+      { secretRef: { name: 'runner-secret-env' } },
+    ]);
+
+    const without = synth(baseProps);
+    expect(() => findManifest(without, 'Secret', 'runner-secret-env')).toThrow(/not found/);
+    const dep2 = findManifest(without, 'Deployment', 'runner');
+    const spec2 = dep2.spec as {
+      template: { spec: { containers: Array<{ envFrom?: unknown[] }> } };
+    };
+    expect(spec2.template.spec.containers[0].envFrom).toBeUndefined();
+  });
+
+  it('rejects secretEnv keys that are not valid env names', () => {
+    expect(() => synth({ ...baseProps, secretEnv: { 'bad-key': 'x' } })).toThrow(
+      /not a valid environment variable name/,
+    );
+  });
+
+  it('rejects secretEnv keys colliding with explicit or entrypoint-owned env', () => {
+    for (const key of ['HOME', 'PATH', 'LD_LIBRARY_PATH', 'RUNNER_NAME']) {
+      expect(() => synth({ ...baseProps, secretEnv: { [key]: 'x' } })).toThrow(/collides/);
+    }
+    expect(() => synth({ ...baseProps, env: { MY_VAR: 'a' }, secretEnv: { MY_VAR: 'b' } })).toThrow(
+      /collides/,
+    );
+  });
+
   it('exports correct resource names', () => {
     const app = Testing.app();
     const chart = new Chart(app, 'test-chart');
