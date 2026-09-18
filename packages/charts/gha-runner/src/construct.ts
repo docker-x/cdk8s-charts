@@ -884,7 +884,12 @@ export class GhaRunner extends Chart {
         'runnerSha256 must be a 64-character lowercase hex digest (output of `sha256sum` on the runner tarball)',
       );
     }
-    for (const key of Object.keys(values.env ?? {})) {
+    this.validateEnv(values.env);
+    this.validateSecretEnv(values.secretEnv, values.env);
+  }
+
+  private validateEnv(env: Record<string, string> | undefined) {
+    for (const key of Object.keys(env ?? {})) {
       if (GhaRunner.emittedEnv.has(key)) {
         throw new Error(
           `env key "${key}" collides with a chart-owned variable — use the matching prop instead of env`,
@@ -896,13 +901,19 @@ export class GhaRunner extends Chart {
         );
       }
     }
-    for (const key of Object.keys(values.secretEnv ?? {})) {
+  }
+
+  private validateSecretEnv(
+    secretEnv: Record<string, string> | undefined,
+    env: Record<string, string> | undefined,
+  ) {
+    for (const key of Object.keys(secretEnv ?? {})) {
       if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
         throw new Error(
           `secretEnv key "${key}" is not a valid environment variable name — Kubernetes skips invalid keys during envFrom`,
         );
       }
-      if (GhaRunner.emittedEnv.has(key) || (values.env && Object.hasOwn(values.env, key))) {
+      if (GhaRunner.emittedEnv.has(key) || (env && Object.hasOwn(env, key))) {
         throw new Error(
           `secretEnv key "${key}" collides with an explicit env var — explicit env wins over envFrom, so the secret value would be silently ignored`,
         );
