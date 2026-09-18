@@ -356,11 +356,20 @@ if [ ! -f /nix-pvc/.seed-complete ]; then
   # instead — deletion only needs the group-writable parents that
   # fsGroup provides. xargs -0: busybox find -exec + overflows the arg
   # list on a store this size.
+  # No pipefail on strict POSIX sh — flag failures on either side of
+  # each pipeline instead (a find error would otherwise be masked by
+  # xargs -r exiting 0 on empty input).
   if [ -d /nix-pvc/store ]; then
-    find /nix-pvc/store -type d -print0 | xargs -0 -r chmod u+rwx 2>/dev/null || rm -rf /nix-pvc/store
+    rm -f /nix-pvc/.heal-failed
+    { find /nix-pvc/store -type d -print0 || touch /nix-pvc/.heal-failed; } |
+      xargs -0 -r chmod u+rwx 2>/dev/null || touch /nix-pvc/.heal-failed
+    [ ! -f /nix-pvc/.heal-failed ] || rm -rf /nix-pvc/store
   fi
   if [ -d /nix-pvc/var ]; then
-    find /nix-pvc/var -type d -print0 | xargs -0 -r chmod u+rwx 2>/dev/null || rm -rf /nix-pvc/var
+    rm -f /nix-pvc/.heal-failed
+    { find /nix-pvc/var -type d -print0 || touch /nix-pvc/.heal-failed; } |
+      xargs -0 -r chmod u+rwx 2>/dev/null || touch /nix-pvc/.heal-failed
+    [ ! -f /nix-pvc/.heal-failed ] || rm -rf /nix-pvc/var
   fi
   mkdir -p /nix-pvc/store /nix-pvc/var/nix/db /nix-pvc/var/nix/gcroots /nix-pvc/var/nix/temproots /nix-pvc/var/nix/userpool
   # The db carries all store-path registrations; without it the seeded
@@ -391,8 +400,13 @@ if [ ! -f /nix-pvc/.seed-complete ]; then
   # Restore the store's read-only invariant after seeding (and after the
   # heal above): runner jobs must not be able to tamper with the seeded
   # binaries. Everything but symlinks — chmod on a symlink always fails;
-  # store root itself stays writable so nix can still add paths.
-  find /nix-pvc/store -mindepth 1 ! -type l -print0 | xargs -0 -r chmod a-w
+  # store root itself stays writable so nix can still add paths. A find
+  # failure here is fatal (masked by xargs without pipefail) — the seed
+  # must not be marked complete with a still-writable store.
+  rm -f /nix-pvc/.seed-failed
+  { find /nix-pvc/store -mindepth 1 ! -type l -print0 || touch /nix-pvc/.seed-failed; } |
+    xargs -0 -r chmod a-w
+  [ ! -f /nix-pvc/.seed-failed ] || { echo "ERROR: could not restore store read-only" >&2; exit 1; }
   chmod g+rwX /nix-pvc/store
   touch /nix-pvc/.seed-complete
   echo "Nix store seeded."
