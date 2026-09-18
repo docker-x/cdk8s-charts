@@ -206,6 +206,7 @@ if [ ! -f ./config.sh ]; then
   curl -sfL -o runner.tar.gz "https://github.com/actions/runner/releases/download/v\${RUNNER_VERSION}/actions-runner-linux-x64-\${RUNNER_VERSION}.tar.gz"
   # Optional supply-chain pin — verify the tarball before extracting.
   if [ -n "\${RUNNER_SHA256:-}" ]; then
+    command -v sha256sum >/dev/null 2>&1 || { echo "ERROR: RUNNER_SHA256 is set but sha256sum is not available in this image" >&2; rm -f runner.tar.gz; exit 1; }
     echo "\${RUNNER_SHA256}  runner.tar.gz" | sha256sum -c - || { echo "ERROR: runner tarball checksum mismatch" >&2; rm -f runner.tar.gz; exit 1; }
   fi
   tar xzf runner.tar.gz && rm -f runner.tar.gz
@@ -721,7 +722,7 @@ export class GhaRunner extends Chart {
       name,
     };
     const values = props.values ? deepMerge(computed, props.values) : computed;
-    if (values.runnerSha256 && !/^[0-9a-f]{64}$/.test(values.runnerSha256)) {
+    if (values.runnerSha256 !== undefined && !/^[0-9a-f]{64}$/.test(values.runnerSha256)) {
       throw new Error(
         'runnerSha256 must be a 64-character lowercase hex digest (output of `sha256sum` on the runner tarball)',
       );
@@ -733,6 +734,7 @@ export class GhaRunner extends Chart {
         'GITHUB_APP_ID',
         'GITHUB_APP_INSTALLATION_ID',
         'RUNNER_VERSION',
+        'RUNNER_SHA256',
         'RUNNER_LABELS',
         'RUNNER_NAME',
         'REPLICAS',

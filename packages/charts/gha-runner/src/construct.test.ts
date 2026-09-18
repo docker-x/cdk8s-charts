@@ -222,6 +222,8 @@ describe('GhaRunner construct', () => {
   it('rejects a malformed runnerSha256 at synth time', () => {
     expect(() => synth({ ...baseProps, runnerSha256: 'not-a-hash' })).toThrow(/64-character/);
     expect(() => synth({ ...baseProps, runnerSha256: 'A'.repeat(64) })).toThrow(/64-character/);
+    // An explicit empty string must fail, not silently disable verification.
+    expect(() => synth({ ...baseProps, runnerSha256: '' })).toThrow(/64-character/);
   });
 
   it('emits a secret-env Secret and envFrom only when secretEnv is set', () => {
@@ -263,6 +265,7 @@ describe('GhaRunner construct', () => {
       'PATH',
       'LD_LIBRARY_PATH',
       'RUNNER_NAME',
+      'RUNNER_SHA256',
       'JWT',
       'INSTALLATION_TOKEN',
       'REGISTRATION_TOKEN',
