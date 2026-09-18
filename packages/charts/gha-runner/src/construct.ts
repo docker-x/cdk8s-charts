@@ -46,22 +46,52 @@ flock 9
 # the profile installed earlier stay physically present but become
 # unregistered — 'nix profile install' then dies with "path is not
 # valid". Repair re-registers them from the substituter before
-# installing anything. Guarded by jq: a cold profile has nothing to
-# repair and jq may not be installed yet.
-if [ -e "$HOME/.nix-profile" ] && command -v jq >/dev/null 2>&1; then
-  nix profile list --json 2>/dev/null | jq -r '.elements[].storePaths[]' 2>/dev/null |
-  while read -r p; do
-    nix path-info "$p" >/dev/null 2>&1 || nix store repair "$p" >/dev/null 2>&1 || true
-  done
+# installing anything. Repair needs jq to enumerate profile paths, but
+# installing jq into a stale profile can itself hit "path is not valid"
+# — bootstrap it via 'nix build' (store-level, never touches the
+# profile) so repair runs before any profile mutation. Skipped entirely
+# on a cold profile: nothing to repair, no wasted nix eval under flock.
+if [ -e "$HOME/.nix-profile" ]; then
+  JQ_BIN=$(command -v jq 2>/dev/null || true)
+  if [ -z "$JQ_BIN" ]; then
+    JQ_OUT=$(nix build --no-link --print-out-paths "nixpkgs#jq" 2>/dev/null || true)
+    [ -x "$JQ_OUT/bin/jq" ] && JQ_BIN="$JQ_OUT/bin/jq" || JQ_BIN=""
+  fi
+  if [ -n "$JQ_BIN" ]; then
+    # Enumerate as separate checked commands — piped into while, a
+    # failed list/parse looks like "nothing to repair" (no pipefail in
+    # /bin/sh) and the installs below die on stale paths. Warn only:
+    # with all tools already on PATH the pod can run despite an
+    # unlistable profile, so repair stays best-effort.
+    if ! PROFILE_JSON=$(nix profile list --json 2>/dev/null); then
+      echo "warn: 'nix profile list' failed — skipping profile repair" >&2
+    elif ! PROFILE_PATHS=$(printf '%s' "$PROFILE_JSON" | "$JQ_BIN" -r '.elements[].storePaths[]' 2>/dev/null); then
+      echo "warn: could not parse profile store paths — skipping repair" >&2
+    else
+      printf '%s\n' "$PROFILE_PATHS" | while read -r p; do
+        [ -n "$p" ] || continue
+        nix path-info "$p" >/dev/null 2>&1 && continue
+        repair_out=$(nix store repair "$p" 2>&1) ||
+          echo "warn: could not repair store path $p: $repair_out" >&2
+      done
+    fi
+  fi
 fi
 
 # Install tools if not available (persists in /nix PVC). Checked per
 # package so a warm profile only installs what's missing — ldd comes
-# from glibc.bin and is required by config.sh's dependency check.
+# from glibc.bin and is required by config.sh's dependency check. A
+# missing tool after an install attempt is fatal: continuing means a
+# cryptic failure far downstream (JWT without curl, unpatched ELFs
+# without patchelf) instead of the real nix error here.
 for tool in curl jq openssl patchelf; do
-  command -v "$tool" >/dev/null 2>&1 || nix profile install "nixpkgs#$tool" 2>/dev/null || true
+  command -v "$tool" >/dev/null 2>&1 || nix profile install "nixpkgs#$tool" || true
+  command -v "$tool" >/dev/null 2>&1 ||
+    { echo "ERROR: $tool not on PATH and 'nix profile install nixpkgs#$tool' failed" >&2; exit 1; }
 done
-command -v ldd >/dev/null 2>&1 || nix profile install nixpkgs#glibc.bin 2>/dev/null || true
+command -v ldd >/dev/null 2>&1 || nix profile install nixpkgs#glibc.bin || true
+command -v ldd >/dev/null 2>&1 ||
+  { echo "ERROR: ldd not on PATH and 'nix profile install nixpkgs#glibc.bin' failed" >&2; exit 1; }
 
 # Generate GitHub App JWT
 NOW=$(date +%s)
