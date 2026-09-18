@@ -49,18 +49,33 @@ flock 9
 # installing anything. Repair needs jq to enumerate profile paths, but
 # installing jq into a stale profile can itself hit "path is not valid"
 # — bootstrap it via 'nix build' (store-level, never touches the
-# profile) so repair runs before any profile mutation.
-JQ_BIN=$(command -v jq 2>/dev/null || true)
-if [ -z "$JQ_BIN" ]; then
-  JQ_OUT=$(nix build --no-link --print-out-paths "nixpkgs#jq" 2>/dev/null || true)
-  [ -x "$JQ_OUT/bin/jq" ] && JQ_BIN="$JQ_OUT/bin/jq" || JQ_BIN=""
-fi
-if [ -e "$HOME/.nix-profile" ] && [ -n "$JQ_BIN" ]; then
-  nix profile list --json 2>/dev/null | "$JQ_BIN" -r '.elements[].storePaths[]' 2>/dev/null |
-  while read -r p; do
-    nix path-info "$p" >/dev/null 2>&1 || nix store repair "$p" >/dev/null 2>&1 ||
-      echo "warn: could not repair store path $p — continuing" >&2
-  done
+# profile) so repair runs before any profile mutation. Skipped entirely
+# on a cold profile: nothing to repair, no wasted nix eval under flock.
+if [ -e "$HOME/.nix-profile" ]; then
+  JQ_BIN=$(command -v jq 2>/dev/null || true)
+  if [ -z "$JQ_BIN" ]; then
+    JQ_OUT=$(nix build --no-link --print-out-paths "nixpkgs#jq" 2>/dev/null || true)
+    [ -x "$JQ_OUT/bin/jq" ] && JQ_BIN="$JQ_OUT/bin/jq" || JQ_BIN=""
+  fi
+  if [ -n "$JQ_BIN" ]; then
+    # Enumerate as separate checked commands — piped into while, a
+    # failed list/parse looks like "nothing to repair" (no pipefail in
+    # /bin/sh) and the installs below die on stale paths. Warn only:
+    # with all tools already on PATH the pod can run despite an
+    # unlistable profile, so repair stays best-effort.
+    if ! PROFILE_JSON=$(nix profile list --json 2>/dev/null); then
+      echo "warn: 'nix profile list' failed — skipping profile repair" >&2
+    elif ! PROFILE_PATHS=$(printf '%s' "$PROFILE_JSON" | "$JQ_BIN" -r '.elements[].storePaths[]' 2>/dev/null); then
+      echo "warn: could not parse profile store paths — skipping repair" >&2
+    else
+      printf '%s\n' "$PROFILE_PATHS" | while read -r p; do
+        [ -n "$p" ] || continue
+        nix path-info "$p" >/dev/null 2>&1 && continue
+        repair_out=$(nix store repair "$p" 2>&1) ||
+          echo "warn: could not repair store path $p: $repair_out" >&2
+      done
+    fi
+  fi
 fi
 
 # Install tools if not available (persists in /nix PVC). Checked per
