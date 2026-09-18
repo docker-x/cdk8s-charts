@@ -477,6 +477,19 @@ export class GhaRunner extends Chart {
       },
     });
 
+    // User-supplied secret env vars — kept out of the pod spec via a
+    // dedicated Secret consumed through envFrom.
+    const secretEnvName = `${name}-secret-env`;
+    if (values.secretEnv && Object.keys(values.secretEnv).length > 0) {
+      new ApiObject(this, 'secret-env', {
+        apiVersion: 'v1',
+        kind: 'Secret',
+        metadata: { name: secretEnvName, namespace: props.namespace, labels },
+        type: 'Opaque',
+        stringData: values.secretEnv,
+      });
+    }
+
     // PVC for nix store
     const nixPvcName = `${name}-nix-store`;
     new ApiObject(this, 'nix-pvc', {
@@ -615,6 +628,9 @@ export class GhaRunner extends Chart {
                 image: `${values.image ?? DEFAULT_IMAGE}:${values.imageTag ?? DEFAULT_IMAGE_TAG}`,
                 command: ['/bin/sh', '/scripts/entrypoint.sh'],
                 env: containerEnv,
+                ...(values.secretEnv && Object.keys(values.secretEnv).length > 0
+                  ? { envFrom: [{ secretRef: { name: secretEnvName } }] }
+                  : {}),
                 securityContext: {
                   runAsNonRoot: values.runAsNonRoot ?? true,
                   allowPrivilegeEscalation: false,
@@ -674,6 +690,7 @@ export class GhaRunner extends Chart {
       runnerStorageSize: props.runnerStorageSize ?? DEFAULT_RUNNER_SIZE,
       runnerStorageClass: props.runnerStorageClass,
       env: props.env,
+      secretEnv: props.secretEnv,
       resources: props.resources,
       replicas: props.replicas ?? 1,
       labels: props.labels,
@@ -683,6 +700,43 @@ export class GhaRunner extends Chart {
       fsGroup: props.fsGroup,
       name,
     };
-    return props.values ? deepMerge(computed, props.values) : computed;
+    const values = props.values ? deepMerge(computed, props.values) : computed;
+    if (values.secretEnv) {
+      const reserved = new Set([
+        ...Object.keys(values.env ?? {}),
+        'GITHUB_OWNER',
+        'GITHUB_APP_ID',
+        'GITHUB_APP_INSTALLATION_ID',
+        'RUNNER_VERSION',
+        'RUNNER_LABELS',
+        'RUNNER_NAME',
+        'REPLICAS',
+        'POD_NAME',
+        // Owned by ENTRYPOINT_SCRIPT — assigning to an imported env var
+        // keeps it exported, so these overwrite an injected value for
+        // every child process at pod start.
+        'HOME',
+        'PATH',
+        'LD_LIBRARY_PATH',
+        'JWT',
+        'INSTALLATION_TOKEN',
+        'REGISTRATION_TOKEN',
+        'RUNNER_WORKDIR',
+        'EPHEMERAL',
+      ]);
+      for (const key of Object.keys(values.secretEnv)) {
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
+          throw new Error(
+            `secretEnv key "${key}" is not a valid environment variable name — Kubernetes skips invalid keys during envFrom`,
+          );
+        }
+        if (reserved.has(key)) {
+          throw new Error(
+            `secretEnv key "${key}" collides with an explicit env var — explicit env wins over envFrom, so the secret value would be silently ignored`,
+          );
+        }
+      }
+    }
+    return values;
   }
 }
