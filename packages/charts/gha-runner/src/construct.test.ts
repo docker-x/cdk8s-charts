@@ -73,6 +73,67 @@ describe('GhaRunner construct', () => {
     expect(spec.template.spec.serviceAccountName).toBe('custom-sa');
   });
 
+  it('merges values.labels onto resources and pod template labels', () => {
+    const m = synth({ ...baseProps, values: { labels: { team: 'ci' } } });
+    const dep = findManifest(m, 'Deployment', 'runner');
+    const meta = dep.metadata as { labels: Record<string, string> };
+    expect(meta.labels.team).toBe('ci');
+    const spec = dep.spec as {
+      template: { metadata: { labels: Record<string, string> } };
+    };
+    expect(spec.template.metadata.labels.team).toBe('ci');
+  });
+
+  it('filters selector-owned keys out of user labels so pod matches selector', () => {
+    const m = synth({
+      ...baseProps,
+      values: {
+        labels: {
+          team: 'ci',
+          'app.kubernetes.io/name': 'hijacked',
+          'app.kubernetes.io/managed-by': 'other',
+        },
+      },
+    });
+    const dep = findManifest(m, 'Deployment', 'runner');
+    const spec = dep.spec as {
+      selector: { matchLabels: Record<string, string> };
+      template: { metadata: { labels: Record<string, string> } };
+    };
+    const selector = spec.selector.matchLabels;
+    const podLabels = spec.template.metadata.labels;
+    // Selector keys keep their generated values everywhere.
+    expect(podLabels['app.kubernetes.io/name']).toBe('runner');
+    expect(podLabels['app.kubernetes.io/managed-by']).toBe('cdk8s');
+    expect(podLabels.team).toBe('ci');
+    // Pod labels are a superset of the selector — required by the API.
+    for (const [k, v] of Object.entries(selector)) {
+      expect(podLabels[k]).toBe(v);
+    }
+  });
+
+  it('applies values.annotations to the Deployment and pod template', () => {
+    const m = synth({
+      ...baseProps,
+      values: { annotations: { 'example.com/note': 'hello' } },
+    });
+    const dep = findManifest(m, 'Deployment', 'runner');
+    const meta = dep.metadata as { annotations: Record<string, string> };
+    expect(meta.annotations['example.com/note']).toBe('hello');
+    const spec = dep.spec as {
+      template: { metadata: { annotations: Record<string, string> } };
+    };
+    expect(spec.template.metadata.annotations['example.com/note']).toBe('hello');
+  });
+
+  it('suppresses the ServiceAccount for a values-based serviceAccountName', () => {
+    const m = synth({ ...baseProps, values: { serviceAccountName: 'ext-sa' } });
+    expect(filterByKind(m, 'ServiceAccount')).toHaveLength(0);
+    const dep = findManifest(m, 'Deployment', 'runner');
+    const spec = dep.spec as { template: { spec: { serviceAccountName: string } } };
+    expect(spec.template.spec.serviceAccountName).toBe('ext-sa');
+  });
+
   it('sets securityContext on the main runner container', () => {
     const m = synth(baseProps);
     const dep = findManifest(m, 'Deployment', 'runner');
