@@ -250,7 +250,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
                 name: 'cleanup-legacy-configmap',
                 image: OC_CLI_IMAGE,
                 command: [
-                  'kubectl',
+                  'oc',
                   'delete',
                   'configmap',
                   payloadSecretName,
