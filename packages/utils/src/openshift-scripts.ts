@@ -76,7 +76,7 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '  exit 1',
     'fi',
     'echo "Backing up from pod: ${POD}"',
-    `oc exec -n "\${NAMESPACE}" "\${POD}" -c ${containerName} -- env HOME_MOUNT_PATH="\${HOME_MOUNT_PATH}" BACKUP_KEEP="\${BACKUP_KEEP}" /bin/sh -ec '`,
+    `oc exec -n "\${NAMESPACE}" "\${POD}" -c ${containerName} -- env HOME_MOUNT_PATH="\${HOME_MOUNT_PATH}" BACKUP_KEEP="\${BACKUP_KEEP}" BACKUP_PREFIX="\${BACKUP_PREFIX}" /bin/sh -ec '`,
     // PATH fixed inside the exec'd script: an env-arg $PATH would
     // expand in the CronJob container. The profile dir is appended,
     // not prepended, so image-owned system binaries win over binaries
