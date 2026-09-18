@@ -126,4 +126,6 @@ export interface Exports {
   deploymentName: string;
   /** SSH keys Secret name. */
   secretName: string;
+  /** Names of the Secret objects this chart emits — for tf-deployer resourceNames scoping. */
+  managedSecretNames: string[];
 }

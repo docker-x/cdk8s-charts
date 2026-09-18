@@ -233,22 +233,39 @@ export function createWorkspacePodRbac(
 // Terraform deployer RBAC
 // ---------------------------------------------------------------------------
 
-export function buildTfDeployerRules() {
+export function buildTfDeployerRules(managedSecrets: string[] = []) {
+  const secretWriteRule =
+    managedSecrets.length > 0
+      ? // Write verbs scoped to the secrets this stack manages — the
+        // deployer must not be able to modify or delete other
+        // applications' secrets in the shared namespace.
+        {
+          apiGroups: [''],
+          resources: ['secrets'],
+          resourceNames: managedSecrets,
+          verbs: ['delete', 'patch', 'update'],
+        }
+      : // No managed secrets declared: create+get only. An apply that
+        // needs to mutate an existing secret fails loudly here, forcing
+        // the caller to declare what it manages.
+        null;
   return [
     {
       apiGroups: [''],
       resources: ['pods', 'serviceaccounts', 'persistentvolumeclaims', 'services', 'configmaps'],
       verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
     },
-    // get is namespace-wide (no list/watch): the shared OPENSHIFT_TOKEN
-    // varset means one deployer identity serves every stack in the
-    // namespace, and the kubectl provider must GET each managed secret to
-    // refresh state during plan. list/watch stay denied.
+    // get+create stay namespace-wide (no list/watch): the shared
+    // OPENSHIFT_TOKEN varset means one deployer identity serves every
+    // stack in the namespace, the kubectl provider must GET each managed
+    // secret to refresh state during plan, and resourceNames cannot
+    // restrict create (the object has no name at authorization time).
     {
       apiGroups: [''],
       resources: ['secrets'],
-      verbs: ['create', 'delete', 'get', 'patch', 'update'],
+      verbs: ['create', 'get'],
     },
+    ...(secretWriteRule ? [secretWriteRule] : []),
     { apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] },
     {
       apiGroups: ['apps'],
@@ -273,7 +290,12 @@ export function buildTfDeployerRules() {
   ];
 }
 
-export function createTfDeployer(scope: Construct, name: string, namespace: string): void {
+export function createTfDeployer(
+  scope: Construct,
+  name: string,
+  namespace: string,
+  managedSecrets: string[] = [],
+): void {
   const saName = `${name}-tf-deployer`;
   new ApiObject(scope, 'tf-deployer-sa', {
     apiVersion: 'v1',
@@ -295,7 +317,7 @@ export function createTfDeployer(scope: Construct, name: string, namespace: stri
     apiVersion: 'rbac.authorization.k8s.io/v1',
     kind: 'Role',
     metadata: { name: saName, namespace, labels: componentLabels(name, 'tf-deployer') },
-    rules: buildTfDeployerRules(),
+    rules: buildTfDeployerRules([...managedSecrets, `${saName}-token`]),
   });
   new ApiObject(scope, 'tf-deployer-rb', {
     apiVersion: 'rbac.authorization.k8s.io/v1',

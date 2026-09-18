@@ -113,7 +113,17 @@ export class OpenShiftDevenv extends Chart {
     if (hasBackupSecrets)
       createBackupCronJob(this, name, namespace, backup, homeMountPath, 'devenv');
     const tfDeployerSaName = `${name}-tf-deployer`;
-    if (tfDeployer.enabled) createTfDeployer(this, name, namespace);
+    if (tfDeployer.enabled) {
+      // Secrets the deployer may mutate (patch/update/delete) —
+      // get+create stay namespace-wide; get is needed to refresh any
+      // managed secret and create can't be resourceNames-scoped.
+      createTfDeployer(this, name, namespace, [
+        ...[oauthCookieSecretName, saTokenSecretName, hasBackupSecrets ? r2SecretName : ''].filter(
+          Boolean,
+        ),
+        ...devenv.exports.managedSecretNames,
+      ]);
+    }
     if (podSandbox.enabled) createWorkspacePodRbac(this, name, namespace, saName);
 
     this.exports = {

@@ -185,6 +185,31 @@ describe('OpenShiftWorkspace recipe', () => {
     }
   });
 
+  it('tf-deployer secret write verbs are resourceNames-scoped to managed secrets', () => {
+    const m = synth(baseProps);
+    const role = findManifest(m, 'Role', 'workspace-tf-deployer');
+    const rules = role.rules as {
+      resources?: string[];
+      verbs: string[];
+      resourceNames?: string[];
+    }[];
+    const writeRule = rules.find(
+      (r) => r.resources?.includes('secrets') && r.verbs.includes('patch'),
+    );
+    expect(writeRule?.resourceNames).toEqual(
+      expect.arrayContaining([
+        'workspace-oauth-cookie',
+        'workspace-sa-token',
+        'workspace-ssh-keys',
+        'workspace-tf-deployer-token',
+      ]),
+    );
+    // get+create stay namespace-wide: refresh must read any managed
+    // secret and create can't be resourceNames-scoped.
+    const readRule = rules.find((r) => r.resources?.includes('secrets') && r.verbs.includes('get'));
+    expect(readRule?.resourceNames).toBeUndefined();
+  });
+
   it('exports correct route URLs and resource names', () => {
     const app = Testing.app();
     const ws = new OpenShiftWorkspace(app, 'test', baseProps);

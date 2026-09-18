@@ -128,6 +128,25 @@ export function createWorkspaceSecrets(
   }
 }
 
+/**
+ * Names of the Secret objects createWorkspaceSecrets emits for these
+ * values. Kept next to it so the tf-deployer's resourceNames scoping
+ * can't drift from what the chart actually manages — secrets referenced
+ * by name only (sshSecretName/imagePullSecretName refs, secretRefs) are
+ * not managed and must not appear here.
+ */
+export function workspaceManagedSecretNames(
+  values: WorkspaceValues,
+  name: string,
+  d: DerivedWorkspaceState,
+): string[] {
+  return [
+    ...(values.sshAuthorizedKeys && d.sshSecretName ? [d.sshSecretName] : []),
+    ...(values.secretEnv && Object.keys(values.secretEnv).length > 0 ? [`${name}-secret-env`] : []),
+    ...(values.imagePullSecret && d.pullSecretName ? [d.pullSecretName] : []),
+  ];
+}
+
 export function createWorkspacePvc(
   scope: Construct,
   name: string,

@@ -3,6 +3,7 @@ import {
   createWorkspaceService,
   HelmConstruct,
   initWorkspaceChart,
+  workspaceManagedSecretNames,
 } from '@cdk8s-charts/utils';
 import type { Construct } from 'constructs';
 import type { Exports, Props, Values } from './types';
@@ -58,6 +59,7 @@ export class Devcontainer extends HelmConstruct<Values> {
       serviceName: values.name as string,
       deploymentName: values.name as string,
       secretName: derived.sshSecretName ?? '',
+      managedSecretNames: workspaceManagedSecretNames(values, values.name as string, derived),
     };
   }
 }

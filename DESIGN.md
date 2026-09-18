@@ -1071,7 +1071,13 @@ production remote workspace:
    daemon health and resumes exactly those via `paseo send` (lazy provider
    resume + "continue" prompt). Without a snapshot (SIGKILL/crash) it falls
    back to all `closed` non-archived agents, capped by `PASEO_AUTO_RESUME_MAX`.
-7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform deployments
+7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform
+   deployments. Secret RBAC is split: `get`/`create` stay namespace-wide
+   (refresh must read any managed secret; `resourceNames` cannot
+   restrict `create`), while `patch`/`update`/`delete` are scoped via
+   `resourceNames` to the secrets the stack actually manages — recipe
+   secrets plus the chart's `managedSecretNames` export and the
+   deployer's own token.
 8. **All secrets** — R2 credentials, SSH keys, OAuth cookie, GHCR pull secret
 
 **Props (`OpenShiftWorkspaceProps`):**
@@ -1217,7 +1223,13 @@ but using the Devenv chart:
    daemon health and resumes exactly those via `paseo send` (lazy provider
    resume + "continue" prompt). Without a snapshot (SIGKILL/crash) it falls
    back to all `closed` non-archived agents, capped by `PASEO_AUTO_RESUME_MAX`.
-7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform deployments
+7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform
+   deployments. Secret RBAC is split: `get`/`create` stay namespace-wide
+   (refresh must read any managed secret; `resourceNames` cannot
+   restrict `create`), while `patch`/`update`/`delete` are scoped via
+   `resourceNames` to the secrets the stack actually manages — recipe
+   secrets plus the chart's `managedSecretNames` export and the
+   deployer's own token.
 8. **Pod sandbox RBAC** — Role + RoleBinding granting the workspace SA pod
    lifecycle (`oc run`/`kubectl run` sibling pods) plus `pods/exec`.
    In-pod docker/podman is impossible under restricted SCC

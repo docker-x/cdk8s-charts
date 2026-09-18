@@ -109,7 +109,17 @@ export class OpenShiftWorkspace extends Chart {
     if (hasBackupSecrets) createBackupRbac(this, name, namespace);
     if (hasBackupSecrets) createBackupCronJob(this, name, namespace, backup, homeMountPath);
     const tfDeployerSaName = `${name}-tf-deployer`;
-    if (tfDeployer.enabled) createTfDeployer(this, name, namespace);
+    if (tfDeployer.enabled) {
+      // Secrets the deployer may mutate (patch/update/delete) —
+      // get+create stay namespace-wide; get is needed to refresh any
+      // managed secret and create can't be resourceNames-scoped.
+      createTfDeployer(this, name, namespace, [
+        ...[oauthCookieSecretName, saTokenSecretName, hasBackupSecrets ? r2SecretName : ''].filter(
+          Boolean,
+        ),
+        ...devcontainer.exports.managedSecretNames,
+      ]);
+    }
 
     this.exports = {
       pvcName: devcontainer.exports.pvcName,
