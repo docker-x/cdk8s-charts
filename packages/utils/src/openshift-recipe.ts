@@ -310,7 +310,10 @@ export function buildOauthProxySidecar(
       '--cookie-secret-file=/etc/oauth/cookie-secret',
       '--cookie-secure=true',
       '--cookie-samesite=none',
-      '--skip-auth-regex=^/healthz|^/ws',
+      // /ws must stay authenticated: it is Paseo's control channel and the
+      // daemon's own password auth is optional. The browser UI sends the
+      // OAuth session cookie on the WebSocket upgrade, so SSO still applies.
+      '--skip-auth-regex=^/healthz/?$',
       `--client-id=system:serviceaccount:${namespace}:${saName}`,
       '--client-secret-file=/var/run/secrets/openshift/serviceaccount/token',
     ],
