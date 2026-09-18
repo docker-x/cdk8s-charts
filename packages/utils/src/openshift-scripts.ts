@@ -86,7 +86,7 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     ...buildBackupExcludes(extraExcludes),
     '  DATE=$(date -u +%Y%m%d-%H%M%S)',
     '  export OBJECT_KEY="workspace-state-${DATE}.tar.gz.enc"',
-    '  if command -v aws >/dev/null 2>&1; then',
+    '  if command -v aws >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then',
     '    echo "Using aws-cli for streaming upload..."',
     '    R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"',
     // Stream tar|openssl|aws instead of staging in /tmp — a large
@@ -114,7 +114,7 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '    echo "Uploaded ${OBJECT_KEY}"',
     ...buildBackupUploadAndCleanup(),
     '  else',
-    '    echo "Fatal: aws-cli not found in workspace image. Install aws-cli to enable backups."',
+    '    echo "Fatal: aws-cli and jq are required for backups but not found in workspace image."',
     '    exit 1',
     '  fi',
     "'",
