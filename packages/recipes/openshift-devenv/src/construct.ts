@@ -117,12 +117,22 @@ export class OpenShiftDevenv extends Chart {
       // Secrets the deployer may mutate (patch/update/delete) —
       // get+create stay namespace-wide; get is needed to refresh any
       // managed secret and create can't be resourceNames-scoped.
-      createTfDeployer(this, name, namespace, [
-        ...[oauthCookieSecretName, saTokenSecretName, hasBackupSecrets ? r2SecretName : ''].filter(
-          Boolean,
-        ),
-        ...devenv.exports.managedSecretNames,
-      ]);
+      createTfDeployer(
+        this,
+        name,
+        namespace,
+        [
+          ...[
+            oauthCookieSecretName,
+            saTokenSecretName,
+            hasBackupSecrets ? r2SecretName : '',
+          ].filter(Boolean),
+          ...devenv.exports.managedSecretNames,
+        ],
+        // Pod write+exec verbs are needed only to delegate them to the
+        // workspace SA (pod-sandbox) — RBAC escalation prevention.
+        { podWorkload: podSandbox.enabled },
+      );
     }
     if (podSandbox.enabled) createWorkspacePodRbac(this, name, namespace, saName);
 
