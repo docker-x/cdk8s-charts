@@ -70,12 +70,14 @@ export class OpenShiftDevenv extends Chart {
       namespace,
       backup,
     );
+    const paseoPort = (props.values?.paseoPort as number | undefined) ?? 6767;
     const autoResumeConfigMapName = createPaseoConfigMap(
       this,
       name,
       namespace,
       paseoAutoResume,
       'devenv',
+      paseoPort,
     );
     const { extraVolumes, extraVolumeMounts } = buildExtraVolumes({
       hasBackupSecrets,
@@ -85,14 +87,10 @@ export class OpenShiftDevenv extends Chart {
       paseoAutoResume,
       autoResumeConfigMapName,
     });
-    const oauthProxySidecar = buildOauthProxySidecar(
-      namespace,
-      saName,
-      (props.values?.paseoPort as number | undefined) ?? 6767,
-    );
+    const oauthProxySidecar = buildOauthProxySidecar(namespace, saName, paseoPort);
     const lifecycle = buildLifecycle(paseoAutoResume, homeMountPath, 'devenv');
     const workspaceEnv = buildWorkspaceEnv(name, namespace, appsDomain, props.env, 'devenv');
-    const podAnnotations = buildPodAnnotations(paseoAutoResume, 'devenv');
+    const podAnnotations = buildPodAnnotations(paseoAutoResume, 'devenv', paseoPort);
     const devenv = new Devenv(
       this,
       'workspace',
