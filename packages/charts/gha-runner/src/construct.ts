@@ -437,10 +437,15 @@ export class GhaRunner extends Chart {
     const name = props.name ?? id;
     const values = this.computeValues(props, name);
     // The selector must be a stable set — Deployment selectors are
-    // immutable, so user-editable labels can't join it. Pod template
-    // labels stay a superset of the selector.
+    // immutable, so user-editable labels can't join it. Selector keys
+    // are also filtered out of user labels: overriding one would split
+    // the pod template labels from the selector and the API would
+    // reject the Deployment.
     const selectorLabels = buildLabels(name);
-    const labels = { ...selectorLabels, ...(values.labels ?? {}) };
+    const userLabels = Object.fromEntries(
+      Object.entries(values.labels ?? {}).filter(([k]) => !(k in selectorLabels)),
+    );
+    const labels = { ...selectorLabels, ...userLabels };
 
     // ConfigMap with entrypoint + init scripts
     const configMapName = `${name}-scripts`;
