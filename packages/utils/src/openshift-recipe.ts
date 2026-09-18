@@ -113,6 +113,11 @@ export function validateDnsLabels(name: string, namespace: string): void {
     throw new Error(
       `Invalid namespace "${namespace}": must be a DNS-label value (lowercase alphanumeric with hyphens, max 63 chars, no dots)`,
     );
+  // Worst-case generated name is `${name}-tf-deployer-token` (18-char
+  // suffix, always created) — bound name so every derived resource
+  // stays a valid DNS label. CronJob callers apply a tighter 52-char
+  // limit via validateGeneratedName on top of this.
+  validateGeneratedName(name, '-tf-deployer-token', 63);
 }
 
 /** Validate that a generated resource name fits within the K8s limit (52 for CronJobs). */
