@@ -228,10 +228,12 @@ fi
 # The default image has no /bin/bash — runner scripts are exec'd via
 # shebang, so rewrite them to env-resolved bash (the nix profile is on
 # PATH). Guarded: a custom image with real /bin/bash doesn't need this,
-# and one lacking sed/bash would fail the rewrite under set -e.
+# and one lacking sed, bash, or /usr/bin/env can't run the rewritten
+# scripts anyway — skipping keeps the original shebangs rather than
+# pointing them at an interpreter that doesn't exist.
 # *.sh.template is included because run.sh regenerates run-helper.sh
 # from it on every start — the generated copy must inherit the rewrite.
-if command -v sed >/dev/null 2>&1 && command -v bash >/dev/null 2>&1 && [ ! -e /bin/bash ]; then
+if command -v sed >/dev/null 2>&1 && command -v bash >/dev/null 2>&1 && [ -x /usr/bin/env ] && [ ! -e /bin/bash ]; then
   for f in ./*.sh ./*.sh.template ./bin/*.sh; do
     [ -f "$f" ] && sed -i 's|^#!/bin/bash|#!/usr/bin/env bash|' "$f"
   done
