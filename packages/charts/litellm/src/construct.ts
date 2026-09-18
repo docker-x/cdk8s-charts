@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { HelmConstruct } from '@cdk8s-charts/utils';
+import { HelmConstruct, simpleHash } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { LitellmExports, LitellmProps, LitellmValues, LitellmVirtualKey } from './types';
@@ -74,6 +74,10 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     const computed: LitellmValues = {
       masterkeySecretName: secretsName,
       masterkeySecretKey: 'master-key',
+      // Checksum forces a pod rollout when masterKey rotates — a Secret
+      // update alone leaves running pods on the old key. User-supplied
+      // podAnnotations merge on top via deepMerge.
+      podAnnotations: { 'cdk8s-charts/masterkey-checksum': simpleHash(props.masterKey) },
       environmentSecrets: allSecretNames.length > 0 ? allSecretNames : [],
       proxy_config: props.proxyConfig,
       postgresql: { enabled: true },
@@ -82,8 +86,17 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       ...(allMounts.length > 0 ? { volumeMounts: allMounts } : {}),
     };
 
-    // Strip volumes/volumeMounts from overrides so deepMerge doesn't clobber
-    const { volumes: _v, volumeMounts: _vm, ...restOverrides } = props.values ?? {};
+    // Strip volumes/volumeMounts and the masterkey wiring from overrides —
+    // the provisioning Job always authenticates against our generated
+    // Secret, so a user override here would desync proxy and Job.
+    const {
+      volumes: _v,
+      volumeMounts: _vm,
+      masterkey: _mk,
+      masterkeySecretName: _msn,
+      masterkeySecretKey: _msk,
+      ...restOverrides
+    } = props.values ?? {};
 
     const values = this.renderChart(
       props.chart ?? 'oci://ghcr.io/berriai/litellm-helm',
