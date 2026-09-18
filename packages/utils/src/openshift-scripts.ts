@@ -50,15 +50,15 @@ function buildBackupExcludes(extraExcludes: string): string[] {
 
 function buildBackupUploadAndCleanup(): string[] {
   return [
-    '    echo "Cleaning up old backups (keeping last ${BACKUP_KEEP})..."',
-    '    aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "workspace-state-" --endpoint-url "${R2_ENDPOINT}" --region auto --output json --query "Contents[*].Key" > /tmp/listing.json || { echo "Fatal: failed to list R2 objects"; rm -f /tmp/backup.tar.gz.enc; exit 1; }',
-    '    jq -r ".[]" /tmp/listing.json > /tmp/keys.txt || { echo "Fatal: failed to parse R2 listing"; rm -f /tmp/listing.json /tmp/backup.tar.gz.enc; exit 1; }',
-    '    rm -f /tmp/listing.json',
-    '    sort -r /tmp/keys.txt > /tmp/all.txt',
-    '    rm -f /tmp/keys.txt',
-    '    head -n "${BACKUP_KEEP}" /tmp/all.txt > /tmp/keep.txt',
-    '    while IFS= read -r key; do grep -qxF "${key}" /tmp/keep.txt || aws s3api delete-object --bucket "${R2_BUCKET}" --key "${key}" --endpoint-url "${R2_ENDPOINT}" --region auto; done < /tmp/all.txt',
-    '    rm -f /tmp/all.txt /tmp/keep.txt',
+    '  echo "Cleaning up old backups (keeping last ${BACKUP_KEEP})..."',
+    '  aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "workspace-state-" --endpoint-url "${R2_ENDPOINT}" --region auto --output json --query "Contents[*].Key" > /tmp/listing.json || { echo "Fatal: failed to list R2 objects"; rm -f /tmp/backup.tar.gz.enc; exit 1; }',
+    '  jq -r ".[]" /tmp/listing.json > /tmp/keys.txt || { echo "Fatal: failed to parse R2 listing"; rm -f /tmp/listing.json /tmp/backup.tar.gz.enc; exit 1; }',
+    '  rm -f /tmp/listing.json',
+    '  sort -r /tmp/keys.txt > /tmp/all.txt',
+    '  rm -f /tmp/keys.txt',
+    '  head -n "${BACKUP_KEEP}" /tmp/all.txt > /tmp/keep.txt',
+    '  while IFS= read -r key; do grep -qxF "${key}" /tmp/keep.txt || aws s3api delete-object --bucket "${R2_BUCKET}" --key "${key}" --endpoint-url "${R2_ENDPOINT}" --region auto; done < /tmp/all.txt',
+    '  rm -f /tmp/all.txt /tmp/keep.txt',
   ];
 }
 
@@ -86,37 +86,35 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     ...buildBackupExcludes(extraExcludes),
     '  DATE=$(date -u +%Y%m%d-%H%M%S)',
     '  export OBJECT_KEY="workspace-state-${DATE}.tar.gz.enc"',
-    '  if command -v aws >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then',
-    '    echo "Using aws-cli for streaming upload..."',
-    '    R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"',
+    '  for tool in tar openssl aws jq; do',
+    '    if ! command -v "$tool" >/dev/null 2>&1; then echo "Fatal: $tool is required for backups but not found in workspace image."; exit 1; fi',
+    '  done',
+    '  echo "Using aws-cli for streaming upload..."',
+    '  R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"',
     // Stream tar|openssl|aws instead of staging in /tmp — a large
     // workspace tarball + its encrypted copy would exhaust the
     // container's writable layer. Producer failures are flagged via
     // marker files because /bin/sh has no pipefail.
-    '    rm -f /tmp/.tar-rc /tmp/.enc-rc',
+    '  rm -f /tmp/.tar-rc /tmp/.enc-rc',
     // Unseekable stdin uploads use a fixed part size — 64MB parts keep
     // the 10,000-part S3 ceiling out of reach for any PVC-sized stream.
-    '    aws configure set s3.multipart_chunksize 64MB || echo "Warning: could not set multipart_chunksize"',
+    '  aws configure set s3.multipart_chunksize 64MB || echo "Warning: could not set multipart_chunksize"',
     // `|| pipe_rc=$?` is required — under `sh -e` a failing pipeline
     // would exit before the rc assignment and skip partial-object cleanup.
-    '    ( tar czf - $EXCLUDES . || echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD || echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
-    '    pipe_rc=${pipe_rc:-0}',
-    '    tar_rc=$(cat /tmp/.tar-rc 2>/dev/null || echo 0)',
-    '    enc_rc=$(cat /tmp/.enc-rc 2>/dev/null || echo 0)',
-    '    if [ "${tar_rc}" -ge 2 ] || [ "${enc_rc}" -ne 0 ] || [ "${pipe_rc}" -ne 0 ]; then',
-    '      echo "Fatal: streaming backup failed (tar_rc=${tar_rc} enc_rc=${enc_rc} upload_rc=${pipe_rc})"',
-    '      rm -f /tmp/.tar-rc /tmp/.enc-rc',
-    '      aws s3api delete-object --bucket "${R2_BUCKET}" --key "${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto 2>/dev/null || echo "WARNING: failed to delete partial object ${OBJECT_KEY} — it may appear as a corrupt newest backup"',
-    '      exit 1',
-    '    fi',
+    '  ( tar czf - $EXCLUDES . || echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD || echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
+    '  pipe_rc=${pipe_rc:-0}',
+    '  tar_rc=$(cat /tmp/.tar-rc 2>/dev/null || echo 0)',
+    '  enc_rc=$(cat /tmp/.enc-rc 2>/dev/null || echo 0)',
+    '  if [ "${tar_rc}" -ge 2 ] || [ "${enc_rc}" -ne 0 ] || [ "${pipe_rc}" -ne 0 ]; then',
+    '    echo "Fatal: streaming backup failed (tar_rc=${tar_rc} enc_rc=${enc_rc} upload_rc=${pipe_rc})"',
     '    rm -f /tmp/.tar-rc /tmp/.enc-rc',
-    '    if [ "${tar_rc}" -eq 1 ]; then echo "Warning: tar exit code 1 (non-fatal)"; fi',
-    '    echo "Uploaded ${OBJECT_KEY}"',
-    ...buildBackupUploadAndCleanup(),
-    '  else',
-    '    echo "Fatal: aws-cli and jq are required for backups but not found in workspace image."',
+    '    aws s3api delete-object --bucket "${R2_BUCKET}" --key "${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto 2>/dev/null || echo "WARNING: failed to delete partial object ${OBJECT_KEY} — it may appear as a corrupt newest backup"',
     '    exit 1',
     '  fi',
+    '  rm -f /tmp/.tar-rc /tmp/.enc-rc',
+    '  if [ "${tar_rc}" -eq 1 ]; then echo "Warning: tar exit code 1 (non-fatal)"; fi',
+    '  echo "Uploaded ${OBJECT_KEY}"',
+    ...buildBackupUploadAndCleanup(),
     "'",
     'echo "Backup complete"',
   ].join('\n');
