@@ -203,7 +203,12 @@ fi
 cd "$RUNNER_WORKDIR"
 if [ ! -f ./config.sh ]; then
   echo "Downloading runner agent v\${RUNNER_VERSION}..."
-  curl -sfL "https://github.com/actions/runner/releases/download/v\${RUNNER_VERSION}/actions-runner-linux-x64-\${RUNNER_VERSION}.tar.gz" | tar xz
+  curl -sfL -o runner.tar.gz "https://github.com/actions/runner/releases/download/v\${RUNNER_VERSION}/actions-runner-linux-x64-\${RUNNER_VERSION}.tar.gz"
+  # Optional supply-chain pin — verify the tarball before extracting.
+  if [ -n "\${RUNNER_SHA256:-}" ]; then
+    echo "\${RUNNER_SHA256}  runner.tar.gz" | sha256sum -c - || { echo "ERROR: runner tarball checksum mismatch" >&2; rm -f runner.tar.gz; exit 1; }
+  fi
+  tar xzf runner.tar.gz && rm -f runner.tar.gz
 fi
 
 # The runner ships foreign ELF binaries whose interpreter is
@@ -550,6 +555,7 @@ export class GhaRunner extends Chart {
           ]
         : []),
       { name: 'RUNNER_VERSION', value: values.runnerVersion ?? DEFAULT_RUNNER_VERSION },
+      ...(values.runnerSha256 ? [{ name: 'RUNNER_SHA256', value: values.runnerSha256 }] : []),
       { name: 'RUNNER_LABELS', value: (values.runnerLabels ?? DEFAULT_LABELS).join(',') },
       { name: 'RUNNER_NAME', value: values.runnerName ?? name },
       { name: 'REPLICAS', value: String(values.replicas ?? 1) },
@@ -698,6 +704,7 @@ export class GhaRunner extends Chart {
       runnerLabels: props.runnerLabels ?? DEFAULT_LABELS,
       runnerName: props.runnerName ?? name,
       runnerVersion: props.runnerVersion ?? DEFAULT_RUNNER_VERSION,
+      runnerSha256: props.runnerSha256,
       nixStorageSize: props.nixStorageSize ?? DEFAULT_NIX_SIZE,
       nixStorageClass: props.nixStorageClass,
       runnerStorageSize: props.runnerStorageSize ?? DEFAULT_RUNNER_SIZE,
@@ -714,6 +721,11 @@ export class GhaRunner extends Chart {
       name,
     };
     const values = props.values ? deepMerge(computed, props.values) : computed;
+    if (values.runnerSha256 && !/^[0-9a-f]{64}$/.test(values.runnerSha256)) {
+      throw new Error(
+        'runnerSha256 must be a 64-character lowercase hex digest (output of `sha256sum` on the runner tarball)',
+      );
+    }
     if (values.secretEnv) {
       const reserved = new Set([
         ...Object.keys(values.env ?? {}),

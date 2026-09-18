@@ -15,6 +15,7 @@ export interface Values {
   runnerLabels?: string[];
   runnerName?: string;
   runnerVersion?: string;
+  runnerSha256?: string;
   nixStorageSize?: string;
   nixStorageClass?: string;
   runnerStorageSize?: string;

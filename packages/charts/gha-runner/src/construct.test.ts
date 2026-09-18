@@ -195,6 +195,35 @@ describe('GhaRunner construct', () => {
     expect(entrypoint).toContain('*[!0123456789]*');
   });
 
+  it('verifies the runner tarball when runnerSha256 is set', () => {
+    const sha = 'a'.repeat(64);
+    const m = synth({ ...baseProps, runnerSha256: sha });
+    const cm = findManifest(m, 'ConfigMap', 'runner-scripts');
+    const entrypoint = (cm.data as Record<string, string>)['entrypoint.sh'];
+    expect(entrypoint).toContain('sha256sum -c -');
+    expect(entrypoint).toContain('runner tarball checksum mismatch');
+    const dep = findManifest(m, 'Deployment', 'runner');
+    const spec = dep.spec as {
+      template: { spec: { containers: Array<{ env: { name: string; value?: string }[] }> } };
+    };
+    const env = spec.template.spec.containers[0].env;
+    expect(env.find((e) => e.name === 'RUNNER_SHA256')?.value).toBe(sha);
+
+    const without = synth(baseProps);
+    const dep2 = findManifest(without, 'Deployment', 'runner');
+    const spec2 = dep2.spec as {
+      template: { spec: { containers: Array<{ env: { name: string }[] }> } };
+    };
+    expect(spec2.template.spec.containers[0].env.some((e) => e.name === 'RUNNER_SHA256')).toBe(
+      false,
+    );
+  });
+
+  it('rejects a malformed runnerSha256 at synth time', () => {
+    expect(() => synth({ ...baseProps, runnerSha256: 'not-a-hash' })).toThrow(/64-character/);
+    expect(() => synth({ ...baseProps, runnerSha256: 'A'.repeat(64) })).toThrow(/64-character/);
+  });
+
   it('emits a secret-env Secret and envFrom only when secretEnv is set', () => {
     const withSecrets = synth({ ...baseProps, secretEnv: { MY_TOKEN: 's3cret' } });
     const secret = findManifest(withSecrets, 'Secret', 'runner-secret-env');
