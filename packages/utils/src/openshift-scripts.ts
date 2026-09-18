@@ -93,17 +93,20 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     // workspace tarball + its encrypted copy would exhaust the
     // container's writable layer. Producer failures are flagged via
     // marker files because /bin/sh has no pipefail.
-    '    rm -f /tmp/.tar-rc /tmp/.enc-failed',
-    '    ( tar czf - $EXCLUDES . || echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD || : > /tmp/.enc-failed ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto',
-    '    pipe_rc=$?',
+    '    rm -f /tmp/.tar-rc /tmp/.enc-rc',
+    // `|| pipe_rc=$?` is required — under `sh -e` a failing pipeline
+    // would exit before the rc assignment and skip partial-object cleanup.
+    '    ( tar czf - $EXCLUDES . || echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD || echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
+    '    pipe_rc=${pipe_rc:-0}',
     '    tar_rc=$(cat /tmp/.tar-rc 2>/dev/null || echo 0)',
-    '    if [ "${tar_rc}" -ge 2 ] || [ -f /tmp/.enc-failed ] || [ "${pipe_rc}" -ne 0 ]; then',
-    '      echo "Fatal: streaming backup failed (tar_rc=${tar_rc} enc_failed=$([ -f /tmp/.enc-failed ] && echo 1 || echo 0) upload_rc=${pipe_rc})"',
-    '      rm -f /tmp/.tar-rc /tmp/.enc-failed',
-    '      aws s3api delete-object --bucket "${R2_BUCKET}" --key "${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto 2>/dev/null || true',
+    '    enc_rc=$(cat /tmp/.enc-rc 2>/dev/null || echo 0)',
+    '    if [ "${tar_rc}" -ge 2 ] || [ "${enc_rc}" -ne 0 ] || [ "${pipe_rc}" -ne 0 ]; then',
+    '      echo "Fatal: streaming backup failed (tar_rc=${tar_rc} enc_rc=${enc_rc} upload_rc=${pipe_rc})"',
+    '      rm -f /tmp/.tar-rc /tmp/.enc-rc',
+    '      aws s3api delete-object --bucket "${R2_BUCKET}" --key "${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto 2>/dev/null || echo "WARNING: failed to delete partial object ${OBJECT_KEY} — it may appear as a corrupt newest backup"',
     '      exit 1',
     '    fi',
-    '    rm -f /tmp/.tar-rc /tmp/.enc-failed',
+    '    rm -f /tmp/.tar-rc /tmp/.enc-rc',
     '    if [ "${tar_rc}" -eq 1 ]; then echo "Warning: tar exit code 1 (non-fatal)"; fi',
     '    echo "Uploaded ${OBJECT_KEY}"',
     ...buildBackupUploadAndCleanup(),
