@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { HelmConstruct, simpleHash } from '@cdk8s-charts/utils';
+import { HelmConstruct, OC_CLI_IMAGE, simpleHash } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { LitellmExports, LitellmProps, LitellmValues, LitellmVirtualKey } from './types';
@@ -157,6 +157,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     const baseUrl = `http://${host}:${port}`;
     const scriptConfigMapName = `${releaseName}-provision-keys-scripts`;
     const payloadSecretName = `${releaseName}-provision-keys-data`;
+    const jobSaName = `${releaseName}-provision-keys`;
     const keySpecs: string[] = [];
     const payloadFiles: Record<string, string> = {};
 
@@ -194,6 +195,41 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       stringData: payloadFiles,
     });
 
+    // The payload object was a ConfigMap before it became a Secret —
+    // kind changes don't remove the old object, so a one-shot init
+    // container deletes the legacy ConfigMap. Its SA may only delete
+    // that single ConfigMap name; the same-named Secret is untouched
+    // (different resource type).
+    new ApiObject(this, 'provision-keys-sa', {
+      apiVersion: 'v1',
+      kind: 'ServiceAccount',
+      metadata: { name: jobSaName, namespace },
+    });
+    new ApiObject(this, 'provision-keys-role', {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'Role',
+      metadata: { name: jobSaName, namespace },
+      rules: [
+        {
+          apiGroups: [''],
+          resources: ['configmaps'],
+          resourceNames: [payloadSecretName],
+          verbs: ['delete'],
+        },
+      ],
+    });
+    new ApiObject(this, 'provision-keys-rb', {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'RoleBinding',
+      metadata: { name: jobSaName, namespace },
+      roleRef: {
+        apiGroup: 'rbac.authorization.k8s.io',
+        kind: 'Role',
+        name: jobSaName,
+      },
+      subjects: [{ kind: 'ServiceAccount', name: jobSaName, namespace }],
+    });
+
     new ApiObject(this, 'provision-keys', {
       apiVersion: 'batch/v1',
       kind: 'Job',
@@ -206,7 +242,21 @@ export class Litellm extends HelmConstruct<LitellmValues> {
         ttlSecondsAfterFinished: 300,
         template: {
           spec: {
+            serviceAccountName: jobSaName,
             initContainers: [
+              {
+                name: 'cleanup-legacy-configmap',
+                image: OC_CLI_IMAGE,
+                command: [
+                  'kubectl',
+                  'delete',
+                  'configmap',
+                  payloadSecretName,
+                  '-n',
+                  namespace,
+                  '--ignore-not-found=true',
+                ],
+              },
               {
                 name: 'wait-for-litellm',
                 image: 'curlimages/curl:8.12.1',
