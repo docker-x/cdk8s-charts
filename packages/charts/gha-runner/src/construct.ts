@@ -436,7 +436,11 @@ export class GhaRunner extends Chart {
 
     const name = props.name ?? id;
     const values = this.computeValues(props, name);
-    const labels = { ...buildLabels(name), ...(values.labels ?? {}) };
+    // The selector must be a stable set — Deployment selectors are
+    // immutable, so user-editable labels can't join it. Pod template
+    // labels stay a superset of the selector.
+    const selectorLabels = buildLabels(name);
+    const labels = { ...selectorLabels, ...(values.labels ?? {}) };
 
     // ConfigMap with entrypoint + init scripts
     const configMapName = `${name}-scripts`;
@@ -567,7 +571,7 @@ export class GhaRunner extends Chart {
         // — and with replicas=1 they would register the same runner
         // identity twice.
         strategy: { type: 'Recreate' },
-        selector: { matchLabels: labels },
+        selector: { matchLabels: selectorLabels },
         template: {
           metadata: { labels, annotations: values.annotations },
           spec: {
