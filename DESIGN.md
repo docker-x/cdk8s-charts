@@ -1124,8 +1124,9 @@ built by `devenv container build processes` (Nix/nix2container) and pushed to
 a registry. This construct deploys that image as a Kubernetes Deployment with
 a durable PVC, SSH access, and devenv process ports (sshd, paseo, caddy).
 
-The container runs `devenv up` by default, which starts all configured
-processes via devenv's native process manager — no entrypoint scripts needed.
+The container runs the image's ENTRYPOINT (`devenv up`) unless `command`
+is set, which starts all configured processes via devenv's native
+process manager — no entrypoint scripts needed.
 
 There is no upstream Helm chart — the construct renders K8s resources directly,
 following the same pattern as `@cdk8s-charts/devcontainer`.
@@ -1137,7 +1138,7 @@ following the same pattern as `@cdk8s-charts/devcontainer`.
 | `namespace` | `string` | yes | K8s namespace |
 | `image` | `string` | yes | Devenv container image (e.g. `ghcr.io/org/devenv-workspace:latest`) |
 | `imageDigest` | `string` | no | Image digest for rollout annotation (default: `unknown`) |
-| `command` | `string[]` | no | Container command override (default: `["devenv", "up"]`) |
+| `command` | `string[]` | no | Container command override (default: image ENTRYPOINT) |
 | `storageSize` | `string` | no | PVC size (default: `30Gi`) |
 | `storageClass` | `string` | no | Storage class for PVC (default: cluster default) |
 | `existingPvcName` | `string` | no | Use an existing PVC instead of creating one |
@@ -1198,7 +1199,7 @@ following the same pattern as `@cdk8s-charts/devcontainer`.
 
 | Aspect | Devcontainer | Devenv |
 |--------|-------------|--------|
-| Default command | `/usr/local/bin/entrypoint.sh` | `devenv up` |
+| Default command | `/usr/local/bin/entrypoint.sh` | image ENTRYPOINT (`devenv up`) |
 | Home mount | `/home/vscode` | `/home/devenv` |
 | Process management | lifecycle hooks / entrypoint | devenv native process manager |
 | Ports | ssh, preview | ssh, paseo, caddy, preview |
