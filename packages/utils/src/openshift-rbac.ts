@@ -233,6 +233,22 @@ export function createWorkspacePodRbac(
 // Terraform deployer RBAC
 // ---------------------------------------------------------------------------
 
+// pods are read-only by default: pod create + exec lets the deployer
+// mount ANY namespace secret and read it, bypassing the resourceNames
+// scoping. Write verbs are granted only when the stack enables
+// pod-sandbox, since RBAC escalation prevention requires the deployer
+// to hold the verbs it delegates.
+function tfDeployerPodRules(podWorkload: boolean) {
+  return [
+    {
+      apiGroups: [''],
+      resources: ['pods'],
+      verbs: podWorkload ? ['create', 'delete', 'get', 'list', 'watch'] : ['get', 'list', 'watch'],
+    },
+    ...(podWorkload ? [{ apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] }] : []),
+  ];
+}
+
 export function buildTfDeployerRules(
   managedSecrets: string[] = [],
   opts: { podWorkload?: boolean } = {},
@@ -259,16 +275,7 @@ export function buildTfDeployerRules(
       resources: ['serviceaccounts', 'persistentvolumeclaims', 'services', 'configmaps'],
       verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
     },
-    // pods are read-only by default: pod create + exec lets the
-    // deployer mount ANY namespace secret and read it, bypassing the
-    // resourceNames scoping. Write verbs are granted only when the
-    // stack enables pod-sandbox, since RBAC escalation prevention
-    // requires the deployer to hold the verbs it delegates.
-    {
-      apiGroups: [''],
-      resources: ['pods'],
-      verbs: podWorkload ? ['create', 'delete', 'get', 'list', 'watch'] : ['get', 'list', 'watch'],
-    },
+    ...tfDeployerPodRules(podWorkload),
     // create stays namespace-wide (no list/watch): resourceNames cannot
     // restrict create because the object has no name at authorization
     // time. get joins the scoped rule once a managed set is declared —
@@ -280,7 +287,6 @@ export function buildTfDeployerRules(
       verbs: managedSecrets.length > 0 ? ['create'] : ['create', 'get'],
     },
     ...(secretManagedRule ? [secretManagedRule] : []),
-    ...(podWorkload ? [{ apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] }] : []),
     {
       apiGroups: ['apps'],
       resources: ['deployments', 'deployments/scale', 'replicasets', 'daemonsets', 'statefulsets'],
