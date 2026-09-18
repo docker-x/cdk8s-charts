@@ -253,7 +253,6 @@ export function buildTfDeployerRules(
   managedSecrets: string[] = [],
   opts: { podWorkload?: boolean } = {},
 ) {
-  const { podWorkload = false } = opts;
   const secretManagedRule =
     managedSecrets.length > 0
       ? // Read+write verbs scoped to the secrets this stack manages —
@@ -275,7 +274,7 @@ export function buildTfDeployerRules(
       resources: ['serviceaccounts', 'persistentvolumeclaims', 'services', 'configmaps'],
       verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
     },
-    ...tfDeployerPodRules(podWorkload),
+    ...tfDeployerPodRules(opts.podWorkload ?? false),
     // create stays namespace-wide (no list/watch): resourceNames cannot
     // restrict create because the object has no name at authorization
     // time. get joins the scoped rule once a managed set is declared —
