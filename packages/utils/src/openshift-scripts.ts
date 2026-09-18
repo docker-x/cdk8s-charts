@@ -84,27 +84,39 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '  for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET BACKUP_PASSWORD; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
     '  cd -- "$HOME_MOUNT_PATH"',
     ...buildBackupExcludes(extraExcludes),
-    '  tar czf /tmp/backup.tar.gz $EXCLUDES . || tar_rc=$?',
-    '  if [ "${tar_rc:-0}" -ge 2 ]; then echo "Fatal: tar failed with exit code ${tar_rc}"; exit "${tar_rc}"; fi',
-    '  if [ "${tar_rc:-0}" -eq 1 ]; then echo "Warning: tar exit code 1 (non-fatal)"; fi',
-    '  openssl enc -aes-256-cbc -salt -pbkdf2 -in /tmp/backup.tar.gz -out /tmp/backup.tar.gz.enc -pass env:BACKUP_PASSWORD',
-    '  rm -f /tmp/backup.tar.gz',
     '  DATE=$(date -u +%Y%m%d-%H%M%S)',
     '  export OBJECT_KEY="workspace-state-${DATE}.tar.gz.enc"',
-    '  ls -lh /tmp/backup.tar.gz.enc',
     '  if command -v aws >/dev/null 2>&1; then',
-    '    echo "Using aws-cli for upload..."',
+    '    echo "Using aws-cli for streaming upload..."',
     '    R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"',
-    '    aws s3 cp /tmp/backup.tar.gz.enc "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || UPLOAD_EXIT=$?',
-    '    UPLOAD_EXIT=${UPLOAD_EXIT:-0}',
-    '    if [ "${UPLOAD_EXIT}" -ne 0 ]; then echo "Fatal: upload failed"; rm -f /tmp/backup.tar.gz.enc; exit "${UPLOAD_EXIT}"; fi',
+    // Stream tar|openssl|aws instead of staging in /tmp — a large
+    // workspace tarball + its encrypted copy would exhaust the
+    // container's writable layer. Producer failures are flagged via
+    // marker files because /bin/sh has no pipefail.
+    '    rm -f /tmp/.tar-rc /tmp/.enc-rc',
+    // Unseekable stdin uploads use a fixed part size — 64MB parts keep
+    // the 10,000-part S3 ceiling out of reach for any PVC-sized stream.
+    '    aws configure set s3.multipart_chunksize 64MB || echo "Warning: could not set multipart_chunksize"',
+    // `|| pipe_rc=$?` is required — under `sh -e` a failing pipeline
+    // would exit before the rc assignment and skip partial-object cleanup.
+    '    ( tar czf - $EXCLUDES . || echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD || echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
+    '    pipe_rc=${pipe_rc:-0}',
+    '    tar_rc=$(cat /tmp/.tar-rc 2>/dev/null || echo 0)',
+    '    enc_rc=$(cat /tmp/.enc-rc 2>/dev/null || echo 0)',
+    '    if [ "${tar_rc}" -ge 2 ] || [ "${enc_rc}" -ne 0 ] || [ "${pipe_rc}" -ne 0 ]; then',
+    '      echo "Fatal: streaming backup failed (tar_rc=${tar_rc} enc_rc=${enc_rc} upload_rc=${pipe_rc})"',
+    '      rm -f /tmp/.tar-rc /tmp/.enc-rc',
+    '      aws s3api delete-object --bucket "${R2_BUCKET}" --key "${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto 2>/dev/null || echo "WARNING: failed to delete partial object ${OBJECT_KEY} — it may appear as a corrupt newest backup"',
+    '      exit 1',
+    '    fi',
+    '    rm -f /tmp/.tar-rc /tmp/.enc-rc',
+    '    if [ "${tar_rc}" -eq 1 ]; then echo "Warning: tar exit code 1 (non-fatal)"; fi',
+    '    echo "Uploaded ${OBJECT_KEY}"',
     ...buildBackupUploadAndCleanup(),
     '  else',
     '    echo "Fatal: aws-cli not found in workspace image. Install aws-cli to enable backups."',
-    '    rm -f /tmp/backup.tar.gz.enc',
     '    exit 1',
     '  fi',
-    '  rm -f /tmp/backup.tar.gz.enc',
     "'",
     'echo "Backup complete"',
   ].join('\n');
