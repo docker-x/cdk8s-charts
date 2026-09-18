@@ -454,39 +454,100 @@ export class GhaRunner extends Chart {
     );
     const labels = { ...selectorLabels, ...userLabels };
 
-    // ConfigMap with entrypoint + init scripts
+    const configMapName = this.createScriptsConfigMap(name, props.namespace, labels);
+    const saName = this.createServiceAccount(name, values, props.namespace, labels);
+    const secretName = this.createGithubAppSecret(name, props, values, props.namespace, labels);
+    const secretEnvName = this.createSecretEnv(name, values, props.namespace, labels);
+    const nixPvcName = this.createPvc(
+      'nix-pvc',
+      `${name}-nix-store`,
+      props.namespace,
+      labels,
+      values.nixStorageSize ?? DEFAULT_NIX_SIZE,
+      values.nixStorageClass,
+    );
+    const runnerPvcName = this.createPvc(
+      'runner-pvc',
+      `${name}-runner-home`,
+      props.namespace,
+      labels,
+      values.runnerStorageSize ?? DEFAULT_RUNNER_SIZE,
+      values.runnerStorageClass,
+    );
+
+    this.createDeployment(name, values, props.namespace, labels, selectorLabels, {
+      configMapName,
+      saName,
+      secretName,
+      secretEnvName,
+      nixPvcName,
+      runnerPvcName,
+    });
+
+    this.exports = {
+      pvcName: nixPvcName,
+      runnerPvcName,
+      deploymentName: name,
+      configMapName,
+      secretName,
+    };
+  }
+
+  /** ConfigMap with the entrypoint + init scripts. */
+  private createScriptsConfigMap(
+    name: string,
+    namespace: string,
+    labels: Record<string, string>,
+  ): string {
     const configMapName = `${name}-scripts`;
     new ApiObject(this, 'configmap', {
       apiVersion: 'v1',
       kind: 'ConfigMap',
-      metadata: { name: configMapName, namespace: props.namespace, labels },
+      metadata: { name: configMapName, namespace, labels },
       data: {
         'entrypoint.sh': ENTRYPOINT_SCRIPT,
         'init-nix.sh': INIT_SCRIPT,
       },
     });
+    return configMapName;
+  }
 
-    // ServiceAccount for the runner pod — created only when no
-    // serviceAccountName override is set (an override means an externally
-    // managed account). No extra RBAC needed: the runner only calls the
-    // GitHub API outbound. Token automounting is disabled: the pod never
-    // calls the K8s API.
+  // ServiceAccount for the runner pod — created only when no
+  // serviceAccountName override is set (an override means an externally
+  // managed account). No extra RBAC needed: the runner only calls the
+  // GitHub API outbound. Token automounting is disabled: the pod never
+  // calls the K8s API.
+  private createServiceAccount(
+    name: string,
+    values: Values,
+    namespace: string,
+    labels: Record<string, string>,
+  ): string {
     const saName = values.serviceAccountName ?? `${name}-sa`;
     if (!values.serviceAccountName) {
       new ApiObject(this, 'serviceaccount', {
         apiVersion: 'v1',
         kind: 'ServiceAccount',
-        metadata: { name: saName, namespace: props.namespace, labels },
+        metadata: { name: saName, namespace, labels },
         automountServiceAccountToken: false,
       });
     }
+    return saName;
+  }
 
-    // Secret with GitHub App PEM
+  /** Secret holding the GitHub App PEM and ids. */
+  private createGithubAppSecret(
+    name: string,
+    props: Props,
+    values: Values,
+    namespace: string,
+    labels: Record<string, string>,
+  ): string {
     const secretName = `${name}-github-app`;
     new ApiObject(this, 'secret', {
       apiVersion: 'v1',
       kind: 'Secret',
-      metadata: { name: secretName, namespace: props.namespace, labels },
+      metadata: { name: secretName, namespace, labels },
       type: 'Opaque',
       stringData: {
         'github-app.pem': props.githubAppPem,
@@ -496,53 +557,215 @@ export class GhaRunner extends Chart {
           : {}),
       },
     });
+    return secretName;
+  }
 
-    // User-supplied secret env vars — kept out of the pod spec via a
-    // dedicated Secret consumed through envFrom.
+  // User-supplied secret env vars — kept out of the pod spec via a
+  // dedicated Secret consumed through envFrom.
+  private createSecretEnv(
+    name: string,
+    values: Values,
+    namespace: string,
+    labels: Record<string, string>,
+  ): string {
     const secretEnvName = `${name}-secret-env`;
     if (values.secretEnv && Object.keys(values.secretEnv).length > 0) {
       new ApiObject(this, 'secret-env', {
         apiVersion: 'v1',
         kind: 'Secret',
-        metadata: { name: secretEnvName, namespace: props.namespace, labels },
+        metadata: { name: secretEnvName, namespace, labels },
         type: 'Opaque',
         stringData: values.secretEnv,
       });
     }
+    return secretEnvName;
+  }
 
-    // PVC for nix store
-    const nixPvcName = `${name}-nix-store`;
-    new ApiObject(this, 'nix-pvc', {
+  /** ReadWriteOnce PVC — the nix store and runner home share this shape. */
+  private createPvc(
+    id: string,
+    name: string,
+    namespace: string,
+    labels: Record<string, string>,
+    size: string,
+    storageClass?: string,
+  ): string {
+    new ApiObject(this, id, {
       apiVersion: 'v1',
       kind: 'PersistentVolumeClaim',
-      metadata: { name: nixPvcName, namespace: props.namespace, labels },
+      metadata: { name, namespace, labels },
       spec: {
         accessModes: ['ReadWriteOnce'],
-        resources: { requests: { storage: values.nixStorageSize ?? DEFAULT_NIX_SIZE } },
-        ...(values.nixStorageClass !== undefined
-          ? { storageClassName: values.nixStorageClass }
-          : {}),
+        resources: { requests: { storage: size } },
+        ...(storageClass !== undefined ? { storageClassName: storageClass } : {}),
       },
     });
+    return name;
+  }
 
-    // PVC for runner home
-    const runnerPvcName = `${name}-runner-home`;
-    new ApiObject(this, 'runner-pvc', {
-      apiVersion: 'v1',
-      kind: 'PersistentVolumeClaim',
-      metadata: { name: runnerPvcName, namespace: props.namespace, labels },
+  private createDeployment(
+    name: string,
+    values: Values,
+    namespace: string,
+    labels: Record<string, string>,
+    selectorLabels: Record<string, string>,
+    refs: {
+      configMapName: string;
+      saName: string;
+      secretName: string;
+      secretEnvName: string;
+      nixPvcName: string;
+      runnerPvcName: string;
+    },
+  ) {
+    new ApiObject(this, 'deployment', {
+      apiVersion: 'apps/v1',
+      kind: 'Deployment',
+      metadata: { name, namespace, labels, annotations: values.annotations },
       spec: {
-        accessModes: ['ReadWriteOnce'],
-        resources: { requests: { storage: values.runnerStorageSize ?? DEFAULT_RUNNER_SIZE } },
-        ...(values.runnerStorageClass !== undefined
-          ? { storageClassName: values.runnerStorageClass }
-          : {}),
+        replicas: values.replicas ?? 1,
+        // Recreate, not RollingUpdate: both PVCs are RWO, so a rolling
+        // update would briefly run old and new pods on the same volumes
+        // — and with replicas=1 they would register the same runner
+        // identity twice.
+        strategy: { type: 'Recreate' },
+        selector: { matchLabels: selectorLabels },
+        template: {
+          metadata: { labels, annotations: values.annotations },
+          spec: this.podSpec(name, values, labels, refs),
+        },
       },
     });
+  }
 
-    // Deployment
-    const deploymentName = name;
-    const containerEnv = [
+  private podSpec(
+    name: string,
+    values: Values,
+    labels: Record<string, string>,
+    refs: {
+      configMapName: string;
+      saName: string;
+      secretName: string;
+      secretEnvName: string;
+      nixPvcName: string;
+      runnerPvcName: string;
+    },
+  ) {
+    return {
+      ...this.podAffinity(values, labels),
+      serviceAccountName: refs.saName,
+      // The runner only calls the GitHub API — never the K8s API. Disable
+      // token mounting on the pod too: a user-supplied SA may automount.
+      automountServiceAccountToken: false,
+      ...this.podSecurityContext(values),
+      initContainers: [this.initContainer(values)],
+      containers: [this.runnerContainer(name, values, refs)],
+      volumes: [
+        { name: 'nix-store', persistentVolumeClaim: { claimName: refs.nixPvcName } },
+        { name: 'runner-home', persistentVolumeClaim: { claimName: refs.runnerPvcName } },
+        { name: 'scripts', configMap: { name: refs.configMapName, defaultMode: 493 } },
+        { name: 'github-app', secret: { secretName: refs.secretName, defaultMode: 292 } },
+      ],
+    };
+  }
+
+  // Keep replicas on one node: both PVCs are ReadWriteOnce, so pods on
+  // different nodes cannot attach them and would stay Pending forever.
+  // Preferred, not required — a required rule can't be satisfied by the
+  // first pod itself and would deadlock the whole deployment.
+  private podAffinity(values: Values, labels: Record<string, string>) {
+    if ((values.replicas ?? 1) <= 1) return {};
+    return {
+      affinity: {
+        podAffinity: {
+          preferredDuringSchedulingIgnoredDuringExecution: [
+            {
+              weight: 100,
+              podAffinityTerm: {
+                labelSelector: { matchLabels: labels },
+                topologyKey: 'kubernetes.io/hostname',
+              },
+            },
+          ],
+        },
+      },
+    };
+  }
+
+  private podSecurityContext(values: Values) {
+    if (values.fsGroup === undefined) return {};
+    return {
+      securityContext: {
+        fsGroup: values.fsGroup,
+        // Only chown the volume when the root dir isn't already
+        // group-owned — avoids re-chowning a large nix store on
+        // every pod start.
+        fsGroupChangePolicy: 'OnRootMismatch',
+      },
+    };
+  }
+
+  private initContainer(values: Values) {
+    return {
+      name: 'init-nix',
+      image: `${values.image ?? DEFAULT_IMAGE}:${values.imageTag ?? DEFAULT_IMAGE_TAG}`,
+      command: ['/bin/sh', '/scripts/init-nix.sh'],
+      securityContext: {
+        runAsNonRoot: values.runAsNonRoot ?? true,
+        allowPrivilegeEscalation: false,
+        capabilities: { drop: ['ALL'] },
+      },
+      volumeMounts: [
+        { name: 'nix-store', mountPath: '/nix-pvc' },
+        { name: 'runner-home', mountPath: '/runner' },
+        { name: 'scripts', mountPath: '/scripts', readOnly: true },
+      ],
+      resources: {
+        requests: { memory: '512Mi', cpu: '250m' },
+        limits: { memory: '2Gi', cpu: '1' },
+      },
+    };
+  }
+
+  private runnerContainer(
+    name: string,
+    values: Values,
+    refs: { secretName: string; secretEnvName: string },
+  ) {
+    return {
+      name: 'runner',
+      image: `${values.image ?? DEFAULT_IMAGE}:${values.imageTag ?? DEFAULT_IMAGE_TAG}`,
+      command: ['/bin/sh', '/scripts/entrypoint.sh'],
+      env: this.containerEnv(values, name, refs.secretName),
+      ...(values.secretEnv && Object.keys(values.secretEnv).length > 0
+        ? { envFrom: [{ secretRef: { name: refs.secretEnvName } }] }
+        : {}),
+      securityContext: {
+        runAsNonRoot: values.runAsNonRoot ?? true,
+        allowPrivilegeEscalation: false,
+        capabilities: { drop: ['ALL'] },
+      },
+      resources: {
+        requests: {
+          memory: values.resources?.requests?.memory ?? '2Gi',
+          cpu: values.resources?.requests?.cpu ?? '500m',
+        },
+        limits: {
+          memory: values.resources?.limits?.memory ?? '8Gi',
+          cpu: values.resources?.limits?.cpu ?? '2',
+        },
+      },
+      volumeMounts: [
+        { name: 'nix-store', mountPath: '/nix' },
+        { name: 'runner-home', mountPath: '/runner' },
+        { name: 'scripts', mountPath: '/scripts', readOnly: true },
+        { name: 'github-app', mountPath: '/secrets', readOnly: true },
+      ],
+    };
+  }
+
+  private containerEnv(values: Values, name: string, secretName: string) {
+    return [
       { name: 'GITHUB_OWNER', value: values.githubOwner ?? '' },
       {
         name: 'GITHUB_APP_ID',
@@ -567,132 +790,6 @@ export class GhaRunner extends Chart {
       },
       ...(values.env ? Object.entries(values.env).map(([k, v]) => ({ name: k, value: v })) : []),
     ];
-
-    new ApiObject(this, 'deployment', {
-      apiVersion: 'apps/v1',
-      kind: 'Deployment',
-      metadata: {
-        name: deploymentName,
-        namespace: props.namespace,
-        labels,
-        annotations: values.annotations,
-      },
-      spec: {
-        replicas: values.replicas ?? 1,
-        // Recreate, not RollingUpdate: both PVCs are RWO, so a rolling
-        // update would briefly run old and new pods on the same volumes
-        // — and with replicas=1 they would register the same runner
-        // identity twice.
-        strategy: { type: 'Recreate' },
-        selector: { matchLabels: selectorLabels },
-        template: {
-          metadata: { labels, annotations: values.annotations },
-          spec: {
-            // Keep replicas on one node: both PVCs are ReadWriteOnce, so
-            // pods on different nodes cannot attach them and would stay
-            // Pending forever. Preferred, not required — a required rule
-            // can't be satisfied by the first pod itself and would
-            // deadlock the whole deployment.
-            ...((values.replicas ?? 1) > 1
-              ? {
-                  affinity: {
-                    podAffinity: {
-                      preferredDuringSchedulingIgnoredDuringExecution: [
-                        {
-                          weight: 100,
-                          podAffinityTerm: {
-                            labelSelector: { matchLabels: labels },
-                            topologyKey: 'kubernetes.io/hostname',
-                          },
-                        },
-                      ],
-                    },
-                  },
-                }
-              : {}),
-            serviceAccountName: values.serviceAccountName ?? `${name}-sa`,
-            ...(values.fsGroup !== undefined
-              ? {
-                  securityContext: {
-                    fsGroup: values.fsGroup,
-                    // Only chown the volume when the root dir isn't already
-                    // group-owned — avoids re-chowning a large nix store on
-                    // every pod start.
-                    fsGroupChangePolicy: 'OnRootMismatch',
-                  },
-                }
-              : {}),
-            initContainers: [
-              {
-                name: 'init-nix',
-                image: `${values.image ?? DEFAULT_IMAGE}:${values.imageTag ?? DEFAULT_IMAGE_TAG}`,
-                command: ['/bin/sh', '/scripts/init-nix.sh'],
-                securityContext: {
-                  runAsNonRoot: values.runAsNonRoot ?? true,
-                  allowPrivilegeEscalation: false,
-                  capabilities: { drop: ['ALL'] },
-                },
-                volumeMounts: [
-                  { name: 'nix-store', mountPath: '/nix-pvc' },
-                  { name: 'runner-home', mountPath: '/runner' },
-                  { name: 'scripts', mountPath: '/scripts', readOnly: true },
-                ],
-                resources: {
-                  requests: { memory: '512Mi', cpu: '250m' },
-                  limits: { memory: '2Gi', cpu: '1' },
-                },
-              },
-            ],
-            containers: [
-              {
-                name: 'runner',
-                image: `${values.image ?? DEFAULT_IMAGE}:${values.imageTag ?? DEFAULT_IMAGE_TAG}`,
-                command: ['/bin/sh', '/scripts/entrypoint.sh'],
-                env: containerEnv,
-                ...(values.secretEnv && Object.keys(values.secretEnv).length > 0
-                  ? { envFrom: [{ secretRef: { name: secretEnvName } }] }
-                  : {}),
-                securityContext: {
-                  runAsNonRoot: values.runAsNonRoot ?? true,
-                  allowPrivilegeEscalation: false,
-                  capabilities: { drop: ['ALL'] },
-                },
-                resources: {
-                  requests: {
-                    memory: values.resources?.requests?.memory ?? '2Gi',
-                    cpu: values.resources?.requests?.cpu ?? '500m',
-                  },
-                  limits: {
-                    memory: values.resources?.limits?.memory ?? '8Gi',
-                    cpu: values.resources?.limits?.cpu ?? '2',
-                  },
-                },
-                volumeMounts: [
-                  { name: 'nix-store', mountPath: '/nix' },
-                  { name: 'runner-home', mountPath: '/runner' },
-                  { name: 'scripts', mountPath: '/scripts', readOnly: true },
-                  { name: 'github-app', mountPath: '/secrets', readOnly: true },
-                ],
-              },
-            ],
-            volumes: [
-              { name: 'nix-store', persistentVolumeClaim: { claimName: nixPvcName } },
-              { name: 'runner-home', persistentVolumeClaim: { claimName: runnerPvcName } },
-              { name: 'scripts', configMap: { name: configMapName, defaultMode: 493 } },
-              { name: 'github-app', secret: { secretName, defaultMode: 292 } },
-            ],
-          },
-        },
-      },
-    });
-
-    this.exports = {
-      pvcName: nixPvcName,
-      runnerPvcName,
-      deploymentName,
-      configMapName,
-      secretName,
-    };
   }
 
   private computeValues(props: Props, name: string): Values {

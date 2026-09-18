@@ -69,8 +69,13 @@ describe('GhaRunner construct', () => {
     const m = synth({ ...baseProps, serviceAccountName: 'custom-sa' });
     expect(filterByKind(m, 'ServiceAccount')).toHaveLength(0);
     const dep = findManifest(m, 'Deployment', 'runner');
-    const spec = dep.spec as { template: { spec: { serviceAccountName: string } } };
+    const spec = dep.spec as {
+      template: { spec: { serviceAccountName: string; automountServiceAccountToken?: boolean } };
+    };
     expect(spec.template.spec.serviceAccountName).toBe('custom-sa');
+    // The pod never mounts a token even for externally managed SAs —
+    // the runner only calls the GitHub API.
+    expect(spec.template.spec.automountServiceAccountToken).toBe(false);
   });
 
   it('merges values.labels onto resources and pod template labels', () => {
