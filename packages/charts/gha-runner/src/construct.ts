@@ -230,16 +230,28 @@ fi
 # The entrypoint re-exports it on every boot, so drop the persisted copy.
 # Pure-shell filter — a minimal custom image may lack sed entirely, and
 # silently skipping this cleanup would leave the stale value in place.
+# mktemp in the same dir: a predictable temp name could be pre-created
+# as a symlink by a previous workflow run (same UID on a shared PVC);
+# a unique name also can't collide with a leftover from an interrupted
+# boot. Write-then-rename keeps the replace atomic (no partial .env).
+rm -f .env.?????? 2>/dev/null || true
 if [ -f .env ]; then
   [ -w .env ] || chmod u+w .env 2>/dev/null || true
-  env_filtered=$(while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      LD_LIBRARY_PATH=*) ;;
-      *) printf '%s\n' "$line" ;;
-    esac
-  done < .env) && printf '%s\n' "$env_filtered" > .env.tmp \
-    && mv -f .env.tmp .env \
-    || echo "warn: could not strip LD_LIBRARY_PATH from .env — continuing"
+  env_tmp=$(mktemp .env.XXXXXX 2>/dev/null) || env_tmp=""
+  if env_filtered=$(while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        LD_LIBRARY_PATH=*) ;;
+        *) printf '%s\n' "$line" ;;
+      esac
+    done < .env) \
+    && [ -n "$env_tmp" ] \
+    && printf '%s\n' "$env_filtered" > "$env_tmp" \
+    && mv -f "$env_tmp" .env; then
+    :
+  else
+    rm -f "$env_tmp" 2>/dev/null || true
+    echo "warn: could not strip LD_LIBRARY_PATH from .env — continuing"
+  fi
 fi
 
 # Release the setup lock before handing off — fd 9 is inherited by exec,
