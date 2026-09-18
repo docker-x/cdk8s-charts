@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { HelmConstruct } from '@cdk8s-charts/utils';
+import { HelmConstruct, OC_CLI_IMAGE, simpleHash } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import type { LitellmExports, LitellmProps, LitellmValues, LitellmVirtualKey } from './types';
@@ -63,8 +63,21 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     const allVolumes = [...extraVolumes, ...(props.values?.volumes ?? [])];
     const allMounts = [...extraMounts, ...(props.values?.volumeMounts ?? [])];
 
+    const secretsName = `${id}-secrets`;
+    new ApiObject(this, 'secrets', {
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: { name: secretsName, namespace: props.namespace },
+      stringData: { 'master-key': props.masterKey },
+    });
+
     const computed: LitellmValues = {
-      masterkey: props.masterKey,
+      masterkeySecretName: secretsName,
+      masterkeySecretKey: 'master-key',
+      // Checksum forces a pod rollout when masterKey rotates — a Secret
+      // update alone leaves running pods on the old key. User-supplied
+      // podAnnotations merge on top via deepMerge.
+      podAnnotations: { 'cdk8s-charts/masterkey-checksum': simpleHash(props.masterKey) },
       environmentSecrets: allSecretNames.length > 0 ? allSecretNames : [],
       proxy_config: props.proxyConfig,
       postgresql: { enabled: true },
@@ -73,8 +86,22 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       ...(allMounts.length > 0 ? { volumeMounts: allMounts } : {}),
     };
 
-    // Strip volumes/volumeMounts from overrides so deepMerge doesn't clobber
-    const { volumes: _v, volumeMounts: _vm, ...restOverrides } = props.values ?? {};
+    // Strip volumes/volumeMounts and the masterkey wiring from overrides —
+    // the provisioning Job always authenticates against our generated
+    // Secret, so a user override here would desync proxy and Job.
+    const restOverrides = { ...props.values };
+    delete restOverrides.volumes;
+    delete restOverrides.volumeMounts;
+    delete restOverrides.masterkey;
+    delete restOverrides.masterkeySecretName;
+    delete restOverrides.masterkeySecretKey;
+    // Reserve the rotation annotation — a constant user value would
+    // silently disable the pod rollout on masterKey change. Clone first:
+    // restOverrides is only a shallow copy of the caller's values.
+    if (restOverrides.podAnnotations) {
+      restOverrides.podAnnotations = { ...restOverrides.podAnnotations };
+      delete restOverrides.podAnnotations['cdk8s-charts/masterkey-checksum'];
+    }
 
     const values = this.renderChart(
       props.chart ?? 'oci://ghcr.io/berriai/litellm-helm',
@@ -93,13 +120,82 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     const svcHost = id;
     const svcPort = values.service?.port ?? 4000;
 
+    // The key payload object was a ConfigMap before it became a Secret —
+    // kind changes don't remove the old object, so a one-shot Job deletes
+    // the legacy ConfigMap. Created unconditionally: removing all
+    // virtualKeys must still clean up. The SA's Role can only delete that
+    // single ConfigMap name; the same-named Secret is a different
+    // resource type and is untouched.
+    const payloadSecretName = `${id}-provision-keys-data`;
+    const jobSaName = `${id}-provision-keys`;
+    new ApiObject(this, 'provision-keys-sa', {
+      apiVersion: 'v1',
+      kind: 'ServiceAccount',
+      metadata: { name: jobSaName, namespace: props.namespace },
+    });
+    new ApiObject(this, 'provision-keys-role', {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'Role',
+      metadata: { name: jobSaName, namespace: props.namespace },
+      rules: [
+        {
+          apiGroups: [''],
+          resources: ['configmaps'],
+          resourceNames: [payloadSecretName],
+          verbs: ['delete'],
+        },
+      ],
+    });
+    new ApiObject(this, 'provision-keys-rb', {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'RoleBinding',
+      metadata: { name: jobSaName, namespace: props.namespace },
+      roleRef: {
+        apiGroup: 'rbac.authorization.k8s.io',
+        kind: 'Role',
+        name: jobSaName,
+      },
+      subjects: [{ kind: 'ServiceAccount', name: jobSaName, namespace: props.namespace }],
+    });
+    new ApiObject(this, 'cleanup-legacy-cm', {
+      apiVersion: 'batch/v1',
+      kind: 'Job',
+      metadata: { name: `${id}-cleanup-legacy-cm`, namespace: props.namespace },
+      spec: {
+        backoffLimit: 3,
+        ttlSecondsAfterFinished: 300,
+        template: {
+          spec: {
+            serviceAccountName: jobSaName,
+            restartPolicy: 'OnFailure',
+            containers: [
+              {
+                name: 'cleanup',
+                image: OC_CLI_IMAGE,
+                command: [
+                  'oc',
+                  'delete',
+                  'configmap',
+                  payloadSecretName,
+                  '-n',
+                  props.namespace,
+                  '--ignore-not-found=true',
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+
     // Provision virtual keys via a post-deploy Job
     const virtualKeyMap: Record<string, string> = {};
     if (props.virtualKeys && props.virtualKeys.length > 0) {
       this.createKeyProvisioningJob(
         id,
         props.namespace,
-        props.masterKey,
+        secretsName,
+        payloadSecretName,
         svcHost,
         svcPort,
         props.virtualKeys,
@@ -127,14 +223,14 @@ export class Litellm extends HelmConstruct<LitellmValues> {
   private createKeyProvisioningJob(
     releaseName: string,
     namespace: string,
-    masterKey: string,
+    secretsName: string,
+    payloadSecretName: string,
     host: string,
     port: number,
     keys: LitellmVirtualKey[],
   ): void {
     const baseUrl = `http://${host}:${port}`;
     const scriptConfigMapName = `${releaseName}-provision-keys-scripts`;
-    const payloadConfigMapName = `${releaseName}-provision-keys-data`;
     const keySpecs: string[] = [];
     const payloadFiles: Record<string, string> = {};
 
@@ -164,12 +260,12 @@ export class Litellm extends HelmConstruct<LitellmValues> {
 
     new ApiObject(this, 'provision-data', {
       apiVersion: 'v1',
-      kind: 'ConfigMap',
+      kind: 'Secret',
       metadata: {
-        name: payloadConfigMapName,
+        name: payloadSecretName,
         namespace,
       },
-      data: payloadFiles,
+      stringData: payloadFiles,
     });
 
     new ApiObject(this, 'provision-keys', {
@@ -206,7 +302,12 @@ export class Litellm extends HelmConstruct<LitellmValues> {
                 command: ['sh', '/scripts/provision-keys.sh'],
                 env: [
                   { name: 'LITELLM_BASE_URL', value: baseUrl },
-                  { name: 'LITELLM_MASTER_KEY', value: masterKey },
+                  {
+                    name: 'LITELLM_MASTER_KEY',
+                    valueFrom: {
+                      secretKeyRef: { name: secretsName, key: 'master-key' },
+                    },
+                  },
                   { name: 'LITELLM_KEY_SPECS', value: keySpecs.join('\n') },
                   { name: 'LITELLM_KEY_DIR', value: '/keys' },
                 ],
@@ -224,7 +325,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
               },
               {
                 name: 'provision-data',
-                configMap: { name: payloadConfigMapName },
+                secret: { secretName: payloadSecretName },
               },
             ],
           },
