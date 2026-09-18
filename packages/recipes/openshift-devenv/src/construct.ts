@@ -85,7 +85,11 @@ export class OpenShiftDevenv extends Chart {
       paseoAutoResume,
       autoResumeConfigMapName,
     });
-    const oauthProxySidecar = buildOauthProxySidecar(namespace, saName);
+    const oauthProxySidecar = buildOauthProxySidecar(
+      namespace,
+      saName,
+      (props.values?.paseoPort as number | undefined) ?? 6767,
+    );
     const lifecycle = buildLifecycle(paseoAutoResume, homeMountPath, 'devenv');
     const workspaceEnv = buildWorkspaceEnv(name, namespace, appsDomain, props.env, 'devenv');
     const podAnnotations = buildPodAnnotations(paseoAutoResume, 'devenv');
