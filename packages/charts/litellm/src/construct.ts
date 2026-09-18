@@ -90,18 +90,16 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     // the provisioning Job always authenticates against our generated
     // Secret, so a user override here would desync proxy and Job.
     const restOverrides = { ...props.values };
-    for (const key of [
-      'volumes',
-      'volumeMounts',
-      'masterkey',
-      'masterkeySecretName',
-      'masterkeySecretKey',
-    ] as const) {
-      delete restOverrides[key];
-    }
+    delete restOverrides.volumes;
+    delete restOverrides.volumeMounts;
+    delete restOverrides.masterkey;
+    delete restOverrides.masterkeySecretName;
+    delete restOverrides.masterkeySecretKey;
     // Reserve the rotation annotation — a constant user value would
-    // silently disable the pod rollout on masterKey change.
+    // silently disable the pod rollout on masterKey change. Clone first:
+    // restOverrides is only a shallow copy of the caller's values.
     if (restOverrides.podAnnotations) {
+      restOverrides.podAnnotations = { ...restOverrides.podAnnotations };
       delete restOverrides.podAnnotations['cdk8s-charts/masterkey-checksum'];
     }
 
