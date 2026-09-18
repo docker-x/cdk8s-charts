@@ -76,7 +76,11 @@ export class OpenShiftWorkspace extends Chart {
       paseoAutoResume,
       autoResumeConfigMapName,
     });
-    const oauthProxySidecar = buildOauthProxySidecar(namespace, saName);
+    const oauthProxySidecar = buildOauthProxySidecar(
+      namespace,
+      saName,
+      (props.values?.paseoPort as number | undefined) ?? 6767,
+    );
     const lifecycle = buildLifecycle(paseoAutoResume, homeMountPath);
     const workspaceEnv = buildWorkspaceEnv(name, namespace, appsDomain, props.env);
     const podAnnotations = buildPodAnnotations(paseoAutoResume);

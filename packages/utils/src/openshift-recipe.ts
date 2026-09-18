@@ -285,7 +285,11 @@ export function buildExtraVolumes(opts: {
   return { extraVolumes, extraVolumeMounts };
 }
 
-export function buildOauthProxySidecar(namespace: string, saName: string): SidecarContainer {
+export function buildOauthProxySidecar(
+  namespace: string,
+  saName: string,
+  paseoPort = 6767,
+): SidecarContainer {
   return {
     name: 'oauth-proxy',
     image: OAUTH_PROXY_IMAGE,
@@ -297,7 +301,7 @@ export function buildOauthProxySidecar(namespace: string, saName: string): Sidec
     args: [
       '--http-address=0.0.0.0:4180',
       '--https-address=',
-      '--upstream=http://127.0.0.1:6767',
+      `--upstream=http://127.0.0.1:${paseoPort}`,
       `--openshift-sar={"namespace":"${namespace}","resource":"pods","verb":"get"}`,
       '--cookie-secret-file=/etc/oauth/cookie-secret',
       '--cookie-secure=true',
