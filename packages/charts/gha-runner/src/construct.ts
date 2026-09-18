@@ -234,10 +234,16 @@ fi
 # as a symlink by a previous workflow run (same UID on a shared PVC);
 # a unique name also can't collide with a leftover from an interrupted
 # boot. Write-then-rename keeps the replace atomic (no partial .env).
-rm -f .env.?????? 2>/dev/null || true
+# Without mktemp, noclobber+PID gives an O_EXCL create — weaker against
+# planted symlinks but still functional on truly minimal images.
+rm -f .env.tmp.* 2>/dev/null || true
 if [ -f .env ]; then
   [ -w .env ] || chmod u+w .env 2>/dev/null || true
-  env_tmp=$(mktemp .env.XXXXXX 2>/dev/null) || env_tmp=""
+  env_tmp=$(mktemp .env.tmp.XXXXXX 2>/dev/null) || env_tmp=""
+  if [ -z "$env_tmp" ]; then
+    env_tmp=".env.tmp.$$"
+    ( set -C; : > "$env_tmp" ) 2>/dev/null || env_tmp=""
+  fi
   if env_filtered=$(while IFS= read -r line || [ -n "$line" ]; do
       case "$line" in
         LD_LIBRARY_PATH=*) ;;
