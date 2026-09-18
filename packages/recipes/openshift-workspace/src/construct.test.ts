@@ -200,17 +200,17 @@ describe('OpenShiftWorkspace recipe', () => {
       'workspace-ssh-keys',
       'workspace-tf-deployer-token',
     ];
-    // Every write-capable secrets rule must be scoped to exactly the
-    // managed set — an unscoped or extra-named rule widens privilege.
+    // Every read/write-capable secrets rule must be scoped to exactly
+    // the managed set — an unscoped or extra-named rule widens privilege.
     for (const rule of secretRules.filter((r) =>
-      r.verbs.some((v) => ['delete', 'patch', 'update'].includes(v)),
+      r.verbs.some((v) => ['delete', 'get', 'patch', 'update'].includes(v)),
     )) {
       expect([...(rule.resourceNames ?? [])].sort()).toEqual([...managed].sort());
     }
-    // get+create stay namespace-wide on one rule: refresh must read any
-    // managed secret and create can't be resourceNames-scoped.
+    // Only create stays namespace-wide: it can't be resourceNames-scoped
+    // because the object has no name at authorization time.
     const wideRule = secretRules.find((r) => r.resourceNames === undefined);
-    expect(wideRule?.verbs).toEqual(expect.arrayContaining(['create', 'get']));
+    expect(wideRule?.verbs).toEqual(['create']);
   });
 
   it('exports correct route URLs and resource names', () => {
