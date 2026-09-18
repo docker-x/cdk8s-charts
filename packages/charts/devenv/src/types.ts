@@ -29,7 +29,7 @@ export interface Values {
   image?: string;
   /** Image digest for rollout annotation (default: "unknown"). */
   imageDigest?: string;
-  /** Container command override (default: ["devenv", "up"]). */
+  /** Container command override. Omit to use the image's default ENTRYPOINT. */
   command?: string[];
   /** PVC size (default: 30Gi). */
   storageSize?: string;
