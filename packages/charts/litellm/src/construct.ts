@@ -99,6 +99,11 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     ] as const) {
       delete restOverrides[key];
     }
+    // Reserve the rotation annotation — a constant user value would
+    // silently disable the pod rollout on masterKey change.
+    if (restOverrides.podAnnotations) {
+      delete restOverrides.podAnnotations['cdk8s-charts/masterkey-checksum'];
+    }
 
     const values = this.renderChart(
       props.chart ?? 'oci://ghcr.io/berriai/litellm-helm',
@@ -117,6 +122,74 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     const svcHost = id;
     const svcPort = values.service?.port ?? 4000;
 
+    // The key payload object was a ConfigMap before it became a Secret —
+    // kind changes don't remove the old object, so a one-shot Job deletes
+    // the legacy ConfigMap. Created unconditionally: removing all
+    // virtualKeys must still clean up. The SA's Role can only delete that
+    // single ConfigMap name; the same-named Secret is a different
+    // resource type and is untouched.
+    const payloadSecretName = `${id}-provision-keys-data`;
+    const jobSaName = `${id}-provision-keys`;
+    new ApiObject(this, 'provision-keys-sa', {
+      apiVersion: 'v1',
+      kind: 'ServiceAccount',
+      metadata: { name: jobSaName, namespace: props.namespace },
+    });
+    new ApiObject(this, 'provision-keys-role', {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'Role',
+      metadata: { name: jobSaName, namespace: props.namespace },
+      rules: [
+        {
+          apiGroups: [''],
+          resources: ['configmaps'],
+          resourceNames: [payloadSecretName],
+          verbs: ['delete'],
+        },
+      ],
+    });
+    new ApiObject(this, 'provision-keys-rb', {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'RoleBinding',
+      metadata: { name: jobSaName, namespace: props.namespace },
+      roleRef: {
+        apiGroup: 'rbac.authorization.k8s.io',
+        kind: 'Role',
+        name: jobSaName,
+      },
+      subjects: [{ kind: 'ServiceAccount', name: jobSaName, namespace: props.namespace }],
+    });
+    new ApiObject(this, 'cleanup-legacy-cm', {
+      apiVersion: 'batch/v1',
+      kind: 'Job',
+      metadata: { name: `${id}-cleanup-legacy-cm`, namespace: props.namespace },
+      spec: {
+        backoffLimit: 3,
+        ttlSecondsAfterFinished: 300,
+        template: {
+          spec: {
+            serviceAccountName: jobSaName,
+            restartPolicy: 'OnFailure',
+            containers: [
+              {
+                name: 'cleanup',
+                image: OC_CLI_IMAGE,
+                command: [
+                  'oc',
+                  'delete',
+                  'configmap',
+                  payloadSecretName,
+                  '-n',
+                  props.namespace,
+                  '--ignore-not-found=true',
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+
     // Provision virtual keys via a post-deploy Job
     const virtualKeyMap: Record<string, string> = {};
     if (props.virtualKeys && props.virtualKeys.length > 0) {
@@ -124,6 +197,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
         id,
         props.namespace,
         secretsName,
+        payloadSecretName,
         svcHost,
         svcPort,
         props.virtualKeys,
@@ -152,14 +226,13 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     releaseName: string,
     namespace: string,
     secretsName: string,
+    payloadSecretName: string,
     host: string,
     port: number,
     keys: LitellmVirtualKey[],
   ): void {
     const baseUrl = `http://${host}:${port}`;
     const scriptConfigMapName = `${releaseName}-provision-keys-scripts`;
-    const payloadSecretName = `${releaseName}-provision-keys-data`;
-    const jobSaName = `${releaseName}-provision-keys`;
     const keySpecs: string[] = [];
     const payloadFiles: Record<string, string> = {};
 
@@ -197,41 +270,6 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       stringData: payloadFiles,
     });
 
-    // The payload object was a ConfigMap before it became a Secret —
-    // kind changes don't remove the old object, so a one-shot init
-    // container deletes the legacy ConfigMap. Its SA may only delete
-    // that single ConfigMap name; the same-named Secret is untouched
-    // (different resource type).
-    new ApiObject(this, 'provision-keys-sa', {
-      apiVersion: 'v1',
-      kind: 'ServiceAccount',
-      metadata: { name: jobSaName, namespace },
-    });
-    new ApiObject(this, 'provision-keys-role', {
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'Role',
-      metadata: { name: jobSaName, namespace },
-      rules: [
-        {
-          apiGroups: [''],
-          resources: ['configmaps'],
-          resourceNames: [payloadSecretName],
-          verbs: ['delete'],
-        },
-      ],
-    });
-    new ApiObject(this, 'provision-keys-rb', {
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'RoleBinding',
-      metadata: { name: jobSaName, namespace },
-      roleRef: {
-        apiGroup: 'rbac.authorization.k8s.io',
-        kind: 'Role',
-        name: jobSaName,
-      },
-      subjects: [{ kind: 'ServiceAccount', name: jobSaName, namespace }],
-    });
-
     new ApiObject(this, 'provision-keys', {
       apiVersion: 'batch/v1',
       kind: 'Job',
@@ -244,21 +282,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
         ttlSecondsAfterFinished: 300,
         template: {
           spec: {
-            serviceAccountName: jobSaName,
             initContainers: [
-              {
-                name: 'cleanup-legacy-configmap',
-                image: OC_CLI_IMAGE,
-                command: [
-                  'oc',
-                  'delete',
-                  'configmap',
-                  payloadSecretName,
-                  '-n',
-                  namespace,
-                  '--ignore-not-found=true',
-                ],
-              },
               {
                 name: 'wait-for-litellm',
                 image: 'curlimages/curl:8.12.1',
