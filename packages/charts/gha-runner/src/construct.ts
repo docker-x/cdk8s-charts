@@ -29,6 +29,10 @@ export LD_LIBRARY_PATH="$HOME/.nix-profile/lib:$HOME/.nix-compat/lib\${LD_LIBRAR
 # Plain parameter expansion only: printenv is an external binary a
 # custom image might not ship.
 [ -n "\${GITHUB_APP_ID:-}" ] || { echo "ERROR: required env GITHUB_APP_ID is not set" >&2; exit 1; }
+# App IDs are ASCII digits — enforced here so the value stays safe to
+# embed in the JWT payload JSON below. Digits are enumerated, not
+# ranged, because [0-9] is a locale-dependent collation class.
+case "$GITHUB_APP_ID" in *[!0123456789]*) echo "ERROR: GITHUB_APP_ID must be numeric" >&2; exit 1 ;; esac
 [ -n "\${GITHUB_OWNER:-}" ] || { echo "ERROR: required env GITHUB_OWNER is not set" >&2; exit 1; }
 [ -n "\${RUNNER_NAME:-}" ] || { echo "ERROR: required env RUNNER_NAME is not set" >&2; exit 1; }
 [ -n "\${RUNNER_VERSION:-}" ] || { echo "ERROR: required env RUNNER_VERSION is not set" >&2; exit 1; }
@@ -112,7 +116,7 @@ command -v ldd >/dev/null 2>&1 ||
 NOW=$(date +%s)
 EXP=$((NOW + 600))
 HEADER='{"alg":"RS256","typ":"JWT"}'
-PAYLOAD='{"iat":"'$NOW'","exp":"'$EXP'","iss":"'$GITHUB_APP_ID'"}'
+PAYLOAD='{"iat":'$NOW',"exp":'$EXP',"iss":"'$GITHUB_APP_ID'"}'
 
 b64enc() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 
