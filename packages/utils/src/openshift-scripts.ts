@@ -72,7 +72,12 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '  exit 1',
     'fi',
     'echo "Backing up from pod: ${POD}"',
-    `oc exec -n "\${NAMESPACE}" "\${POD}" -c ${containerName} -- env HOME_MOUNT_PATH="\${HOME_MOUNT_PATH}" BACKUP_KEEP="\${BACKUP_KEEP}" PATH="\${HOME_MOUNT_PATH}/.devenv/profile/bin:$PATH" /bin/sh -ec '`,
+    `oc exec -n "\${NAMESPACE}" "\${POD}" -c ${containerName} -- env HOME_MOUNT_PATH="\${HOME_MOUNT_PATH}" BACKUP_KEEP="\${BACKUP_KEEP}" /bin/sh -ec '`,
+    // PATH fixed inside the exec'd script: an env-arg $PATH would
+    // expand in the CronJob container. The profile dir is appended,
+    // not prepended, so image-owned system binaries win over binaries
+    // in the user-writable profile.
+    '  export PATH="$PATH:$HOME_MOUNT_PATH/.devenv/profile/bin"',
     '  for f in /etc/r2-credentials/AWS_ACCESS_KEY_ID /etc/r2-credentials/AWS_SECRET_ACCESS_KEY /etc/r2-credentials/R2_ACCOUNT_ID /etc/r2-credentials/R2_BUCKET /etc/r2-credentials/BACKUP_PASSWORD; do',
     '    if [ ! -f "$f" ]; then echo "Fatal: missing R2 credential file $f"; exit 1; fi',
     '  done',
