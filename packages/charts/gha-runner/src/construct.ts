@@ -177,7 +177,9 @@ if [ -f ./bin/Runner.Listener ]; then
   fi
   if command -v patchelf >/dev/null 2>&1 && command -v ldd >/dev/null 2>&1; then
     # glibc's ldd script embeds its own ld.so path — read it from there.
-    GLIBC_LD=$(grep -o '/nix/store/[^" ]*/lib64/ld-linux-x86-64.so.2' "$(command -v ldd)" | head -1)
+    # nixpkgs glibc points RTLDLIST at lib/ (lib64 is a compat symlink),
+    # so match both spellings.
+    GLIBC_LD=$(grep -oE '/nix/store/[^" ]*/lib(64)?/ld-linux-x86-64.so.2' "$(command -v ldd)" | head -1)
     # Keep the out-path and the loader path as separate variables — on a
     # nix build failure the empty expansion must not collapse into a
     # host path like /lib/ld-musl-x86_64.so.1 that could pass [ -f ] and
