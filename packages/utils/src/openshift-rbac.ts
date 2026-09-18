@@ -296,6 +296,7 @@ export function createTfDeployer(
   namespace: string,
   managedSecrets: string[] = [],
 ): void {
+  validateGeneratedName(name, '-tf-deployer-token', 63);
   const saName = `${name}-tf-deployer`;
   new ApiObject(scope, 'tf-deployer-sa', {
     apiVersion: 'v1',
