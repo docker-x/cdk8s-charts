@@ -231,6 +231,34 @@ describe('GhaRunner construct', () => {
     expect(() => synth({ ...baseProps, runnerSha256: '' })).toThrow(/64-character/);
   });
 
+  it('scopes the runner to a repository when githubRepo is set', () => {
+    const m = synth({ ...baseProps, githubRepo: 'my-repo' });
+    const cm = findManifest(m, 'ConfigMap', 'runner-scripts');
+    const entrypoint = (cm.data as Record<string, string>)['entrypoint.sh'];
+    expect(entrypoint).toContain('SCOPE="repos/${GITHUB_OWNER}/${GITHUB_REPO}"');
+    expect(entrypoint).toContain(
+      'https://api.github.com/${SCOPE}/actions/runners/registration-token',
+    );
+    expect(entrypoint).toContain('--url "${RUNNER_URL}"');
+    const dep = findManifest(m, 'Deployment', 'runner');
+    const spec = dep.spec as {
+      template: { spec: { containers: Array<{ env: { name: string; value?: string }[] }> } };
+    };
+    expect(spec.template.spec.containers[0].env.find((e) => e.name === 'GITHUB_REPO')?.value).toBe(
+      'my-repo',
+    );
+
+    const without = synth(baseProps);
+    const cm2 = findManifest(without, 'ConfigMap', 'runner-scripts');
+    const ep2 = (cm2.data as Record<string, string>)['entrypoint.sh'];
+    expect(ep2).toContain('SCOPE="orgs/${GITHUB_OWNER}"');
+  });
+
+  it('rejects a malformed githubRepo at synth time', () => {
+    expect(() => synth({ ...baseProps, githubRepo: 'org/repo' })).toThrow(/githubRepo/);
+    expect(() => synth({ ...baseProps, githubRepo: 'my-repo' })).not.toThrow();
+  });
+
   it('emits a secret-env Secret and envFrom only when secretEnv is set', () => {
     const withSecrets = synth({ ...baseProps, secretEnv: { MY_TOKEN: 's3cret' } });
     const secret = findManifest(withSecrets, 'Secret', 'runner-secret-env');

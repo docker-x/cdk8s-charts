@@ -38,6 +38,17 @@ case "$GITHUB_APP_ID" in *[!0123456789]*) echo "ERROR: GITHUB_APP_ID must be num
 [ -n "\${RUNNER_VERSION:-}" ] || { echo "ERROR: required env RUNNER_VERSION is not set" >&2; exit 1; }
 [ -r /secrets/github-app.pem ] || { echo "ERROR: GitHub App PEM not readable at /secrets/github-app.pem" >&2; exit 1; }
 
+# Runner scope: repo-scoped when GITHUB_REPO is set, org otherwise. The
+# API paths for installation lookup and the registration token differ
+# only in this prefix.
+if [ -n "\${GITHUB_REPO:-}" ]; then
+  SCOPE="repos/\${GITHUB_OWNER}/\${GITHUB_REPO}"
+  RUNNER_URL="https://github.com/\${GITHUB_OWNER}/\${GITHUB_REPO}"
+else
+  SCOPE="orgs/\${GITHUB_OWNER}"
+  RUNNER_URL="https://github.com/\${GITHUB_OWNER}"
+fi
+
 # Serialize shared-PVC mutations: replicas or a rolling update can put
 # two pods on /runner and /nix at once (RWO is per-node), and concurrent
 # nix profile installs, tar extraction, and patchelf would race on the
@@ -136,13 +147,13 @@ if [ -z "$INSTALLATION_ID" ]; then
   # stays diagnosable — -f alone would discard it.
   RESPONSE=$(curl -sS --fail-with-body -H "Authorization: Bearer $JWT" \\
     -H "Accept: application/vnd.github+json" \\
-    "https://api.github.com/orgs/\${GITHUB_OWNER}/installation") || {
+    "https://api.github.com/\${SCOPE}/installation") || {
     echo "ERROR: installation lookup failed: $RESPONSE" >&2
     exit 1
   }
   INSTALLATION_ID=$(printf '%s' "$RESPONSE" | jq -r '.id // empty')
 fi
-[ -n "$INSTALLATION_ID" ] || { echo "ERROR: GitHub App is not installed on org \${GITHUB_OWNER}" >&2; exit 1; }
+[ -n "$INSTALLATION_ID" ] || { echo "ERROR: GitHub App is not installed on \${SCOPE}" >&2; exit 1; }
 
 # Get installation token. '.token // empty': a missing field prints
 # literal "null" otherwise, which passes a plain [ -n ] check and fails
@@ -161,12 +172,12 @@ INSTALLATION_TOKEN=$(printf '%s' "$RESPONSE" | jq -r '.token // empty')
 RESPONSE=$(curl -sS --fail-with-body -X POST \\
   -H "Authorization: token $INSTALLATION_TOKEN" \\
   -H "Accept: application/vnd.github+json" \\
-  "https://api.github.com/orgs/\${GITHUB_OWNER}/actions/runners/registration-token") || {
+  "https://api.github.com/\${SCOPE}/actions/runners/registration-token") || {
   echo "ERROR: registration token request failed: $RESPONSE" >&2
   exit 1
 }
 REGISTRATION_TOKEN=$(printf '%s' "$RESPONSE" | jq -r '.token // empty')
-[ -n "$REGISTRATION_TOKEN" ] || { echo "ERROR: failed to get registration token (app needs 'Self-hosted runners' org permission)" >&2; exit 1; }
+[ -n "$REGISTRATION_TOKEN" ] || { echo "ERROR: failed to get registration token (app needs 'Self-hosted runners' permission on \${SCOPE})" >&2; exit 1; }
 
 # Multiple replicas share the runner PVC (RWO is per-node), so each pod
 # needs its own workdir and runner identity — otherwise all pods share
@@ -273,7 +284,7 @@ if [ ! -f .runner ] || [ -n "$EPHEMERAL" ]; then
   rm -f .runner .credentials .credentials_rsaparams .env 2>/dev/null || true
   echo "Registering runner..."
   ./config.sh \\
-    --url "https://github.com/\${GITHUB_OWNER}" \\
+    --url "\${RUNNER_URL}" \\
     --token "$REGISTRATION_TOKEN" \\
     --labels "\${RUNNER_LABELS}" \\
     --name "\${RUNNER_NAME}" \\
@@ -767,6 +778,7 @@ export class GhaRunner extends Chart {
   private containerEnv(values: Values, name: string, secretName: string) {
     return [
       { name: 'GITHUB_OWNER', value: values.githubOwner ?? '' },
+      ...(values.githubRepo ? [{ name: 'GITHUB_REPO', value: values.githubRepo }] : []),
       {
         name: 'GITHUB_APP_ID',
         valueFrom: { secretKeyRef: { name: secretName, key: 'github-app-id' } },
@@ -797,6 +809,7 @@ export class GhaRunner extends Chart {
       image: props.image,
       imageTag: props.imageTag ?? DEFAULT_IMAGE_TAG,
       githubOwner: props.githubOwner,
+      githubRepo: props.githubRepo,
       githubAppId: props.githubAppId,
       githubAppInstallationId: props.githubAppInstallationId,
       githubAppPem: props.githubAppPem,
@@ -820,6 +833,11 @@ export class GhaRunner extends Chart {
       name,
     };
     const values = props.values ? deepMerge(computed, props.values) : computed;
+    if (values.githubRepo !== undefined && !/^[A-Za-z0-9_.-]+$/.test(values.githubRepo)) {
+      throw new Error(
+        'githubRepo must be a repository name (letters, digits, "-", "_", ".") — no owner or path separators',
+      );
+    }
     if (values.runnerSha256 !== undefined && !/^[0-9a-f]{64}$/.test(values.runnerSha256)) {
       throw new Error(
         'runnerSha256 must be a 64-character lowercase hex digest (output of `sha256sum` on the runner tarball)',
@@ -829,6 +847,7 @@ export class GhaRunner extends Chart {
       const reserved = new Set([
         ...Object.keys(values.env ?? {}),
         'GITHUB_OWNER',
+        'GITHUB_REPO',
         'GITHUB_APP_ID',
         'GITHUB_APP_INSTALLATION_ID',
         'RUNNER_VERSION',
