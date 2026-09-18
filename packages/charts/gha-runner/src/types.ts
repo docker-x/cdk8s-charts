@@ -9,6 +9,7 @@ export interface Values {
   image?: string;
   imageTag?: string;
   githubOwner?: string;
+  githubRepo?: string;
   githubAppId?: string;
   githubAppInstallationId?: string;
   githubAppPem?: string;
