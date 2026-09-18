@@ -46,10 +46,17 @@ flock 9
 # the profile installed earlier stay physically present but become
 # unregistered — 'nix profile install' then dies with "path is not
 # valid". Repair re-registers them from the substituter before
-# installing anything. Guarded by jq: a cold profile has nothing to
-# repair and jq may not be installed yet.
-if [ -e "$HOME/.nix-profile" ] && command -v jq >/dev/null 2>&1; then
-  nix profile list --json 2>/dev/null | jq -r '.elements[].storePaths[]' 2>/dev/null |
+# installing anything. Repair needs jq to enumerate profile paths, but
+# installing jq into a stale profile can itself hit "path is not valid"
+# — bootstrap it via 'nix build' (store-level, never touches the
+# profile) so repair runs before any profile mutation.
+JQ_BIN=$(command -v jq 2>/dev/null || true)
+if [ -z "$JQ_BIN" ]; then
+  JQ_OUT=$(nix build --no-link --print-out-paths "nixpkgs#jq" 2>/dev/null || true)
+  [ -x "$JQ_OUT/bin/jq" ] && JQ_BIN="$JQ_OUT/bin/jq" || JQ_BIN=""
+fi
+if [ -e "$HOME/.nix-profile" ] && [ -n "$JQ_BIN" ]; then
+  nix profile list --json 2>/dev/null | "$JQ_BIN" -r '.elements[].storePaths[]' 2>/dev/null |
   while read -r p; do
     nix path-info "$p" >/dev/null 2>&1 || nix store repair "$p" >/dev/null 2>&1 ||
       echo "warn: could not repair store path $p — continuing" >&2
