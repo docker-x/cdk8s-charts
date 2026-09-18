@@ -1077,7 +1077,9 @@ production remote workspace:
    at authorization time), while `get`/`patch`/`update`/`delete` are
    scoped via `resourceNames` to the secrets the stack actually manages
    — recipe secrets plus the chart's `managedSecretNames` export and the
-   deployer's own token.
+   deployer's own token. Pods are read-only (`get`/`list`/`watch`) —
+   this recipe has no pod-sandbox, so the deployer gets no pod
+   write/exec verbs that could mount arbitrary secrets.
 8. **All secrets** — R2 credentials, SSH keys, OAuth cookie, GHCR pull secret
 
 **Props (`OpenShiftWorkspaceProps`):**
@@ -1230,7 +1232,11 @@ but using the Devenv chart:
    at authorization time), while `get`/`patch`/`update`/`delete` are
    scoped via `resourceNames` to the secrets the stack actually manages
    — recipe secrets plus the chart's `managedSecretNames` export and the
-   deployer's own token.
+   deployer's own token. Pods are read-only (`get`/`list`/`watch`):
+   `pods create`/`exec` would let the deployer mount any namespace
+   secret and read it, so write verbs are granted only when
+   `podSandbox.enabled` — RBAC escalation prevention requires holding
+   the verbs it delegates to the workspace SA.
 8. **Pod sandbox RBAC** — Role + RoleBinding granting the workspace SA pod
    lifecycle (`oc run`/`kubectl run` sibling pods) plus `pods/exec`.
    In-pod docker/podman is impossible under restricted SCC

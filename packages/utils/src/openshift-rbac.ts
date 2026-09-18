@@ -233,7 +233,11 @@ export function createWorkspacePodRbac(
 // Terraform deployer RBAC
 // ---------------------------------------------------------------------------
 
-export function buildTfDeployerRules(managedSecrets: string[] = []) {
+export function buildTfDeployerRules(
+  managedSecrets: string[] = [],
+  opts: { podWorkload?: boolean } = {},
+) {
+  const { podWorkload = false } = opts;
   const secretManagedRule =
     managedSecrets.length > 0
       ? // Read+write verbs scoped to the secrets this stack manages —
@@ -252,8 +256,18 @@ export function buildTfDeployerRules(managedSecrets: string[] = []) {
   return [
     {
       apiGroups: [''],
-      resources: ['pods', 'serviceaccounts', 'persistentvolumeclaims', 'services', 'configmaps'],
+      resources: ['serviceaccounts', 'persistentvolumeclaims', 'services', 'configmaps'],
       verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
+    },
+    // pods are read-only by default: pod create + exec lets the
+    // deployer mount ANY namespace secret and read it, bypassing the
+    // resourceNames scoping. Write verbs are granted only when the
+    // stack enables pod-sandbox, since RBAC escalation prevention
+    // requires the deployer to hold the verbs it delegates.
+    {
+      apiGroups: [''],
+      resources: ['pods'],
+      verbs: podWorkload ? ['create', 'delete', 'get', 'list', 'watch'] : ['get', 'list', 'watch'],
     },
     // create stays namespace-wide (no list/watch): resourceNames cannot
     // restrict create because the object has no name at authorization
@@ -266,7 +280,7 @@ export function buildTfDeployerRules(managedSecrets: string[] = []) {
       verbs: managedSecrets.length > 0 ? ['create'] : ['create', 'get'],
     },
     ...(secretManagedRule ? [secretManagedRule] : []),
-    { apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] },
+    ...(podWorkload ? [{ apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] }] : []),
     {
       apiGroups: ['apps'],
       resources: ['deployments', 'deployments/scale', 'replicasets', 'daemonsets', 'statefulsets'],
@@ -295,6 +309,7 @@ export function createTfDeployer(
   name: string,
   namespace: string,
   managedSecrets: string[] = [],
+  opts: { podWorkload?: boolean } = {},
 ): void {
   validateGeneratedName(name, '-tf-deployer-token', 63);
   const saName = `${name}-tf-deployer`;
@@ -318,7 +333,7 @@ export function createTfDeployer(
     apiVersion: 'rbac.authorization.k8s.io/v1',
     kind: 'Role',
     metadata: { name: saName, namespace, labels: componentLabels(name, 'tf-deployer') },
-    rules: buildTfDeployerRules([...managedSecrets, `${saName}-token`]),
+    rules: buildTfDeployerRules([...managedSecrets, `${saName}-token`], opts),
   });
   new ApiObject(scope, 'tf-deployer-rb', {
     apiVersion: 'rbac.authorization.k8s.io/v1',
