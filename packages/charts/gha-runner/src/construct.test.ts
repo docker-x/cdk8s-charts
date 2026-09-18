@@ -127,6 +127,16 @@ describe('GhaRunner construct', () => {
     expect(runner.resources.limits.cpu).toBeDefined();
   });
 
+  it('emits numeric JWT claims and guards GITHUB_APP_ID', () => {
+    const m = synth(baseProps);
+    const cm = findManifest(m, 'ConfigMap', 'runner-scripts');
+    const entrypoint = (cm.data as Record<string, string>)['entrypoint.sh'];
+    // iat/exp must be unquoted numbers — GitHub rejects string claims.
+    expect(entrypoint).toContain('"iat":\'$NOW\'');
+    expect(entrypoint).toContain('"exp":\'$EXP\'');
+    expect(entrypoint).toContain('*[!0123456789]*');
+  });
+
   it('emits a secret-env Secret and envFrom only when secretEnv is set', () => {
     const withSecrets = synth({ ...baseProps, secretEnv: { MY_TOKEN: 's3cret' } });
     const secret = findManifest(withSecrets, 'Secret', 'runner-secret-env');
