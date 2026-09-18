@@ -192,6 +192,17 @@ export function buildWorkspaceVolumes(
       },
     });
   }
+  // Duplicate volume names produce a pod spec the API server rejects —
+  // fail at synth time with a clearer error.
+  const seen = new Set(vols.map((v) => v.name));
+  for (const v of extraVolumes) {
+    if (seen.has(v.name)) {
+      throw new Error(
+        `Duplicate volume name "${v.name}": extra volumes must not collide with built-in volumes or each other`,
+      );
+    }
+    seen.add(v.name);
+  }
   vols.push(...extraVolumes);
   return vols;
 }
