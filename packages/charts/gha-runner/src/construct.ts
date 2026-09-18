@@ -654,6 +654,9 @@ export class GhaRunner extends Chart {
     return {
       ...this.podAffinity(values, labels),
       serviceAccountName: refs.saName,
+      // The runner only calls the GitHub API — never the K8s API. Disable
+      // token mounting on the pod too: a user-supplied SA may automount.
+      automountServiceAccountToken: false,
       ...this.podSecurityContext(values),
       initContainers: [this.initContainer(values)],
       containers: [this.runnerContainer(name, values, refs)],
