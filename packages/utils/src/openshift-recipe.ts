@@ -218,6 +218,7 @@ export function createPaseoConfigMap(
   namespace: string,
   paseoAutoResume: ResolvedPaseoAutoResume,
   variant: 'devcontainer' | 'devenv' = 'devcontainer',
+  paseoPort = 6767,
 ): string {
   const cmName = `${name}-paseo-auto-resume`;
   if (paseoAutoResume.enabled) {
@@ -227,7 +228,7 @@ export function createPaseoConfigMap(
       kind: 'ConfigMap',
       metadata: { name: cmName, namespace, labels: componentLabels(name, 'paseo-auto-resume') },
       data: {
-        'auto-resume.sh': getPaseoAutoResumeScript(variant),
+        'auto-resume.sh': getPaseoAutoResumeScript(variant, paseoPort),
         'pre-stop.sh': getPaseoPreStopScript(variant),
       },
     });
@@ -399,11 +400,12 @@ export function buildWorkspaceEnv(
 export function buildPodAnnotations(
   paseoAutoResume: ResolvedPaseoAutoResume,
   variant: 'devcontainer' | 'devenv' = 'devcontainer',
+  paseoPort = 6767,
 ): Record<string, string> {
   if (!paseoAutoResume.enabled) return {};
   return {
     'paseo-auto-resume/checksum': simpleHash(
-      getPaseoAutoResumeScript(variant) + getPaseoPreStopScript(variant),
+      getPaseoAutoResumeScript(variant, paseoPort) + getPaseoPreStopScript(variant),
     ),
   };
 }

@@ -138,12 +138,12 @@ MAX_AGENTS="\${PASEO_AUTO_RESUME_MAX:-10}"
 log() { echo "[auto-resume] $*"; }`;
 }
 
-function paseoWaitForDaemon(): string {
+function paseoWaitForDaemon(paseoPort: number): string {
   return `
-log "waiting for Paseo daemon on 127.0.0.1:6767..."
+log "waiting for Paseo daemon on 127.0.0.1:${paseoPort}..."
 daemon_ready=false
 for i in $(seq 1 60); do
-  if curl -sf http://127.0.0.1:6767/api/health >/dev/null 2>&1; then
+  if curl -sf http://127.0.0.1:${paseoPort}/api/health >/dev/null 2>&1; then
     daemon_ready=true
     break
   fi
@@ -218,9 +218,13 @@ log "auto-resume complete: $resumed agent(s) resumed"`;
 
 export function getPaseoAutoResumeScript(
   variant: 'devcontainer' | 'devenv' = 'devcontainer',
+  paseoPort = 6767,
 ): string {
+  if (!Number.isInteger(paseoPort) || paseoPort < 1 || paseoPort > 65535) {
+    throw new Error(`Invalid paseoPort "${paseoPort}": must be an integer between 1 and 65535`);
+  }
   const defaultHome = variant === 'devenv' ? '/env/.paseo' : '/home/vscode/.paseo';
-  return paseoAutoResumeSetup(defaultHome) + paseoWaitForDaemon() + paseoAutoResumeBody();
+  return paseoAutoResumeSetup(defaultHome) + paseoWaitForDaemon(paseoPort) + paseoAutoResumeBody();
 }
 
 function paseoPreStopBody(defaultHome: string): string {
