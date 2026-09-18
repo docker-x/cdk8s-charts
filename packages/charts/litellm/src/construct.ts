@@ -63,8 +63,17 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     const allVolumes = [...extraVolumes, ...(props.values?.volumes ?? [])];
     const allMounts = [...extraMounts, ...(props.values?.volumeMounts ?? [])];
 
+    const secretsName = `${id}-secrets`;
+    new ApiObject(this, 'secrets', {
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: { name: secretsName, namespace: props.namespace },
+      stringData: { 'master-key': props.masterKey },
+    });
+
     const computed: LitellmValues = {
-      masterkey: props.masterKey,
+      masterkeySecretName: secretsName,
+      masterkeySecretKey: 'master-key',
       environmentSecrets: allSecretNames.length > 0 ? allSecretNames : [],
       proxy_config: props.proxyConfig,
       postgresql: { enabled: true },
@@ -99,7 +108,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       this.createKeyProvisioningJob(
         id,
         props.namespace,
-        props.masterKey,
+        secretsName,
         svcHost,
         svcPort,
         props.virtualKeys,
@@ -127,14 +136,14 @@ export class Litellm extends HelmConstruct<LitellmValues> {
   private createKeyProvisioningJob(
     releaseName: string,
     namespace: string,
-    masterKey: string,
+    secretsName: string,
     host: string,
     port: number,
     keys: LitellmVirtualKey[],
   ): void {
     const baseUrl = `http://${host}:${port}`;
     const scriptConfigMapName = `${releaseName}-provision-keys-scripts`;
-    const payloadConfigMapName = `${releaseName}-provision-keys-data`;
+    const payloadSecretName = `${releaseName}-provision-keys-data`;
     const keySpecs: string[] = [];
     const payloadFiles: Record<string, string> = {};
 
@@ -164,12 +173,12 @@ export class Litellm extends HelmConstruct<LitellmValues> {
 
     new ApiObject(this, 'provision-data', {
       apiVersion: 'v1',
-      kind: 'ConfigMap',
+      kind: 'Secret',
       metadata: {
-        name: payloadConfigMapName,
+        name: payloadSecretName,
         namespace,
       },
-      data: payloadFiles,
+      stringData: payloadFiles,
     });
 
     new ApiObject(this, 'provision-keys', {
@@ -206,7 +215,12 @@ export class Litellm extends HelmConstruct<LitellmValues> {
                 command: ['sh', '/scripts/provision-keys.sh'],
                 env: [
                   { name: 'LITELLM_BASE_URL', value: baseUrl },
-                  { name: 'LITELLM_MASTER_KEY', value: masterKey },
+                  {
+                    name: 'LITELLM_MASTER_KEY',
+                    valueFrom: {
+                      secretKeyRef: { name: secretsName, key: 'master-key' },
+                    },
+                  },
                   { name: 'LITELLM_KEY_SPECS', value: keySpecs.join('\n') },
                   { name: 'LITELLM_KEY_DIR', value: '/keys' },
                 ],
@@ -224,7 +238,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
               },
               {
                 name: 'provision-data',
-                configMap: { name: payloadConfigMapName },
+                secret: { secretName: payloadSecretName },
               },
             ],
           },
