@@ -112,7 +112,7 @@ command -v ldd >/dev/null 2>&1 ||
 NOW=$(date +%s)
 EXP=$((NOW + 600))
 HEADER='{"alg":"RS256","typ":"JWT"}'
-PAYLOAD='{"iat":"'$NOW'","exp":"'$EXP'","iss":"'$GITHUB_APP_ID'"}'
+PAYLOAD='{"iat":'$NOW',"exp":'$EXP',"iss":"'$GITHUB_APP_ID'"}'
 
 b64enc() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 
