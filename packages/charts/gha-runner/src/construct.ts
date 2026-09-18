@@ -477,6 +477,19 @@ export class GhaRunner extends Chart {
       },
     });
 
+    // User-supplied secret env vars — kept out of the pod spec via a
+    // dedicated Secret consumed through envFrom.
+    const secretEnvName = `${name}-secret-env`;
+    if (values.secretEnv && Object.keys(values.secretEnv).length > 0) {
+      new ApiObject(this, 'secret-env', {
+        apiVersion: 'v1',
+        kind: 'Secret',
+        metadata: { name: secretEnvName, namespace: props.namespace, labels },
+        type: 'Opaque',
+        stringData: values.secretEnv,
+      });
+    }
+
     // PVC for nix store
     const nixPvcName = `${name}-nix-store`;
     new ApiObject(this, 'nix-pvc', {
@@ -615,6 +628,9 @@ export class GhaRunner extends Chart {
                 image: `${values.image ?? DEFAULT_IMAGE}:${values.imageTag ?? DEFAULT_IMAGE_TAG}`,
                 command: ['/bin/sh', '/scripts/entrypoint.sh'],
                 env: containerEnv,
+                ...(values.secretEnv && Object.keys(values.secretEnv).length > 0
+                  ? { envFrom: [{ secretRef: { name: secretEnvName } }] }
+                  : {}),
                 securityContext: {
                   runAsNonRoot: values.runAsNonRoot ?? true,
                   allowPrivilegeEscalation: false,
