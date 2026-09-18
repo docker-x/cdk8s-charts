@@ -290,6 +290,9 @@ export function buildOauthProxySidecar(
   saName: string,
   paseoPort = 6767,
 ): SidecarContainer {
+  if (!Number.isInteger(paseoPort) || paseoPort < 1 || paseoPort > 65535) {
+    throw new Error(`Invalid paseoPort "${paseoPort}": must be an integer between 1 and 65535`);
+  }
   return {
     name: 'oauth-proxy',
     image: OAUTH_PROXY_IMAGE,
