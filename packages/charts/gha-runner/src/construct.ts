@@ -53,6 +53,8 @@ while [ $i -lt 180 ]; do
   i=$((i + 1))
   sleep 5
 done
+# One last attempt — the holder may have released during the final sleep.
+[ -n "$runner_lock" ] || { flock -n 9 2>/dev/null && runner_lock=1; }
 [ -n "$runner_lock" ] || { echo "ERROR: timed out waiting for /runner setup lock (900s) — a previous init may be hung" >&2; exit 1; }
 
 # A store re-seed replaces db.sqlite with the image's, so store paths
@@ -341,6 +343,8 @@ while [ $i -lt 180 ]; do
   i=$((i + 1))
   sleep 5
 done
+# One last attempt — the holder may have released during the final sleep.
+[ -n "$seed_lock" ] || { flock -n 9 2>/dev/null && seed_lock=1; }
 [ -n "$seed_lock" ] || { echo "ERROR: timed out waiting for /nix-pvc seed lock (900s) — a previous init may be hung" >&2; exit 1; }
 if [ ! -f /nix-pvc/.seed-complete ]; then
   echo "Seeding /nix on PVC (one-time, may take a few minutes)..."
