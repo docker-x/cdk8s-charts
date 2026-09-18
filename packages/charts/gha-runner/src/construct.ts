@@ -833,6 +833,42 @@ export class GhaRunner extends Chart {
       name,
     };
     const values = props.values ? deepMerge(computed, props.values) : computed;
+    this.validateValues(values);
+    return values;
+  }
+
+  // Emitted by containerEnv — a same-named env entry would silently
+  // override the validated value; each has a matching prop.
+  private static readonly emittedEnv = new Set([
+    'GITHUB_OWNER',
+    'GITHUB_REPO',
+    'GITHUB_APP_ID',
+    'GITHUB_APP_INSTALLATION_ID',
+    'RUNNER_VERSION',
+    'RUNNER_SHA256',
+    'RUNNER_LABELS',
+    'RUNNER_NAME',
+    'REPLICAS',
+    'POD_NAME',
+  ]);
+
+  // Owned by ENTRYPOINT_SCRIPT — assigning to an imported env var
+  // keeps it exported, so the script overwrites these for every
+  // child process at pod start. No prop can override them.
+  private static readonly scriptEnv = new Set([
+    'HOME',
+    'PATH',
+    'LD_LIBRARY_PATH',
+    'JWT',
+    'INSTALLATION_TOKEN',
+    'REGISTRATION_TOKEN',
+    'RUNNER_WORKDIR',
+    'EPHEMERAL',
+    'SCOPE',
+    'RUNNER_URL',
+  ]);
+
+  private validateValues(values: Values) {
     // GitHub repo names: alphanumerics plus - _ . — but never just "."
     // or "..", and at most 100 characters.
     if (
@@ -848,66 +884,34 @@ export class GhaRunner extends Chart {
         'runnerSha256 must be a 64-character lowercase hex digest (output of `sha256sum` on the runner tarball)',
       );
     }
-    // Emitted by containerEnv — a same-named env entry would silently
-    // override the validated value; each has a matching prop.
-    const emittedEnv = new Set([
-      'GITHUB_OWNER',
-      'GITHUB_REPO',
-      'GITHUB_APP_ID',
-      'GITHUB_APP_INSTALLATION_ID',
-      'RUNNER_VERSION',
-      'RUNNER_SHA256',
-      'RUNNER_LABELS',
-      'RUNNER_NAME',
-      'REPLICAS',
-      'POD_NAME',
-    ]);
-    // Owned by ENTRYPOINT_SCRIPT — assigning to an imported env var
-    // keeps it exported, so the script overwrites these for every
-    // child process at pod start. No prop can override them.
-    const scriptEnv = new Set([
-      'HOME',
-      'PATH',
-      'LD_LIBRARY_PATH',
-      'JWT',
-      'INSTALLATION_TOKEN',
-      'REGISTRATION_TOKEN',
-      'RUNNER_WORKDIR',
-      'EPHEMERAL',
-      'SCOPE',
-      'RUNNER_URL',
-    ]);
     for (const key of Object.keys(values.env ?? {})) {
-      if (emittedEnv.has(key)) {
+      if (GhaRunner.emittedEnv.has(key)) {
         throw new Error(
           `env key "${key}" collides with a chart-owned variable — use the matching prop instead of env`,
         );
       }
-      if (scriptEnv.has(key)) {
+      if (GhaRunner.scriptEnv.has(key)) {
         throw new Error(
           `env key "${key}" is set by the entrypoint script — it cannot be overridden`,
         );
       }
     }
-    if (values.secretEnv) {
-      for (const key of Object.keys(values.secretEnv)) {
-        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
-          throw new Error(
-            `secretEnv key "${key}" is not a valid environment variable name — Kubernetes skips invalid keys during envFrom`,
-          );
-        }
-        if (emittedEnv.has(key) || (values.env && Object.hasOwn(values.env, key))) {
-          throw new Error(
-            `secretEnv key "${key}" collides with an explicit env var — explicit env wins over envFrom, so the secret value would be silently ignored`,
-          );
-        }
-        if (scriptEnv.has(key)) {
-          throw new Error(
-            `secretEnv key "${key}" is set by the entrypoint script — the script would overwrite it at pod start`,
-          );
-        }
+    for (const key of Object.keys(values.secretEnv ?? {})) {
+      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
+        throw new Error(
+          `secretEnv key "${key}" is not a valid environment variable name — Kubernetes skips invalid keys during envFrom`,
+        );
+      }
+      if (GhaRunner.emittedEnv.has(key) || (values.env && Object.hasOwn(values.env, key))) {
+        throw new Error(
+          `secretEnv key "${key}" collides with an explicit env var — explicit env wins over envFrom, so the secret value would be silently ignored`,
+        );
+      }
+      if (GhaRunner.scriptEnv.has(key)) {
+        throw new Error(
+          `secretEnv key "${key}" is set by the entrypoint script — the script would overwrite it at pod start`,
+        );
       }
     }
-    return values;
   }
 }
