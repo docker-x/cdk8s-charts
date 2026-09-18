@@ -690,6 +690,7 @@ export class GhaRunner extends Chart {
       runnerStorageSize: props.runnerStorageSize ?? DEFAULT_RUNNER_SIZE,
       runnerStorageClass: props.runnerStorageClass,
       env: props.env,
+      secretEnv: props.secretEnv,
       resources: props.resources,
       replicas: props.replicas ?? 1,
       labels: props.labels,
@@ -699,6 +700,32 @@ export class GhaRunner extends Chart {
       fsGroup: props.fsGroup,
       name,
     };
-    return props.values ? deepMerge(computed, props.values) : computed;
+    const values = props.values ? deepMerge(computed, props.values) : computed;
+    if (values.secretEnv) {
+      const reserved = new Set([
+        ...Object.keys(values.env ?? {}),
+        'GITHUB_OWNER',
+        'GITHUB_APP_ID',
+        'GITHUB_APP_INSTALLATION_ID',
+        'RUNNER_VERSION',
+        'RUNNER_LABELS',
+        'RUNNER_NAME',
+        'REPLICAS',
+        'POD_NAME',
+      ]);
+      for (const key of Object.keys(values.secretEnv)) {
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
+          throw new Error(
+            `secretEnv key "${key}" is not a valid environment variable name — Kubernetes skips invalid keys during envFrom`,
+          );
+        }
+        if (reserved.has(key)) {
+          throw new Error(
+            `secretEnv key "${key}" collides with an explicit env var — explicit env wins over envFrom, so the secret value would be silently ignored`,
+          );
+        }
+      }
+    }
+    return values;
   }
 }
