@@ -139,6 +139,7 @@ function buildBackupContainerSpec(
       { name: 'NAMESPACE', value: namespace },
       { name: 'HOME_MOUNT_PATH', value: homeMountPath },
       { name: 'BACKUP_KEEP', value: String(backup.keep) },
+      { name: 'BACKUP_PREFIX', value: `workspace-state-${name}-` },
     ],
     command: ['/bin/sh', '-ec', buildBackupScript(variant)],
   };
