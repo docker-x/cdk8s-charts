@@ -234,16 +234,16 @@ export function createWorkspacePodRbac(
 // ---------------------------------------------------------------------------
 
 export function buildTfDeployerRules(managedSecrets: string[] = []) {
-  const secretWriteRule =
+  const secretManagedRule =
     managedSecrets.length > 0
-      ? // Write verbs scoped to the secrets this stack manages — the
-        // deployer must not be able to modify or delete other
-        // applications' secrets in the shared namespace.
+      ? // Read+write verbs scoped to the secrets this stack manages —
+        // the deployer must not be able to read, modify, or delete
+        // other applications' secrets in the shared namespace.
         {
           apiGroups: [''],
           resources: ['secrets'],
           resourceNames: managedSecrets,
-          verbs: ['delete', 'patch', 'update'],
+          verbs: ['delete', 'get', 'patch', 'update'],
         }
       : // No managed secrets declared: create+get only. An apply that
         // needs to mutate an existing secret fails loudly here, forcing
@@ -255,17 +255,17 @@ export function buildTfDeployerRules(managedSecrets: string[] = []) {
       resources: ['pods', 'serviceaccounts', 'persistentvolumeclaims', 'services', 'configmaps'],
       verbs: ['create', 'delete', 'get', 'list', 'patch', 'update', 'watch'],
     },
-    // get+create stay namespace-wide (no list/watch): the shared
-    // OPENSHIFT_TOKEN varset means one deployer identity serves every
-    // stack in the namespace, the kubectl provider must GET each managed
-    // secret to refresh state during plan, and resourceNames cannot
-    // restrict create (the object has no name at authorization time).
+    // create stays namespace-wide (no list/watch): resourceNames cannot
+    // restrict create because the object has no name at authorization
+    // time. get joins the scoped rule once a managed set is declared —
+    // refresh only ever reads secrets the stack manages. Without a
+    // declared set get stays wide so unscoped callers keep working.
     {
       apiGroups: [''],
       resources: ['secrets'],
-      verbs: ['create', 'get'],
+      verbs: managedSecrets.length > 0 ? ['create'] : ['create', 'get'],
     },
-    ...(secretWriteRule ? [secretWriteRule] : []),
+    ...(secretManagedRule ? [secretManagedRule] : []),
     { apiGroups: [''], resources: ['pods/exec'], verbs: ['create'] },
     {
       apiGroups: ['apps'],
