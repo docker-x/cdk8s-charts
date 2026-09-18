@@ -138,6 +138,12 @@ describe('GhaRunner construct', () => {
     expect(spec.template.spec.containers[0].envFrom).toEqual([
       { secretRef: { name: 'runner-secret-env' } },
     ]);
+    // The secret value must stay out of the inline pod env — envFrom is
+    // the whole point of the feature.
+    const envList = (
+      spec.template.spec.containers[0] as { env?: { name: string; value?: string }[] }
+    ).env;
+    expect(envList?.some((e) => e.name === 'MY_TOKEN' || e.value === 's3cret')).toBe(false);
 
     const without = synth(baseProps);
     expect(() => findManifest(without, 'Secret', 'runner-secret-env')).toThrow(/not found/);
@@ -155,7 +161,17 @@ describe('GhaRunner construct', () => {
   });
 
   it('rejects secretEnv keys colliding with explicit or entrypoint-owned env', () => {
-    for (const key of ['HOME', 'PATH', 'LD_LIBRARY_PATH', 'RUNNER_NAME']) {
+    for (const key of [
+      'HOME',
+      'PATH',
+      'LD_LIBRARY_PATH',
+      'RUNNER_NAME',
+      'JWT',
+      'INSTALLATION_TOKEN',
+      'REGISTRATION_TOKEN',
+      'RUNNER_WORKDIR',
+      'EPHEMERAL',
+    ]) {
       expect(() => synth({ ...baseProps, secretEnv: { [key]: 'x' } })).toThrow(/collides/);
     }
     expect(() => synth({ ...baseProps, env: { MY_VAR: 'a' }, secretEnv: { MY_VAR: 'b' } })).toThrow(

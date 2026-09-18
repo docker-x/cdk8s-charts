@@ -712,11 +712,17 @@ export class GhaRunner extends Chart {
         'RUNNER_NAME',
         'REPLICAS',
         'POD_NAME',
-        // Owned by ENTRYPOINT_SCRIPT — it re-exports them at pod start,
-        // so an injected secretEnv value would be overwritten at runtime.
+        // Owned by ENTRYPOINT_SCRIPT — assigning to an imported env var
+        // keeps it exported, so these overwrite an injected value for
+        // every child process at pod start.
         'HOME',
         'PATH',
         'LD_LIBRARY_PATH',
+        'JWT',
+        'INSTALLATION_TOKEN',
+        'REGISTRATION_TOKEN',
+        'RUNNER_WORKDIR',
+        'EPHEMERAL',
       ]);
       for (const key of Object.keys(values.secretEnv)) {
         if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
