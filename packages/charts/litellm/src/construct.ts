@@ -89,14 +89,16 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     // Strip volumes/volumeMounts and the masterkey wiring from overrides —
     // the provisioning Job always authenticates against our generated
     // Secret, so a user override here would desync proxy and Job.
-    const {
-      volumes: _v,
-      volumeMounts: _vm,
-      masterkey: _mk,
-      masterkeySecretName: _msn,
-      masterkeySecretKey: _msk,
-      ...restOverrides
-    } = props.values ?? {};
+    const restOverrides = { ...props.values };
+    for (const key of [
+      'volumes',
+      'volumeMounts',
+      'masterkey',
+      'masterkeySecretName',
+      'masterkeySecretKey',
+    ] as const) {
+      delete restOverrides[key];
+    }
 
     const values = this.renderChart(
       props.chart ?? 'oci://ghcr.io/berriai/litellm-helm',
