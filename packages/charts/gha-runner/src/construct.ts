@@ -324,7 +324,6 @@ exec ./run.sh
 // registrations — copying them keeps the prewarmed store paths valid.
 const INIT_SCRIPT = `#!/bin/sh
 set -eu
-set -o pipefail
 # Serialize seeding across replicas: two init containers on an unseeded
 # PVC could otherwise seed concurrently and corrupt the db. flock works
 # on a read-only fd, so locking the PVC root directory avoids a lock
@@ -372,11 +371,16 @@ if [ ! -f /nix-pvc/.seed-complete ]; then
   fi
   # tar pipes, not cp -a: non-root can't preserve ownership, and stale 444
   # files from a previous partial copy must be unlinked before rewrite.
-  tar -C /nix/store -cf - . | tar -C /nix-pvc/store -xf -
+  # No pipefail on strict POSIX sh — flag the producer side instead: a
+  # source tar that dies mid-stream can still feed a clean-looking
+  # archive to the extract side, and the pipeline would report success.
+  rm -f /nix-pvc/.seed-failed
+  { tar -C /nix/store -cf - . || touch /nix-pvc/.seed-failed; } | tar -C /nix-pvc/store -xf -
   if [ -d /nix/var/nix/profiles ]; then
     rm -rf /nix-pvc/var/nix/profiles
-    tar -C /nix/var/nix -cf - profiles | tar -C /nix-pvc/var/nix -xf -
+    { tar -C /nix/var/nix -cf - profiles || touch /nix-pvc/.seed-failed; } | tar -C /nix-pvc/var/nix -xf -
   fi
+  [ ! -f /nix-pvc/.seed-failed ] || { echo "ERROR: seed copy failed — source tar aborted mid-stream" >&2; exit 1; }
   # Remove stale lock/WAL sidecars — they corrupt later nix operations.
   rm -f /nix-pvc/var/nix/db/big-lock /nix-pvc/var/nix/db/reserved /nix-pvc/var/nix/db/db.sqlite /nix-pvc/var/nix/db/db.sqlite-wal /nix-pvc/var/nix/db/db.sqlite-shm /nix-pvc/var/nix/db/schema
   cp /nix/var/nix/db/db.sqlite /nix/var/nix/db/schema /nix-pvc/var/nix/db/
