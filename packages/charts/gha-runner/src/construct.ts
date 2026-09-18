@@ -228,10 +228,17 @@ fi
 # the entrypoint's freshly resolved one (e.g. the openssl lib dir added
 # after an earlier registration) and crash Runner.Worker on libssl.
 # The entrypoint re-exports it on every boot, so drop the persisted copy.
-if [ -f .env ] && command -v sed >/dev/null 2>&1; then
-  sed -i '/^LD_LIBRARY_PATH=/d' .env 2>/dev/null || {
-    chmod u+w .env 2>/dev/null && sed -i '/^LD_LIBRARY_PATH=/d' .env
-  } || echo "warn: could not strip LD_LIBRARY_PATH from .env — continuing"
+# Pure-shell filter — a minimal custom image may lack sed entirely, and
+# silently skipping this cleanup would leave the stale value in place.
+if [ -f .env ]; then
+  [ -w .env ] || chmod u+w .env 2>/dev/null || true
+  env_filtered=$(while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      LD_LIBRARY_PATH=*) ;;
+      *) printf '%s\n' "$line" ;;
+    esac
+  done < .env) && printf '%s\n' "$env_filtered" > .env \
+    || echo "warn: could not strip LD_LIBRARY_PATH from .env — continuing"
 fi
 
 # Release the setup lock before handing off — fd 9 is inherited by exec,
