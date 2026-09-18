@@ -843,6 +843,27 @@ export class GhaRunner extends Chart {
         'runnerSha256 must be a 64-character lowercase hex digest (output of `sha256sum` on the runner tarball)',
       );
     }
+    // Chart-owned env names are emitted by containerEnv; a same-named
+    // entry in env would silently override the validated value.
+    const ownedEnv = new Set([
+      'GITHUB_OWNER',
+      'GITHUB_REPO',
+      'GITHUB_APP_ID',
+      'GITHUB_APP_INSTALLATION_ID',
+      'RUNNER_VERSION',
+      'RUNNER_SHA256',
+      'RUNNER_LABELS',
+      'RUNNER_NAME',
+      'REPLICAS',
+      'POD_NAME',
+    ]);
+    for (const key of Object.keys(values.env ?? {})) {
+      if (ownedEnv.has(key)) {
+        throw new Error(
+          `env key "${key}" collides with a chart-owned variable — use the matching prop instead of env`,
+        );
+      }
+    }
     if (values.secretEnv) {
       const reserved = new Set([
         ...Object.keys(values.env ?? {}),

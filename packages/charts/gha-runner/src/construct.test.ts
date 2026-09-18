@@ -254,6 +254,12 @@ describe('GhaRunner construct', () => {
     expect(ep2).toContain('SCOPE="orgs/${GITHUB_OWNER}"');
   });
 
+  it('rejects env keys that collide with chart-owned variables', () => {
+    for (const key of ['GITHUB_OWNER', 'GITHUB_REPO', 'RUNNER_NAME', 'POD_NAME']) {
+      expect(() => synth({ ...baseProps, env: { [key]: 'x' } })).toThrow(/collides/);
+    }
+  });
+
   it('rejects a malformed githubRepo at synth time', () => {
     expect(() => synth({ ...baseProps, githubRepo: 'org/repo' })).toThrow(/githubRepo/);
     expect(() => synth({ ...baseProps, githubRepo: 'my-repo' })).not.toThrow();
