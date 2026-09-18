@@ -435,8 +435,8 @@ export class GhaRunner extends Chart {
     super(scope, id);
 
     const name = props.name ?? id;
-    const labels = { ...buildLabels(name), ...(props.labels ?? {}) };
     const values = this.computeValues(props, name);
+    const labels = { ...buildLabels(name), ...(values.labels ?? {}) };
 
     // ConfigMap with entrypoint + init scripts
     const configMapName = `${name}-scripts`;
@@ -456,7 +456,7 @@ export class GhaRunner extends Chart {
     // GitHub API outbound. Token automounting is disabled: the pod never
     // calls the K8s API.
     const saName = values.serviceAccountName ?? `${name}-sa`;
-    if (!props.serviceAccountName && !props.values?.serviceAccountName) {
+    if (!values.serviceAccountName) {
       new ApiObject(this, 'serviceaccount', {
         apiVersion: 'v1',
         kind: 'ServiceAccount',
@@ -558,7 +558,7 @@ export class GhaRunner extends Chart {
         name: deploymentName,
         namespace: props.namespace,
         labels,
-        annotations: props.annotations,
+        annotations: values.annotations,
       },
       spec: {
         replicas: values.replicas ?? 1,
@@ -569,7 +569,7 @@ export class GhaRunner extends Chart {
         strategy: { type: 'Recreate' },
         selector: { matchLabels: labels },
         template: {
-          metadata: { labels, annotations: props.annotations },
+          metadata: { labels, annotations: values.annotations },
           spec: {
             // Keep replicas on one node: both PVCs are ReadWriteOnce, so
             // pods on different nodes cannot attach them and would stay
