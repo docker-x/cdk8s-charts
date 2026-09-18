@@ -100,16 +100,13 @@ describe('GhaRunner construct', () => {
       selector: { matchLabels: Record<string, string> };
       template: { metadata: { labels: Record<string, string> } };
     };
-    const selector = spec.selector.matchLabels;
     const podLabels = spec.template.metadata.labels;
     // Selector keys keep their generated values everywhere.
     expect(podLabels['app.kubernetes.io/name']).toBe('runner');
     expect(podLabels['app.kubernetes.io/managed-by']).toBe('cdk8s');
     expect(podLabels.team).toBe('ci');
     // Pod labels are a superset of the selector — required by the API.
-    for (const [k, v] of Object.entries(selector)) {
-      expect(podLabels[k]).toBe(v);
-    }
+    expect(podLabels).toMatchObject(spec.selector.matchLabels);
   });
 
   it('applies values.annotations to the Deployment and pod template', () => {
