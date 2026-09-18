@@ -256,18 +256,12 @@ describe('GhaRunner construct', () => {
   });
 
   it('rejects env keys that collide with chart-owned variables', () => {
-    for (const key of [
-      'GITHUB_OWNER',
-      'GITHUB_REPO',
-      'RUNNER_NAME',
-      'POD_NAME',
-      'HOME',
-      'JWT',
-      'REGISTRATION_TOKEN',
-      'SCOPE',
-      'RUNNER_URL',
-    ]) {
+    for (const key of ['GITHUB_OWNER', 'GITHUB_REPO', 'RUNNER_NAME', 'POD_NAME']) {
       expect(() => synth({ ...baseProps, env: { [key]: 'x' } })).toThrow(/collides/);
+    }
+    // Entrypoint-owned names can't be overridden at all.
+    for (const key of ['HOME', 'JWT', 'REGISTRATION_TOKEN', 'SCOPE', 'RUNNER_URL']) {
+      expect(() => synth({ ...baseProps, env: { [key]: 'x' } })).toThrow(/entrypoint script/);
     }
   });
 
@@ -314,12 +308,14 @@ describe('GhaRunner construct', () => {
   });
 
   it('rejects secretEnv keys colliding with explicit or entrypoint-owned env', () => {
+    for (const key of ['RUNNER_NAME', 'RUNNER_SHA256']) {
+      expect(() => synth({ ...baseProps, secretEnv: { [key]: 'x' } })).toThrow(/collides/);
+    }
+    // Script-owned names get a distinct message — no env entry competes.
     for (const key of [
       'HOME',
       'PATH',
       'LD_LIBRARY_PATH',
-      'RUNNER_NAME',
-      'RUNNER_SHA256',
       'JWT',
       'INSTALLATION_TOKEN',
       'REGISTRATION_TOKEN',
@@ -328,7 +324,7 @@ describe('GhaRunner construct', () => {
       'SCOPE',
       'RUNNER_URL',
     ]) {
-      expect(() => synth({ ...baseProps, secretEnv: { [key]: 'x' } })).toThrow(/collides/);
+      expect(() => synth({ ...baseProps, secretEnv: { [key]: 'x' } })).toThrow(/entrypoint script/);
     }
     expect(() => synth({ ...baseProps, env: { MY_VAR: 'a' }, secretEnv: { MY_VAR: 'b' } })).toThrow(
       /collides/,

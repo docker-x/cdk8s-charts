@@ -848,12 +848,9 @@ export class GhaRunner extends Chart {
         'runnerSha256 must be a 64-character lowercase hex digest (output of `sha256sum` on the runner tarball)',
       );
     }
-    // Chart-owned env names are emitted by containerEnv; a same-named
-    // entry in env would silently override the validated value. The
-    // second block is owned by ENTRYPOINT_SCRIPT — assigning to an
-    // imported env var keeps it exported, so the script overwrites
-    // these for every child process at pod start.
-    const ownedEnv = new Set([
+    // Emitted by containerEnv — a same-named env entry would silently
+    // override the validated value; each has a matching prop.
+    const emittedEnv = new Set([
       'GITHUB_OWNER',
       'GITHUB_REPO',
       'GITHUB_APP_ID',
@@ -864,6 +861,11 @@ export class GhaRunner extends Chart {
       'RUNNER_NAME',
       'REPLICAS',
       'POD_NAME',
+    ]);
+    // Owned by ENTRYPOINT_SCRIPT — assigning to an imported env var
+    // keeps it exported, so the script overwrites these for every
+    // child process at pod start. No prop can override them.
+    const scriptEnv = new Set([
       'HOME',
       'PATH',
       'LD_LIBRARY_PATH',
@@ -876,48 +878,32 @@ export class GhaRunner extends Chart {
       'RUNNER_URL',
     ]);
     for (const key of Object.keys(values.env ?? {})) {
-      if (ownedEnv.has(key)) {
+      if (emittedEnv.has(key)) {
         throw new Error(
           `env key "${key}" collides with a chart-owned variable — use the matching prop instead of env`,
         );
       }
+      if (scriptEnv.has(key)) {
+        throw new Error(
+          `env key "${key}" is set by the entrypoint script — it cannot be overridden`,
+        );
+      }
     }
     if (values.secretEnv) {
-      const reserved = new Set([
-        ...Object.keys(values.env ?? {}),
-        'GITHUB_OWNER',
-        'GITHUB_REPO',
-        'GITHUB_APP_ID',
-        'GITHUB_APP_INSTALLATION_ID',
-        'RUNNER_VERSION',
-        'RUNNER_SHA256',
-        'RUNNER_LABELS',
-        'RUNNER_NAME',
-        'REPLICAS',
-        'POD_NAME',
-        // Owned by ENTRYPOINT_SCRIPT — assigning to an imported env var
-        // keeps it exported, so these overwrite an injected value for
-        // every child process at pod start.
-        'HOME',
-        'PATH',
-        'LD_LIBRARY_PATH',
-        'JWT',
-        'INSTALLATION_TOKEN',
-        'REGISTRATION_TOKEN',
-        'RUNNER_WORKDIR',
-        'EPHEMERAL',
-        'SCOPE',
-        'RUNNER_URL',
-      ]);
       for (const key of Object.keys(values.secretEnv)) {
         if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
           throw new Error(
             `secretEnv key "${key}" is not a valid environment variable name — Kubernetes skips invalid keys during envFrom`,
           );
         }
-        if (reserved.has(key)) {
+        if (emittedEnv.has(key) || (values.env && Object.hasOwn(values.env, key))) {
           throw new Error(
             `secretEnv key "${key}" collides with an explicit env var — explicit env wins over envFrom, so the secret value would be silently ignored`,
+          );
+        }
+        if (scriptEnv.has(key)) {
+          throw new Error(
+            `secretEnv key "${key}" is set by the entrypoint script — the script would overwrite it at pod start`,
           );
         }
       }
