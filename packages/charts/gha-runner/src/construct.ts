@@ -38,9 +38,20 @@ export LD_LIBRARY_PATH="$HOME/.nix-profile/lib:$HOME/.nix-compat/lib\${LD_LIBRAR
 # two pods on /runner and /nix at once (RWO is per-node), and concurrent
 # nix profile installs, tar extraction, and patchelf would race on the
 # same db/binaries. Same pattern as init-nix.sh — flock on a directory
-# fd, blocking so a crashed holder releases automatically.
+# fd; a crashed holder releases it automatically.
 exec 9</runner
-flock 9
+# Bounded wait via retry — busybox flock has no -w, so poll nonblocking.
+# A crashed holder releases the fd automatically; a hung-but-alive one
+# would otherwise wedge every later pod in init forever — timing out
+# surfaces it as a crash-loop instead of a silent stall.
+runner_lock=""
+i=0
+while [ $i -lt 60 ]; do
+  flock -n 9 2>/dev/null && { runner_lock=1; break; }
+  i=$((i + 1))
+  sleep 5
+done
+[ -n "$runner_lock" ] || { echo "ERROR: timed out waiting for /runner setup lock (300s) — a previous init may be hung" >&2; exit 1; }
 
 # A store re-seed replaces db.sqlite with the image's, so store paths
 # the profile installed earlier stay physically present but become
@@ -315,11 +326,18 @@ set -o pipefail
 # on a read-only fd, so locking the PVC root directory avoids a lock
 # file entirely — no ownership or permission concerns when the SCC uid
 # changes between pods. The lock releases automatically if the init
-# dies, so a crashed seed can't wedge the PVC. Plain blocking flock —
-# busybox flock has no -w, and a wedged seed surfaces as an init
-# crash-loop either way.
+# dies, so a crashed seed can't wedge the PVC. Bounded wait via retry —
+# busybox flock has no -w, so poll nonblocking; a hung-but-alive holder
+# would otherwise wedge every later pod in init forever.
 exec 9</nix-pvc
-flock 9
+seed_lock=""
+i=0
+while [ $i -lt 120 ]; do
+  flock -n 9 2>/dev/null && { seed_lock=1; break; }
+  i=$((i + 1))
+  sleep 5
+done
+[ -n "$seed_lock" ] || { echo "ERROR: timed out waiting for /nix-pvc seed lock (600s) — a previous init may be hung" >&2; exit 1; }
 if [ ! -f /nix-pvc/.seed-complete ]; then
   echo "Seeding /nix on PVC (one-time, may take a few minutes)..."
   # Heal a reused partial tree first: tar must be able to unlink stale
