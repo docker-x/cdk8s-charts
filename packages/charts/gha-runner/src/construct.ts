@@ -237,7 +237,8 @@ if [ -f .env ]; then
       LD_LIBRARY_PATH=*) ;;
       *) printf '%s\n' "$line" ;;
     esac
-  done < .env) && printf '%s\n' "$env_filtered" > .env \
+  done < .env) && printf '%s\n' "$env_filtered" > .env.tmp \
+    && mv -f .env.tmp .env \
     || echo "warn: could not strip LD_LIBRARY_PATH from .env — continuing"
 fi
 
