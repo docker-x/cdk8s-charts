@@ -94,6 +94,9 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     // container's writable layer. Producer failures are flagged via
     // marker files because /bin/sh has no pipefail.
     '    rm -f /tmp/.tar-rc /tmp/.enc-rc',
+    // Unseekable stdin uploads use a fixed part size — 64MB parts keep
+    // the 10,000-part S3 ceiling out of reach for any PVC-sized stream.
+    '    aws configure set s3.multipart_chunksize 64MB || echo "Warning: could not set multipart_chunksize"',
     // `|| pipe_rc=$?` is required — under `sh -e` a failing pipeline
     // would exit before the rc assignment and skip partial-object cleanup.
     '    ( tar czf - $EXCLUDES . || echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD || echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
