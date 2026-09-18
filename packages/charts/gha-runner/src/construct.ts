@@ -209,7 +209,8 @@ if [ ! -f ./config.sh ]; then
     command -v sha256sum >/dev/null 2>&1 || { echo "ERROR: RUNNER_SHA256 is set but sha256sum is not available in this image" >&2; rm -f runner.tar.gz; exit 1; }
     echo "\${RUNNER_SHA256}  runner.tar.gz" | sha256sum -c - || { echo "ERROR: runner tarball checksum mismatch" >&2; rm -f runner.tar.gz; exit 1; }
   fi
-  tar xzf runner.tar.gz && rm -f runner.tar.gz
+  tar xzf runner.tar.gz || { rm -f runner.tar.gz; exit 1; }
+  rm -f runner.tar.gz
 fi
 
 # The runner ships foreign ELF binaries whose interpreter is
