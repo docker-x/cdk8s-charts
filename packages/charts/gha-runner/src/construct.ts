@@ -443,7 +443,7 @@ export class GhaRunner extends Chart {
     // reject the Deployment.
     const selectorLabels = buildLabels(name);
     const userLabels = Object.fromEntries(
-      Object.entries(values.labels ?? {}).filter(([k]) => !(k in selectorLabels)),
+      Object.entries(values.labels ?? {}).filter(([k]) => !Object.hasOwn(selectorLabels, k)),
     );
     const labels = { ...selectorLabels, ...userLabels };
 
