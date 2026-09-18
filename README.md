@@ -45,7 +45,7 @@ Fully typed [cdk8s](https://cdk8s.io/) constructs for popular Helm charts and ra
 |---------|-------------|
 | [`@cdk8s-charts/agent-platform`](packages/recipes/agent-platform/) | Full agent platform stack |
 | [`@cdk8s-charts/devspace`](packages/recipes/devspace/) | DevPod + Gascity + Nginx workspace |
-| [`@cdk8s-charts/gascity`](packages/recipes/gascity/) | Gascity + Hindsight + Omniroute agent stack |
+| [`@cdk8s-charts/gascity-stack`](packages/recipes/gascity/) | Gascity + Hindsight + Omniroute agent stack |
 | [`@cdk8s-charts/gascity-hindsight-omniroute`](packages/recipes/gascity-hindsight-omniroute/) | Gascity with Hindsight and Omniroute |
 | [`@cdk8s-charts/gitlab-pilot`](packages/recipes/gitlab-pilot/) | GitLab + agent tooling recipe |
 | [`@cdk8s-charts/hindsight-litellm`](packages/recipes/hindsight-litellm/) | Hindsight + LiteLLM composed stack |
