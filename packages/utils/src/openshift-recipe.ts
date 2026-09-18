@@ -113,6 +113,12 @@ export function validateDnsLabels(name: string, namespace: string): void {
     throw new Error(
       `Invalid namespace "${namespace}": must be a DNS-label value (lowercase alphanumeric with hyphens, max 63 chars, no dots)`,
     );
+  // Longest unconditionally-generated name is `${name}-oauth-cookie`
+  // (13-char suffix) — bound name so every always-on derived resource
+  // stays a valid DNS label. Conditional resources (tf-deployer,
+  // paseo-auto-resume, CronJobs) validate their own longer suffixes at
+  // their creation sites via validateGeneratedName.
+  validateGeneratedName(name, '-oauth-cookie', 63);
 }
 
 /** Validate that a generated resource name fits within the K8s limit (52 for CronJobs). */
@@ -215,6 +221,7 @@ export function createPaseoConfigMap(
 ): string {
   const cmName = `${name}-paseo-auto-resume`;
   if (paseoAutoResume.enabled) {
+    validateGeneratedName(name, '-paseo-auto-resume', 63);
     new ApiObject(scope, 'paseo-auto-resume-cm', {
       apiVersion: 'v1',
       kind: 'ConfigMap',
