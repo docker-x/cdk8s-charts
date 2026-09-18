@@ -833,9 +833,14 @@ export class GhaRunner extends Chart {
       name,
     };
     const values = props.values ? deepMerge(computed, props.values) : computed;
-    if (values.githubRepo !== undefined && !/^[A-Za-z0-9_.-]+$/.test(values.githubRepo)) {
+    // GitHub repo names: alphanumerics plus - _ . — but never just "."
+    // or "..", and at most 100 characters.
+    if (
+      values.githubRepo !== undefined &&
+      !/^(?!\.{1,2}$)[A-Za-z0-9_.-]{1,100}$/.test(values.githubRepo)
+    ) {
       throw new Error(
-        'githubRepo must be a repository name (letters, digits, "-", "_", ".") — no owner or path separators',
+        'githubRepo must be a valid repository name (letters, digits, "-", "_", "."; ≤100 chars; not "." or "..")',
       );
     }
     if (values.runnerSha256 !== undefined && !/^[0-9a-f]{64}$/.test(values.runnerSha256)) {

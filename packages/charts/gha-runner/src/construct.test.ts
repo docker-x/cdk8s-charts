@@ -262,7 +262,11 @@ describe('GhaRunner construct', () => {
 
   it('rejects a malformed githubRepo at synth time', () => {
     expect(() => synth({ ...baseProps, githubRepo: 'org/repo' })).toThrow(/githubRepo/);
+    expect(() => synth({ ...baseProps, githubRepo: '.' })).toThrow(/githubRepo/);
+    expect(() => synth({ ...baseProps, githubRepo: '..' })).toThrow(/githubRepo/);
+    expect(() => synth({ ...baseProps, githubRepo: 'x'.repeat(101) })).toThrow(/githubRepo/);
     expect(() => synth({ ...baseProps, githubRepo: 'my-repo' })).not.toThrow();
+    expect(() => synth({ ...baseProps, githubRepo: 'x'.repeat(100) })).not.toThrow();
   });
 
   it('emits a secret-env Secret and envFrom only when secretEnv is set', () => {
