@@ -175,19 +175,20 @@ if [ -f ./bin/Runner.Listener ]; then
     mkdir -p "$HOME/.nix-compat/lib"
     ln -sf "$HOME/.nix-profile/lib/liblttng-ust.so.1" "$HOME/.nix-compat/lib/liblttng-ust.so.0" || true
   fi
-  if command -v patchelf >/dev/null 2>&1 && command -v ldd >/dev/null 2>&1; then
-    # glibc's ldd script embeds its own ld.so path — read it from there.
-    GLIBC_LD=$(grep -o '/nix/store/[^" ]*/lib64/ld-linux-x86-64.so.2' "$(command -v ldd)" | head -1)
+  if command -v patchelf >/dev/null 2>&1; then
     # Keep the out-path and the loader path as separate variables — on a
     # nix build failure the empty expansion must not collapse into a
     # host path like /lib/ld-musl-x86_64.so.1 that could pass [ -f ] and
-    # point binaries at the wrong interpreter.
+    # point binaries at the wrong interpreter. nixpkgs glibc ships the
+    # loader in lib/ (lib64 is a compat symlink).
+    GLIBC_OUT=$(nix build --no-link --print-out-paths "nixpkgs#glibc" 2>/dev/null || true)
+    GLIBC_LD="\${GLIBC_OUT:+$GLIBC_OUT/lib/ld-linux-x86-64.so.2}"
     MUSL_OUT=$(nix build --no-link --print-out-paths "nixpkgs#musl^out" 2>/dev/null || true)
     MUSL_LD="\${MUSL_OUT:+$MUSL_OUT/lib/ld-musl-x86_64.so.1}"
     for f in ./bin/* ./externals/*/bin/*; do
       [ -f "$f" ] || continue
       case "$(patchelf --print-interpreter "$f" 2>/dev/null)" in
-        */ld-linux-x86-64.so.2) [ -n "$GLIBC_LD" ] && patchelf --set-interpreter "$GLIBC_LD" "$f" || true ;;
+        */ld-linux-x86-64.so.2) [ -f "$GLIBC_LD" ] && patchelf --set-interpreter "$GLIBC_LD" "$f" || true ;;
         */ld-musl-*) [ -f "$MUSL_LD" ] && patchelf --set-interpreter "$MUSL_LD" "$f" || true ;;
       esac
     done
