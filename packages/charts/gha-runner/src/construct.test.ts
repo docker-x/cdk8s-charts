@@ -236,6 +236,7 @@ describe('GhaRunner construct', () => {
     const cm = findManifest(m, 'ConfigMap', 'runner-scripts');
     const entrypoint = (cm.data as Record<string, string>)['entrypoint.sh'];
     expect(entrypoint).toContain('SCOPE="repos/${GITHUB_OWNER}/${GITHUB_REPO}"');
+    expect(entrypoint).toContain('RUNNER_URL="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}"');
     expect(entrypoint).toContain(
       'https://api.github.com/${SCOPE}/actions/runners/registration-token',
     );
@@ -255,7 +256,17 @@ describe('GhaRunner construct', () => {
   });
 
   it('rejects env keys that collide with chart-owned variables', () => {
-    for (const key of ['GITHUB_OWNER', 'GITHUB_REPO', 'RUNNER_NAME', 'POD_NAME']) {
+    for (const key of [
+      'GITHUB_OWNER',
+      'GITHUB_REPO',
+      'RUNNER_NAME',
+      'POD_NAME',
+      'HOME',
+      'JWT',
+      'REGISTRATION_TOKEN',
+      'SCOPE',
+      'RUNNER_URL',
+    ]) {
       expect(() => synth({ ...baseProps, env: { [key]: 'x' } })).toThrow(/collides/);
     }
   });
@@ -314,6 +325,8 @@ describe('GhaRunner construct', () => {
       'REGISTRATION_TOKEN',
       'RUNNER_WORKDIR',
       'EPHEMERAL',
+      'SCOPE',
+      'RUNNER_URL',
     ]) {
       expect(() => synth({ ...baseProps, secretEnv: { [key]: 'x' } })).toThrow(/collides/);
     }

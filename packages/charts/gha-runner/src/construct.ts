@@ -849,7 +849,10 @@ export class GhaRunner extends Chart {
       );
     }
     // Chart-owned env names are emitted by containerEnv; a same-named
-    // entry in env would silently override the validated value.
+    // entry in env would silently override the validated value. The
+    // second block is owned by ENTRYPOINT_SCRIPT — assigning to an
+    // imported env var keeps it exported, so the script overwrites
+    // these for every child process at pod start.
     const ownedEnv = new Set([
       'GITHUB_OWNER',
       'GITHUB_REPO',
@@ -861,6 +864,16 @@ export class GhaRunner extends Chart {
       'RUNNER_NAME',
       'REPLICAS',
       'POD_NAME',
+      'HOME',
+      'PATH',
+      'LD_LIBRARY_PATH',
+      'JWT',
+      'INSTALLATION_TOKEN',
+      'REGISTRATION_TOKEN',
+      'RUNNER_WORKDIR',
+      'EPHEMERAL',
+      'SCOPE',
+      'RUNNER_URL',
     ]);
     for (const key of Object.keys(values.env ?? {})) {
       if (ownedEnv.has(key)) {
@@ -893,6 +906,8 @@ export class GhaRunner extends Chart {
         'REGISTRATION_TOKEN',
         'RUNNER_WORKDIR',
         'EPHEMERAL',
+        'SCOPE',
+        'RUNNER_URL',
       ]);
       for (const key of Object.keys(values.secretEnv)) {
         if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
