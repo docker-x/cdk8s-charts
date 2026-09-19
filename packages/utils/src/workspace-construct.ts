@@ -538,6 +538,19 @@ export function initWorkspaceChart(
     defaults,
   );
   validateHomeMountPath(values.homeMountPath as string);
+  const replicas = (values.replicas as number | undefined) ?? 1;
+  if (typeof replicas !== 'number' || !Number.isInteger(replicas) || replicas < 0) {
+    throw new Error(`Invalid replicas "${replicas}": must be a non-negative integer`);
+  }
+  if (replicas > 1 && !values.existingPvcName) {
+    // The chart-created workspace-state PVC is always ReadWriteOnce —
+    // multiple replicas can never all attach it. An existingPvcName may be
+    // RWX, so the guard only applies to the managed PVC.
+    throw new Error(
+      `replicas=${replicas} is invalid: the chart-created workspace PVC is ReadWriteOnce. ` +
+        'Use replicas <= 1, or pass existingPvcName pointing at a ReadWriteMany claim.',
+    );
+  }
   const derived = deriveWorkspaceState(values as WorkspaceValues, name, props);
   const pvcName = (values.existingPvcName as string | undefined) ?? `${name}-state`;
 
