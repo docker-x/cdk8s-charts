@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { HelmConstruct, OC_CLI_IMAGE, simpleHash } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
@@ -133,19 +134,8 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       kind: 'ServiceAccount',
       metadata: { name: jobSaName, namespace: props.namespace },
     });
-    new ApiObject(this, 'provision-keys-role', {
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'Role',
-      metadata: { name: jobSaName, namespace: props.namespace },
-      rules: [
-        {
-          apiGroups: [''],
-          resources: ['configmaps'],
-          resourceNames: [payloadSecretName],
-          verbs: ['delete'],
-        },
-      ],
-    });
+    // The bound Role is created below, after createKeyProvisioningJob,
+    // so its resourceNames can cover the digest-versioned snapshot.
     new ApiObject(this, 'provision-keys-rb', {
       apiVersion: 'rbac.authorization.k8s.io/v1',
       kind: 'RoleBinding',
@@ -190,12 +180,14 @@ export class Litellm extends HelmConstruct<LitellmValues> {
 
     // Provision virtual keys via a post-deploy Job
     const virtualKeyMap: Record<string, string> = {};
+    let snapshot: { scriptConfigMapName: string; payloadSecretName: string } | undefined;
     if (props.virtualKeys && props.virtualKeys.length > 0) {
-      this.createKeyProvisioningJob(
+      snapshot = this.createKeyProvisioningJob(
         id,
         props.namespace,
         secretsName,
         payloadSecretName,
+        jobSaName,
         svcHost,
         svcPort,
         props.virtualKeys,
@@ -204,6 +196,36 @@ export class Litellm extends HelmConstruct<LitellmValues> {
         virtualKeyMap[vk.alias] = vk.key;
       }
     }
+
+    // Delete grants for the job SA: the legacy payload ConfigMap (always,
+    // so the cleanup Job can remove leftovers from pre-versioned deploys)
+    // plus the current digest's snapshot objects so the provisioning Job
+    // can self-clean. resourceNames tracks the current digest only, so a
+    // Job token can never touch another snapshot's objects.
+    const roleRules: unknown[] = [
+      {
+        apiGroups: [''],
+        resources: ['configmaps'],
+        resourceNames: snapshot
+          ? [payloadSecretName, snapshot.scriptConfigMapName]
+          : [payloadSecretName],
+        verbs: ['delete'],
+      },
+    ];
+    if (snapshot) {
+      roleRules.push({
+        apiGroups: [''],
+        resources: ['secrets'],
+        resourceNames: [snapshot.payloadSecretName],
+        verbs: ['delete'],
+      });
+    }
+    new ApiObject(this, 'provision-keys-role', {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'Role',
+      metadata: { name: jobSaName, namespace: props.namespace },
+      rules: roleRules,
+    });
 
     this.exports = {
       host: svcHost,
@@ -225,16 +247,22 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     namespace: string,
     secretsName: string,
     payloadSecretName: string,
+    jobSaName: string,
     host: string,
     port: number,
     keys: LitellmVirtualKey[],
-  ): void {
+  ): { scriptConfigMapName: string; payloadSecretName: string } {
     const baseUrl = `http://${host}:${port}`;
     const scriptConfigMapName = `${releaseName}-provision-keys-scripts`;
     const keySpecs: string[] = [];
     const payloadFiles: Record<string, string> = {};
 
     keys.forEach((vk, index) => {
+      // The alias is interpolated into a JSON -d body in the provisioning
+      // script — restrict to a safe charset so it cannot break the payload.
+      if (!/^[a-zA-Z0-9._-]+$/.test(vk.alias)) {
+        throw new Error(`Invalid virtual key alias "${vk.alias}": must match ^[a-zA-Z0-9._-]+$`);
+      }
       const fileName = `key-${index}.json`;
       payloadFiles[fileName] = JSON.stringify({
         key_alias: vk.alias,
@@ -245,12 +273,124 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       keySpecs.push(`${vk.alias}\t${fileName}`);
     });
 
+    const podSpec = {
+      initContainers: [
+        {
+          name: 'wait-for-litellm',
+          image: 'curlimages/curl:8.12.1',
+          command: ['sh', '/scripts/wait-for-litellm.sh'],
+          env: [
+            { name: 'LITELLM_BASE_URL', value: baseUrl },
+            { name: 'LITELLM_WAIT_RETRIES', value: '60' },
+            { name: 'LITELLM_WAIT_SLEEP_SECONDS', value: '5' },
+          ],
+          volumeMounts: [{ name: 'provision-scripts', mountPath: '/scripts', readOnly: true }],
+        },
+      ],
+      containers: [
+        {
+          name: 'provision',
+          image: 'curlimages/curl:8.12.1',
+          command: ['sh', '/scripts/provision-keys.sh'],
+          env: [
+            { name: 'LITELLM_BASE_URL', value: baseUrl },
+            {
+              name: 'LITELLM_MASTER_KEY',
+              valueFrom: {
+                secretKeyRef: { name: secretsName, key: 'master-key' },
+              },
+            },
+            { name: 'LITELLM_KEY_SPECS', value: keySpecs.join('\n') },
+            { name: 'LITELLM_KEY_DIR', value: '/keys' },
+            // Rewritten to digest-versioned names after the digest is
+            // computed — RBAC resources are deleted last so the Job does
+            // not lose its own delete grant mid-cleanup.
+            { name: 'PROVISION_CLEANUP_URLS', value: '' },
+          ],
+          volumeMounts: [
+            { name: 'provision-scripts', mountPath: '/scripts', readOnly: true },
+            { name: 'provision-data', mountPath: '/keys', readOnly: true },
+          ],
+        },
+      ],
+      restartPolicy: 'OnFailure',
+      serviceAccountName: jobSaName,
+      volumes: [
+        {
+          name: 'provision-scripts',
+          configMap: { name: scriptConfigMapName, defaultMode: 0o755 },
+        },
+        {
+          name: 'provision-data',
+          secret: { secretName: payloadSecretName },
+        },
+      ],
+    };
+
+    // Job pod templates are immutable — a template change on the same Job
+    // name fails apply while the old Job exists. The digest covers the
+    // pod spec (built with base names, so the digest itself is stable),
+    // the key payloads, and the provisioning scripts. Mounted resources
+    // are also versioned by the digest so a still-running previous Job
+    // reads its own snapshot instead of the newly applied content.
+    const jobDigest = createHash('sha256')
+      .update(
+        JSON.stringify({
+          podSpec,
+          payloadFiles,
+          scripts: [WAIT_FOR_LITELLM_SCRIPT, PROVISION_KEYS_SCRIPT],
+        }),
+      )
+      .digest('hex')
+      .slice(0, 12);
+    const versionedScriptConfigMapName = `${scriptConfigMapName}-${jobDigest}`;
+    const versionedPayloadSecretName = `${payloadSecretName}-${jobDigest}`;
+    podSpec.volumes = [
+      {
+        name: 'provision-scripts',
+        configMap: { name: versionedScriptConfigMapName, defaultMode: 0o755 },
+      },
+      {
+        name: 'provision-data',
+        secret: { secretName: versionedPayloadSecretName },
+      },
+    ];
+    // The Job self-deletes its digest snapshot after provisioning. The
+    // delete grant lives in the shared provision-keys Role (created in
+    // the constructor, resourceNames-scoped to these exact objects), so
+    // there is no RBAC object to self-destruct and no ordering problem.
+    const cleanupUrls = [
+      `/api/v1/namespaces/${namespace}/configmaps/${versionedScriptConfigMapName}`,
+      `/api/v1/namespaces/${namespace}/secrets/${versionedPayloadSecretName}`,
+    ];
+    for (const e of podSpec.containers[0].env) {
+      if (e.name === 'PROVISION_CLEANUP_URLS' && 'value' in e) {
+        e.value = cleanupUrls.join(' ');
+      }
+    }
+
+    const jobName = `${releaseName}-provision-keys-${jobDigest}`;
+    // Job names are capped at 63 chars and the Job controller appends a
+    // pod suffix (-xxxxx); cap the Job name at 56 so pods stay legal.
+    if (jobName.length > 56) {
+      throw new Error(
+        `Provision Job name "${jobName}" exceeds 56 characters (63-char pod limit ` +
+          'minus the -xxxxx suffix the Job controller appends). Use a shorter construct id.',
+      );
+    }
+
+    // Common label lets operators GC any orphaned snapshots (e.g. left
+    // behind when virtualKeys is removed entirely and no Job re-runs):
+    //   kubectl delete cm,secret -l litellm/provision-snapshot
+    const snapshotLabels = { 'litellm/provision-snapshot': 'true' };
+
     new ApiObject(this, 'provision-scripts', {
       apiVersion: 'v1',
       kind: 'ConfigMap',
       metadata: {
-        name: scriptConfigMapName,
+        name: versionedScriptConfigMapName,
         namespace,
+        labels: snapshotLabels,
       },
       data: {
         'wait-for-litellm.sh': WAIT_FOR_LITELLM_SCRIPT,
@@ -262,8 +402,9 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       apiVersion: 'v1',
       kind: 'Secret',
       metadata: {
-        name: payloadSecretName,
+        name: versionedPayloadSecretName,
         namespace,
+        labels: snapshotLabels,
       },
       stringData: payloadFiles,
     });
@@ -272,65 +413,19 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       apiVersion: 'batch/v1',
       kind: 'Job',
       metadata: {
-        name: `${releaseName}-provision-keys`,
+        name: jobName,
         namespace,
       },
       spec: {
         backoffLimit: 5,
         ttlSecondsAfterFinished: 300,
-        template: {
-          spec: {
-            initContainers: [
-              {
-                name: 'wait-for-litellm',
-                image: 'curlimages/curl:8.12.1',
-                command: ['sh', '/scripts/wait-for-litellm.sh'],
-                env: [
-                  { name: 'LITELLM_BASE_URL', value: baseUrl },
-                  { name: 'LITELLM_WAIT_RETRIES', value: '60' },
-                  { name: 'LITELLM_WAIT_SLEEP_SECONDS', value: '5' },
-                ],
-                volumeMounts: [
-                  { name: 'provision-scripts', mountPath: '/scripts', readOnly: true },
-                ],
-              },
-            ],
-            containers: [
-              {
-                name: 'provision',
-                image: 'curlimages/curl:8.12.1',
-                command: ['sh', '/scripts/provision-keys.sh'],
-                env: [
-                  { name: 'LITELLM_BASE_URL', value: baseUrl },
-                  {
-                    name: 'LITELLM_MASTER_KEY',
-                    valueFrom: {
-                      secretKeyRef: { name: secretsName, key: 'master-key' },
-                    },
-                  },
-                  { name: 'LITELLM_KEY_SPECS', value: keySpecs.join('\n') },
-                  { name: 'LITELLM_KEY_DIR', value: '/keys' },
-                ],
-                volumeMounts: [
-                  { name: 'provision-scripts', mountPath: '/scripts', readOnly: true },
-                  { name: 'provision-data', mountPath: '/keys', readOnly: true },
-                ],
-              },
-            ],
-            restartPolicy: 'OnFailure',
-            volumes: [
-              {
-                name: 'provision-scripts',
-                configMap: { name: scriptConfigMapName, defaultMode: 0o755 },
-              },
-              {
-                name: 'provision-data',
-                secret: { secretName: payloadSecretName },
-              },
-            ],
-          },
-        },
+        template: { spec: podSpec },
       },
     });
+
+    return {
+      scriptConfigMapName: versionedScriptConfigMapName,
+      payloadSecretName: versionedPayloadSecretName,
+    };
   }
 }
