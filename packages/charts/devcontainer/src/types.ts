@@ -116,8 +116,8 @@ export interface Exports {
   serviceName: string;
   /** Deployment name. */
   deploymentName: string;
-  /** SSH keys Secret name. */
-  secretName: string;
+  /** SSH keys Secret name. Absent when SSH keys are not configured. */
+  secretName?: string;
   /** Names of the Secret objects this chart emits — for tf-deployer resourceNames scoping. */
   managedSecretNames: string[];
 }

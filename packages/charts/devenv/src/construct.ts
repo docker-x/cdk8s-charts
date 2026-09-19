@@ -62,7 +62,7 @@ export class Devenv extends HelmConstruct<Values> {
       pvcName,
       serviceName: values.name as string,
       deploymentName: values.name as string,
-      secretName: derived.sshSecretName ?? '',
+      secretName: derived.sshSecretName,
       managedSecretNames: workspaceManagedSecretNames(values, values.name as string, derived),
     };
   }
