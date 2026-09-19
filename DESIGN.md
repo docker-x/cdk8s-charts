@@ -1042,7 +1042,7 @@ following the same pattern as `@cdk8s-charts/devpod` and `@cdk8s-charts/gascity`
 | `pvcName` | `{name}-state` | PVC name |
 | `serviceName` | `{name}` | Service name |
 | `deploymentName` | `{name}` | Deployment name |
-| `secretName` | `{name}-ssh-keys` or supplied | SSH keys Secret name |
+| `secretName` | `{name}-ssh-keys` or supplied; absent without SSH keys | SSH keys Secret name |
 
 **Resources created:**
 
@@ -1185,7 +1185,7 @@ following the same pattern as `@cdk8s-charts/devcontainer`.
 | `pvcName` | `{name}-state` | PVC name |
 | `serviceName` | `{name}` | Service name |
 | `deploymentName` | `{name}` | Deployment name |
-| `secretName` | `{name}-ssh-keys` or supplied | SSH keys Secret name |
+| `secretName` | `{name}-ssh-keys` or supplied; absent without SSH keys | SSH keys Secret name |
 
 **Resources created:**
 
