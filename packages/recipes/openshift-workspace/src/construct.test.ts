@@ -43,6 +43,13 @@ describe('OpenShiftWorkspace recipe', () => {
     );
   });
 
+  it('throws when env collides with a chart-managed name', () => {
+    expect(() => synth({ ...baseProps, env: { DEVCONTAINER: 'false' } })).toThrow(/chart-managed/);
+    expect(() => synth({ ...baseProps, env: { PASEO_HOSTNAMES: 'evil.example' } })).toThrow(
+      /chart-managed/,
+    );
+  });
+
   it('throws on a values sidecar colliding with a recipe-injected container name', () => {
     expect(() =>
       synth({ ...baseProps, values: { sidecars: [{ name: 'oauth-proxy', image: 'x' }] } }),
