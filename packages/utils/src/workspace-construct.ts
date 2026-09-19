@@ -539,7 +539,7 @@ export function initWorkspaceChart(
   );
   validateHomeMountPath(values.homeMountPath as string);
   const replicas = (values.replicas as number | undefined) ?? 1;
-  if (replicas > 1 && values.existingPvcName === undefined) {
+  if (replicas > 1 && !values.existingPvcName) {
     // The chart-created workspace-state PVC is always ReadWriteOnce —
     // multiple replicas can never all attach it. An existingPvcName may be
     // RWX, so the guard only applies to the managed PVC.
