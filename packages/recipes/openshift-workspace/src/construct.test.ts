@@ -33,6 +33,10 @@ describe('OpenShiftWorkspace recipe', () => {
     );
   });
 
+  it('throws on replicas > 1 with the chart-managed RWO PVC', () => {
+    expect(() => synth({ ...baseProps, values: { replicas: 2 } })).toThrow(/ReadWriteOnce/);
+  });
+
   it('throws on oauthCookieSecret that does not decode to 16/24/32 bytes', () => {
     const bad = Buffer.from('not-sixteen-or-32-bytes-at-all!', 'utf8').toString('base64');
     expect(() => synth({ ...baseProps, oauthCookieSecret: bad })).toThrow(
