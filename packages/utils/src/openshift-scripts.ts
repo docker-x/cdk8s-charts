@@ -27,6 +27,13 @@ export function buildKeepaliveScript(): string {
     'fi',
     `STATUS=$(oc get pod "$POD" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || true)`,
     'if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Succeeded" ] || [ "$STATUS" = "Unknown" ]; then',
+    '  if [ "${REPLICAS}" -gt 1 ]; then',
+    // The bounce scales the whole Deployment, which would kill healthy
+    // pods — and there is no scoped way to remove one pod without
+    // pods/delete. Warn and leave the terminal pod for the operator.
+    '    echo "WARNING: pod $POD is terminal ($STATUS) on a $REPLICAS-replica workspace — leaving it (bounce would kill healthy replicas)."',
+    '    exit 0',
+    '  fi',
     '  echo "Pod $POD is in terminal state ($STATUS). Bouncing Deployment to recreate it."',
     // A ReplicaSet will not replace a terminal pod while it still exists,
     // so the pod must go — but scaling to 0 removes it without granting
