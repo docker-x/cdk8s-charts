@@ -53,11 +53,11 @@ printf '%s\n' "${LITELLM_KEY_SPECS}" | while IFS="${tab}" read -r alias file_nam
   echo "---"
 done
 
-# Self-cleanup: delete this Job's digest-versioned snapshot (ConfigMap,
-# Secret, Role, RoleBinding) so config changes do not accumulate stale
-# objects holding old key payloads. RBAC objects go last — deleting the
-# Role first would revoke the grant mid-cleanup. Warn-only: cleanup
-# failure must not fail provisioning.
+# Self-cleanup: delete this Job's digest-versioned snapshot (ConfigMap
+# and Secret) so config changes do not accumulate stale objects holding
+# old key payloads. The delete grant lives in the shared provision-keys
+# Role, which the Job does not remove. Warn-only: cleanup failure must
+# not fail provisioning.
 if [ -n "${PROVISION_CLEANUP_URLS:-}" ]; then
   sa_dir=/var/run/secrets/kubernetes.io/serviceaccount
   sa_token="$(cat "${sa_dir}/token")"

@@ -134,19 +134,8 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       kind: 'ServiceAccount',
       metadata: { name: jobSaName, namespace: props.namespace },
     });
-    new ApiObject(this, 'provision-keys-role', {
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'Role',
-      metadata: { name: jobSaName, namespace: props.namespace },
-      rules: [
-        {
-          apiGroups: [''],
-          resources: ['configmaps'],
-          resourceNames: [payloadSecretName],
-          verbs: ['delete'],
-        },
-      ],
-    });
+    // The bound Role is created below, after createKeyProvisioningJob,
+    // so its resourceNames can cover the digest-versioned snapshot.
     new ApiObject(this, 'provision-keys-rb', {
       apiVersion: 'rbac.authorization.k8s.io/v1',
       kind: 'RoleBinding',
@@ -191,8 +180,9 @@ export class Litellm extends HelmConstruct<LitellmValues> {
 
     // Provision virtual keys via a post-deploy Job
     const virtualKeyMap: Record<string, string> = {};
+    let snapshot: { scriptConfigMapName: string; payloadSecretName: string } | undefined;
     if (props.virtualKeys && props.virtualKeys.length > 0) {
-      this.createKeyProvisioningJob(
+      snapshot = this.createKeyProvisioningJob(
         id,
         props.namespace,
         secretsName,
@@ -206,6 +196,36 @@ export class Litellm extends HelmConstruct<LitellmValues> {
         virtualKeyMap[vk.alias] = vk.key;
       }
     }
+
+    // Delete grants for the job SA: the legacy payload ConfigMap (always,
+    // so the cleanup Job can remove leftovers from pre-versioned deploys)
+    // plus the current digest's snapshot objects so the provisioning Job
+    // can self-clean. resourceNames tracks the current digest only, so a
+    // Job token can never touch another snapshot's objects.
+    const roleRules: unknown[] = [
+      {
+        apiGroups: [''],
+        resources: ['configmaps'],
+        resourceNames: snapshot
+          ? [payloadSecretName, snapshot.scriptConfigMapName]
+          : [payloadSecretName],
+        verbs: ['delete'],
+      },
+    ];
+    if (snapshot) {
+      roleRules.push({
+        apiGroups: [''],
+        resources: ['secrets'],
+        resourceNames: [snapshot.payloadSecretName],
+        verbs: ['delete'],
+      });
+    }
+    new ApiObject(this, 'provision-keys-role', {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'Role',
+      metadata: { name: jobSaName, namespace: props.namespace },
+      rules: roleRules,
+    });
 
     this.exports = {
       host: svcHost,
@@ -231,10 +251,9 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     host: string,
     port: number,
     keys: LitellmVirtualKey[],
-  ): void {
+  ): { scriptConfigMapName: string; payloadSecretName: string } {
     const baseUrl = `http://${host}:${port}`;
     const scriptConfigMapName = `${releaseName}-provision-keys-scripts`;
-    const rbacName = `${releaseName}-provision-keys-rbac`;
     const keySpecs: string[] = [];
     const payloadFiles: Record<string, string> = {};
 
@@ -326,7 +345,6 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       .slice(0, 12);
     const versionedScriptConfigMapName = `${scriptConfigMapName}-${jobDigest}`;
     const versionedPayloadSecretName = `${payloadSecretName}-${jobDigest}`;
-    const versionedRbacName = `${rbacName}-${jobDigest}`;
     podSpec.volumes = [
       {
         name: 'provision-scripts',
@@ -337,11 +355,13 @@ export class Litellm extends HelmConstruct<LitellmValues> {
         secret: { secretName: versionedPayloadSecretName },
       },
     ];
+    // The Job self-deletes its digest snapshot after provisioning. The
+    // delete grant lives in the shared provision-keys Role (created in
+    // the constructor, resourceNames-scoped to these exact objects), so
+    // there is no RBAC object to self-destruct and no ordering problem.
     const cleanupUrls = [
       `/api/v1/namespaces/${namespace}/configmaps/${versionedScriptConfigMapName}`,
       `/api/v1/namespaces/${namespace}/secrets/${versionedPayloadSecretName}`,
-      `/apis/rbac.authorization.k8s.io/v1/namespaces/${namespace}/roles/${versionedRbacName}`,
-      `/apis/rbac.authorization.k8s.io/v1/namespaces/${namespace}/rolebindings/${versionedRbacName}`,
     ];
     for (const e of podSpec.containers[0].env) {
       if (e.name === 'PROVISION_CLEANUP_URLS' && 'value' in e) {
@@ -359,50 +379,10 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       );
     }
 
-    // Digest-scoped delete grant so the Job can remove its own snapshot
-    // (mounted ConfigMap/Secret plus this Role/Binding) once provisioning
-    // succeeds — resourceNames keeps the SA from touching anything else.
     // Common label lets operators GC any orphaned snapshots (e.g. left
     // behind when virtualKeys is removed entirely and no Job re-runs):
-    //   kubectl delete cm,secret,role,rolebinding -l litellm/provision-snapshot
+    //   kubectl delete cm,secret -l litellm/provision-snapshot
     const snapshotLabels = { 'litellm/provision-snapshot': 'true' };
-
-    new ApiObject(this, 'provision-keys-role', {
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'Role',
-      metadata: { name: versionedRbacName, namespace, labels: snapshotLabels },
-      rules: [
-        {
-          apiGroups: [''],
-          resources: ['configmaps'],
-          resourceNames: [versionedScriptConfigMapName],
-          verbs: ['delete'],
-        },
-        {
-          apiGroups: [''],
-          resources: ['secrets'],
-          resourceNames: [versionedPayloadSecretName],
-          verbs: ['delete'],
-        },
-        {
-          apiGroups: ['rbac.authorization.k8s.io'],
-          resources: ['roles', 'rolebindings'],
-          resourceNames: [versionedRbacName],
-          verbs: ['delete'],
-        },
-      ],
-    });
-    new ApiObject(this, 'provision-keys-rb', {
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'RoleBinding',
-      metadata: { name: versionedRbacName, namespace, labels: snapshotLabels },
-      roleRef: {
-        apiGroup: 'rbac.authorization.k8s.io',
-        kind: 'Role',
-        name: versionedRbacName,
-      },
-      subjects: [{ kind: 'ServiceAccount', name: jobSaName, namespace }],
-    });
 
     new ApiObject(this, 'provision-scripts', {
       apiVersion: 'v1',
@@ -442,5 +422,10 @@ export class Litellm extends HelmConstruct<LitellmValues> {
         template: { spec: podSpec },
       },
     });
+
+    return {
+      scriptConfigMapName: versionedScriptConfigMapName,
+      payloadSecretName: versionedPayloadSecretName,
+    };
   }
 }
