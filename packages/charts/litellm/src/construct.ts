@@ -268,68 +268,72 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       stringData: payloadFiles,
     });
 
+    const podSpec = {
+      initContainers: [
+        {
+          name: 'wait-for-litellm',
+          image: 'curlimages/curl:8.12.1',
+          command: ['sh', '/scripts/wait-for-litellm.sh'],
+          env: [
+            { name: 'LITELLM_BASE_URL', value: baseUrl },
+            { name: 'LITELLM_WAIT_RETRIES', value: '60' },
+            { name: 'LITELLM_WAIT_SLEEP_SECONDS', value: '5' },
+          ],
+          volumeMounts: [{ name: 'provision-scripts', mountPath: '/scripts', readOnly: true }],
+        },
+      ],
+      containers: [
+        {
+          name: 'provision',
+          image: 'curlimages/curl:8.12.1',
+          command: ['sh', '/scripts/provision-keys.sh'],
+          env: [
+            { name: 'LITELLM_BASE_URL', value: baseUrl },
+            {
+              name: 'LITELLM_MASTER_KEY',
+              valueFrom: {
+                secretKeyRef: { name: secretsName, key: 'master-key' },
+              },
+            },
+            { name: 'LITELLM_KEY_SPECS', value: keySpecs.join('\n') },
+            { name: 'LITELLM_KEY_DIR', value: '/keys' },
+          ],
+          volumeMounts: [
+            { name: 'provision-scripts', mountPath: '/scripts', readOnly: true },
+            { name: 'provision-data', mountPath: '/keys', readOnly: true },
+          ],
+        },
+      ],
+      restartPolicy: 'OnFailure',
+      volumes: [
+        {
+          name: 'provision-scripts',
+          configMap: { name: scriptConfigMapName, defaultMode: 0o755 },
+        },
+        {
+          name: 'provision-data',
+          secret: { secretName: payloadSecretName },
+        },
+      ],
+    };
+
+    // Job pod templates are immutable — a template change on the same Job
+    // name fails apply while the old Job exists. The hash suffix also
+    // covers payloadFiles (mounted via Secret, invisible to the template)
+    // so a changed key payload re-runs provisioning under a new name.
+    const jobHash = simpleHash(JSON.stringify({ podSpec, payloadFiles }));
+
     new ApiObject(this, 'provision-keys', {
       apiVersion: 'batch/v1',
       kind: 'Job',
       metadata: {
-        name: `${releaseName}-provision-keys`,
+        name: `${releaseName}-provision-keys-${jobHash}`,
         namespace,
       },
       spec: {
         backoffLimit: 5,
         ttlSecondsAfterFinished: 300,
-        template: {
-          spec: {
-            initContainers: [
-              {
-                name: 'wait-for-litellm',
-                image: 'curlimages/curl:8.12.1',
-                command: ['sh', '/scripts/wait-for-litellm.sh'],
-                env: [
-                  { name: 'LITELLM_BASE_URL', value: baseUrl },
-                  { name: 'LITELLM_WAIT_RETRIES', value: '60' },
-                  { name: 'LITELLM_WAIT_SLEEP_SECONDS', value: '5' },
-                ],
-                volumeMounts: [
-                  { name: 'provision-scripts', mountPath: '/scripts', readOnly: true },
-                ],
-              },
-            ],
-            containers: [
-              {
-                name: 'provision',
-                image: 'curlimages/curl:8.12.1',
-                command: ['sh', '/scripts/provision-keys.sh'],
-                env: [
-                  { name: 'LITELLM_BASE_URL', value: baseUrl },
-                  {
-                    name: 'LITELLM_MASTER_KEY',
-                    valueFrom: {
-                      secretKeyRef: { name: secretsName, key: 'master-key' },
-                    },
-                  },
-                  { name: 'LITELLM_KEY_SPECS', value: keySpecs.join('\n') },
-                  { name: 'LITELLM_KEY_DIR', value: '/keys' },
-                ],
-                volumeMounts: [
-                  { name: 'provision-scripts', mountPath: '/scripts', readOnly: true },
-                  { name: 'provision-data', mountPath: '/keys', readOnly: true },
-                ],
-              },
-            ],
-            restartPolicy: 'OnFailure',
-            volumes: [
-              {
-                name: 'provision-scripts',
-                configMap: { name: scriptConfigMapName, defaultMode: 0o755 },
-              },
-              {
-                name: 'provision-data',
-                secret: { secretName: payloadSecretName },
-              },
-            ],
-          },
-        },
+        template: { spec: podSpec },
       },
     });
   }
