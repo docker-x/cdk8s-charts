@@ -43,6 +43,12 @@ describe('OpenShiftWorkspace recipe', () => {
     );
   });
 
+  it('throws on a values sidecar colliding with a recipe-injected container name', () => {
+    expect(() =>
+      synth({ ...baseProps, values: { sidecars: [{ name: 'oauth-proxy', image: 'x' }] } }),
+    ).toThrow(/Duplicate container name/);
+  });
+
   it('allows replicas > 1 when existingPvcName is set', () => {
     const m = synth({
       ...baseProps,
