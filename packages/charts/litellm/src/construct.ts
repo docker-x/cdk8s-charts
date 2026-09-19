@@ -362,10 +362,15 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     // Digest-scoped delete grant so the Job can remove its own snapshot
     // (mounted ConfigMap/Secret plus this Role/Binding) once provisioning
     // succeeds — resourceNames keeps the SA from touching anything else.
+    // Common label lets operators GC any orphaned snapshots (e.g. left
+    // behind when virtualKeys is removed entirely and no Job re-runs):
+    //   kubectl delete cm,secret,role,rolebinding -l litellm/provision-snapshot
+    const snapshotLabels = { 'litellm/provision-snapshot': 'true' };
+
     new ApiObject(this, 'provision-keys-role', {
       apiVersion: 'rbac.authorization.k8s.io/v1',
       kind: 'Role',
-      metadata: { name: versionedRbacName, namespace },
+      metadata: { name: versionedRbacName, namespace, labels: snapshotLabels },
       rules: [
         {
           apiGroups: [''],
@@ -390,7 +395,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     new ApiObject(this, 'provision-keys-rb', {
       apiVersion: 'rbac.authorization.k8s.io/v1',
       kind: 'RoleBinding',
-      metadata: { name: versionedRbacName, namespace },
+      metadata: { name: versionedRbacName, namespace, labels: snapshotLabels },
       roleRef: {
         apiGroup: 'rbac.authorization.k8s.io',
         kind: 'Role',
@@ -405,6 +410,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       metadata: {
         name: versionedScriptConfigMapName,
         namespace,
+        labels: snapshotLabels,
       },
       data: {
         'wait-for-litellm.sh': WAIT_FOR_LITELLM_SCRIPT,
@@ -418,6 +424,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       metadata: {
         name: versionedPayloadSecretName,
         namespace,
+        labels: snapshotLabels,
       },
       stringData: payloadFiles,
     });
