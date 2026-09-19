@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { HelmConstruct, OC_CLI_IMAGE, simpleHash } from '@cdk8s-charts/utils';
 import { ApiObject } from 'cdk8s';
@@ -235,6 +236,11 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     const payloadFiles: Record<string, string> = {};
 
     keys.forEach((vk, index) => {
+      // The alias is interpolated into a JSON -d body in the provisioning
+      // script — restrict to a safe charset so it cannot break the payload.
+      if (!/^[a-zA-Z0-9._-]+$/.test(vk.alias)) {
+        throw new Error(`Invalid virtual key alias "${vk.alias}": must match ^[a-zA-Z0-9._-]+$`);
+      }
       const fileName = `key-${index}.json`;
       payloadFiles[fileName] = JSON.stringify({
         key_alias: vk.alias,
@@ -318,16 +324,35 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     };
 
     // Job pod templates are immutable — a template change on the same Job
-    // name fails apply while the old Job exists. The hash suffix also
-    // covers payloadFiles (mounted via Secret, invisible to the template)
-    // so a changed key payload re-runs provisioning under a new name.
-    const jobHash = simpleHash(JSON.stringify({ podSpec, payloadFiles }));
+    // name fails apply while the old Job exists. The digest covers the
+    // pod spec, the key payloads (mounted via Secret, invisible to the
+    // template), and the provisioning scripts (mounted via a static-named
+    // ConfigMap), so any behavioral change re-runs under a new Job name.
+    const jobDigest = createHash('sha256')
+      .update(
+        JSON.stringify({
+          podSpec,
+          payloadFiles,
+          scripts: [WAIT_FOR_LITELLM_SCRIPT, PROVISION_KEYS_SCRIPT],
+        }),
+      )
+      .digest('hex')
+      .slice(0, 12);
+    const jobName = `${releaseName}-provision-keys-${jobDigest}`;
+    // Job names are capped at 63 chars and the Job controller appends a
+    // pod suffix (-xxxxx); cap the Job name at 56 so pods stay legal.
+    if (jobName.length > 56) {
+      throw new Error(
+        `Provision Job name "${jobName}" exceeds 56 characters (63-char pod limit ` +
+          'minus the -xxxxx suffix the Job controller appends). Use a shorter construct id.',
+      );
+    }
 
     new ApiObject(this, 'provision-keys', {
       apiVersion: 'batch/v1',
       kind: 'Job',
       metadata: {
-        name: `${releaseName}-provision-keys-${jobHash}`,
+        name: jobName,
         namespace,
       },
       spec: {
