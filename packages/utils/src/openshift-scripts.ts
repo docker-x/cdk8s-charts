@@ -33,9 +33,11 @@ export function buildKeepaliveScript(): string {
     // this SA pods/delete on every pod in the namespace. Wait for the pod
     // to disappear before scaling back up (oc wait needs watch, which
     // this SA lacks, so poll with get).
-    '  oc scale deployment "$WORKSPACE_NAME" -n "$NAMESPACE" --replicas=0 || true',
+    '  oc scale deployment "$WORKSPACE_NAME" -n "$NAMESPACE" --replicas=0 || { echo "Fatal: scale-down failed"; exit 1; }',
     '  for _ in $(seq 1 30); do oc get pod "$POD" -n "$NAMESPACE" >/dev/null 2>&1 || break; sleep 2; done',
-    '  oc scale deployment "$WORKSPACE_NAME" -n "$NAMESPACE" --replicas=1 || true',
+    // Restore the replica count captured above — an existingPvcName
+    // workspace may legitimately run more than one.
+    '  oc scale deployment "$WORKSPACE_NAME" -n "$NAMESPACE" --replicas="${REPLICAS}" || { echo "Fatal: scale-up failed"; exit 1; }',
     'elif [ "$STATUS" = "Running" ]; then',
     '  echo "Pod $POD is Running. All good."',
     'else',

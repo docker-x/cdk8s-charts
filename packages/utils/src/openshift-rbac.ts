@@ -28,7 +28,9 @@ export function createKeepaliveRbac(scope: Construct, name: string, namespace: s
         apiGroups: ['apps'],
         resources: ['deployments', 'deployments/scale'],
         resourceNames: [name],
-        verbs: ['get', 'patch'],
+        // oc scale performs GET + PUT on the scale subresource — update
+        // is required, patch alone is Forbidden.
+        verbs: ['get', 'patch', 'update'],
       },
     ],
   });
