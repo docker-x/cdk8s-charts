@@ -8,6 +8,7 @@ import type {
   ResolvedTfDeployer,
 } from '@cdk8s-charts/utils';
 import {
+  assertNoChartManagedEnv,
   buildExtraVolumes,
   buildLifecycle,
   buildOauthProxySidecar,
@@ -90,6 +91,7 @@ export class OpenShiftDevenv extends Chart {
     const oauthProxySidecar = buildOauthProxySidecar(namespace, saName, paseoPort);
     const lifecycle = buildLifecycle(paseoAutoResume, homeMountPath, 'devenv');
     const workspaceEnv = buildWorkspaceEnv(name, namespace, appsDomain, props.env, 'devenv');
+    assertNoChartManagedEnv(props.values?.env as Record<string, unknown> | undefined, 'devenv');
     const podAnnotations = buildPodAnnotations(paseoAutoResume, 'devenv', paseoPort);
     const devenv = new Devenv(
       this,
