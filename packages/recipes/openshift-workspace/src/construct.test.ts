@@ -15,7 +15,7 @@ const baseProps = {
   image: 'ghcr.io/org/workspace:latest',
   appsDomain: 'apps.example.com',
   sshAuthorizedKeys: 'ssh-ed25519 AAAA test',
-  oauthCookieSecret: Buffer.from('super-secret-cookie-value-32-bytes!!', 'utf8').toString('base64'),
+  oauthCookieSecret: Buffer.from('0123456789abcdef0123456789abcdef', 'utf8').toString('base64'),
 };
 
 describe('OpenShiftWorkspace recipe', () => {
@@ -30,6 +30,13 @@ describe('OpenShiftWorkspace recipe', () => {
   it('throws on invalid homeMountPath with shell metacharacters', () => {
     expect(() => synth({ ...baseProps, homeMountPath: '/home/vscode; rm -rf /' })).toThrow(
       /homeMountPath/,
+    );
+  });
+
+  it('throws on oauthCookieSecret that does not decode to 16/24/32 bytes', () => {
+    const bad = Buffer.from('not-sixteen-or-32-bytes-at-all!', 'utf8').toString('base64');
+    expect(() => synth({ ...baseProps, oauthCookieSecret: bad })).toThrow(
+      /oauthCookieSecret.*16, 24, or 32/,
     );
   });
 

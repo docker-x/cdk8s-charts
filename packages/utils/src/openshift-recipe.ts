@@ -141,6 +141,18 @@ export function createOAuthCookieSecret(
   namespace: string,
   oauthCookieSecret: string,
 ): string {
+  // oauth-proxy requires the decoded cookie secret to be exactly 16, 24,
+  // or 32 bytes (AES-128/192/256). The prop is base64-encoded; validate
+  // here so a bad length fails at synth time instead of crash-looping.
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(oauthCookieSecret)) {
+    throw new Error('Invalid oauthCookieSecret: must be valid base64');
+  }
+  const decodedLen = Buffer.from(oauthCookieSecret, 'base64').length;
+  if (![16, 24, 32].includes(decodedLen)) {
+    throw new Error(
+      `Invalid oauthCookieSecret: base64-decoded length must be 16, 24, or 32 bytes (got ${decodedLen})`,
+    );
+  }
   const secretName = `${name}-oauth-cookie`;
   new ApiObject(scope, 'oauth-cookie-secret', {
     apiVersion: 'v1',
