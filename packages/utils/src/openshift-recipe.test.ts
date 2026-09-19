@@ -17,8 +17,12 @@ describe('assertNoChartManagedEnv', () => {
   });
 
   it('allows TERM and HUSKY overrides', () => {
-    const env = buildWorkspaceEnv('w', 'ns', 'apps.example.com', { TERM: 'xterm-kitty' });
+    const env = buildWorkspaceEnv('w', 'ns', 'apps.example.com', {
+      TERM: 'xterm-kitty',
+      HUSKY: '1',
+    });
     expect(env.TERM).toBe('xterm-kitty');
+    expect(env.HUSKY).toBe('1');
     expect(env.DEVCONTAINER).toBe('true');
   });
 });
