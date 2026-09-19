@@ -20,10 +20,14 @@ export function createKeepaliveRbac(scope: Construct, name: string, namespace: s
     kind: 'Role',
     metadata: { name: saName, namespace, labels: componentLabels(name, 'keepalive') },
     rules: [
-      { apiGroups: [''], resources: ['pods'], verbs: ['get', 'list', 'delete'] },
+      // Read-only pods access — recovery bounces the Deployment via
+      // scale 0→1 instead of deleting pods, so this SA cannot delete
+      // other workloads' pods in a shared namespace.
+      { apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] },
       {
         apiGroups: ['apps'],
         resources: ['deployments', 'deployments/scale'],
+        resourceNames: [name],
         verbs: ['get', 'patch'],
       },
     ],

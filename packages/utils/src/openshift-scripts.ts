@@ -27,8 +27,12 @@ export function buildKeepaliveScript(): string {
     'fi',
     `STATUS=$(oc get pod "$POD" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || true)`,
     'if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Succeeded" ] || [ "$STATUS" = "Unknown" ]; then',
-    '  echo "Pod $POD is in terminal state ($STATUS). Deleting so Deployment recreates it."',
-    '  oc delete pod "$POD" -n "$NAMESPACE" || true',
+    '  echo "Pod $POD is in terminal state ($STATUS). Bouncing Deployment to recreate it."',
+    // A ReplicaSet will not replace a terminal pod while it still exists,
+    // so the pod must go — but scaling to 0 removes it without granting
+    // this SA pods/delete on every pod in the namespace.
+    '  oc scale deployment "$WORKSPACE_NAME" -n "$NAMESPACE" --replicas=0 || true',
+    '  oc scale deployment "$WORKSPACE_NAME" -n "$NAMESPACE" --replicas=1 || true',
     'elif [ "$STATUS" = "Running" ]; then',
     '  echo "Pod $POD is Running. All good."',
     'else',
