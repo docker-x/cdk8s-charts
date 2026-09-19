@@ -394,14 +394,15 @@ function buildWorkspacePodSpec(
   const seenContainers = new Set<string>();
   for (const c of containers) {
     const cname = c.name as string | undefined;
-    if (cname !== undefined) {
-      if (seenContainers.has(cname)) {
-        throw new Error(
-          `Duplicate container name "${cname}": sidecars must not collide with the workspace container or each other`,
-        );
-      }
-      seenContainers.add(cname);
+    if (!cname) {
+      throw new Error('Invalid sidecar: every container requires a non-empty name');
     }
+    if (seenContainers.has(cname)) {
+      throw new Error(
+        `Duplicate container name "${cname}": sidecars must not collide with the workspace container or each other`,
+      );
+    }
+    seenContainers.add(cname);
   }
   return {
     serviceAccountName: d.saName,
