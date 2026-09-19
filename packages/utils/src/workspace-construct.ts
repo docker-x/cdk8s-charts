@@ -164,9 +164,10 @@ export function createWorkspacePvc(
         'app.kubernetes.io/component': 'workspace-state',
         'app.kubernetes.io/managed-by': 'cdk8s',
       },
-      // No helm.sh/resource-policy annotation: manifests are applied via
-      // kubectl_manifest (Terraform), which ignores Helm-CLI annotations.
-      // PVC lifetime is governed by the Terraform stack, not annotations.
+      // No helm.sh/resource-policy annotation: nothing in the apply path
+      // (kubectl_manifest / Terraform) implements Helm's keep-on-delete
+      // semantics, so the annotation had no retention effect. PVC lifetime
+      // is governed by the Terraform stack, not annotations.
     },
     spec: {
       accessModes: ['ReadWriteOnce'],
