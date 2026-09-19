@@ -1043,6 +1043,7 @@ following the same pattern as `@cdk8s-charts/devpod` and `@cdk8s-charts/gascity`
 | `serviceName` | `{name}` | Service name |
 | `deploymentName` | `{name}` | Deployment name |
 | `secretName` | `{name}-ssh-keys` or supplied; absent without SSH keys | SSH keys Secret name |
+| `managedSecretNames` | names of emitted Secrets | Secret names for tf-deployer `resourceNames` scoping |
 
 **Resources created:**
 
@@ -1186,6 +1187,7 @@ following the same pattern as `@cdk8s-charts/devcontainer`.
 | `serviceName` | `{name}` | Service name |
 | `deploymentName` | `{name}` | Deployment name |
 | `secretName` | `{name}-ssh-keys` or supplied; absent without SSH keys | SSH keys Secret name |
+| `managedSecretNames` | names of emitted Secrets | Secret names for tf-deployer `resourceNames` scoping |
 
 **Resources created:**
 
