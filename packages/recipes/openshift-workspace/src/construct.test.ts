@@ -37,6 +37,22 @@ describe('OpenShiftWorkspace recipe', () => {
     expect(() => synth({ ...baseProps, values: { replicas: 2 } })).toThrow(/ReadWriteOnce/);
   });
 
+  it('throws on non-numeric replicas', () => {
+    expect(() => synth({ ...baseProps, values: { replicas: 'abc' } })).toThrow(
+      /non-negative integer/,
+    );
+  });
+
+  it('allows replicas > 1 when existingPvcName is set', () => {
+    const m = synth({
+      ...baseProps,
+      existingPvcName: 'shared-rwx-pvc',
+      values: { replicas: 2 },
+    });
+    const dep = findManifest(m, 'Deployment', 'workspace');
+    expect((dep.spec as { replicas: number }).replicas).toBe(2);
+  });
+
   it('throws on oauthCookieSecret that does not decode to 16/24/32 bytes', () => {
     const bad = Buffer.from('not-sixteen-or-32-bytes-at-all!', 'utf8').toString('base64');
     expect(() => synth({ ...baseProps, oauthCookieSecret: bad })).toThrow(

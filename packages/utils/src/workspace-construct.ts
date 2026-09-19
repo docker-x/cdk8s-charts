@@ -539,6 +539,9 @@ export function initWorkspaceChart(
   );
   validateHomeMountPath(values.homeMountPath as string);
   const replicas = (values.replicas as number | undefined) ?? 1;
+  if (typeof replicas !== 'number' || !Number.isInteger(replicas) || replicas < 0) {
+    throw new Error(`Invalid replicas "${replicas}": must be a non-negative integer`);
+  }
   if (replicas > 1 && !values.existingPvcName) {
     // The chart-created workspace-state PVC is always ReadWriteOnce —
     // multiple replicas can never all attach it. An existingPvcName may be
