@@ -1,8 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { filterByKind, findManifest, type Manifest, synthChart } from '@cdk8s-charts/utils';
 import { Chart, Testing } from 'cdk8s';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -42,15 +40,24 @@ const isLinux = process.platform === 'linux';
 /** Temp dirs created by the fixture helpers — removed after each test. */
 const tmpDirs: string[] = [];
 
-afterEach(async () => {
-  await Promise.all(tmpDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) {
+    execFileSync('rm', ['-rf', dir]);
+  }
 });
 
-/** mkdtemp variant that registers the dir for afterEach cleanup. */
-async function trackedTmpDir(prefix: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), prefix));
+/** mktemp -d variant that registers the dir for afterEach cleanup. */
+function mktempDir(prefix: string): string {
+  const dir = execFileSync('mktemp', ['-d', '-p', tmpdir(), `${prefix}XXXXXX`], {
+    encoding: 'utf8',
+  }).trim();
   tmpDirs.push(dir);
   return dir;
+}
+
+/** Run /bin/sh -c <script> with a cwd, returning stdout. */
+function sh(script: string, cwd: string): string {
+  return execFileSync('/bin/sh', ['-c', script], { cwd, encoding: 'utf8' });
 }
 
 /** Synthesized entrypoint.sh from the runner-scripts ConfigMap. */
@@ -67,18 +74,21 @@ function shebangGuardBlock(): string {
 }
 
 /** Runner-script fixtures with #!/bin/bash shebangs in a temp dir. */
-async function shebangFixtures(): Promise<string> {
-  const dir = await trackedTmpDir('gha-shebang-');
-  await writeFile(join(dir, 'run.sh'), '#!/bin/bash\necho run\n');
-  await writeFile(join(dir, 'run-helper.sh.template'), '#!/bin/bash\necho helper\n');
-  await mkdir(join(dir, 'bin'));
-  await writeFile(join(dir, 'bin', 'env.sh'), '#!/bin/bash\necho env\n');
+function shebangFixtures(): string {
+  const dir = mktempDir('gha-shebang-');
+  sh(
+    "printf '#!/bin/bash\\necho run\\n' > run.sh\n" +
+      "printf '#!/bin/bash\\necho helper\\n' > run-helper.sh.template\n" +
+      'mkdir bin\n' +
+      "printf '#!/bin/bash\\necho env\\n' > bin/env.sh",
+    dir,
+  );
   return dir;
 }
 
 /** First line of a fixture script — its shebang. */
-async function shebangOf(dir: string, rel: string): Promise<string> {
-  return (await readFile(join(dir, rel), 'utf8')).split('\n', 1)[0];
+function shebangOf(dir: string, rel: string): string {
+  return sh(`head -1 '${rel}'`, dir).trimEnd();
 }
 
 /**
@@ -86,16 +96,16 @@ async function shebangOf(dir: string, rel: string): Promise<string> {
  * via a .ran-<name> marker in $PWD so tests can tell a skipped guard
  * from a guard that ran against a no-op tool.
  */
-async function stubBinDir(name: string): Promise<string> {
-  const dir = await trackedTmpDir(`gha-stub-${name}-`);
-  await writeFile(join(dir, name), `#!/bin/sh\ntouch "$PWD/.ran-${name}"\n`, { mode: 0o755 });
+function stubBinDir(name: string): string {
+  const dir = mktempDir(`gha-stub-${name}-`);
+  sh(`printf '#!/bin/sh\\ntouch "$PWD/.ran-${name}"\\n' > '${name}' && chmod +x '${name}'`, dir);
   return dir;
 }
 
 /** Whether the .ran-<name> stub marker exists in the fixture dir. */
-async function stubRan(dir: string, name: string): Promise<boolean> {
+function stubRan(dir: string, name: string): boolean {
   try {
-    await access(join(dir, `.ran-${name}`));
+    sh(`test -e '.ran-${name}'`, dir);
     return true;
   } catch {
     return false;
@@ -110,18 +120,18 @@ function shebangRewriteLoop(): string {
 }
 
 /**
- * Run a script fragment against the fixture dir under a controlled PATH.
- * `set -e` wraps the fragment so a failed condition aborting the script
- * is visible as a missing GUARD_DONE marker (the historical failure
- * mode). /bin/sh is invoked by absolute path so PATH itself can be
- * stripped down to a stub bindir. The runner script lives outside the
- * fixture dir so the ./*.sh glob can't pick it up.
+ * Run a script fragment in the fixture dir under a controlled PATH via
+ * sh -c. `set -e` wraps the fragment so a failed condition aborting the
+ * script is visible as a missing GUARD_DONE marker (the historical
+ * failure mode). No script file is written, so nothing extra can match
+ * the fragment's own ./*.sh globs.
  */
-async function runFragment(fragment: string, dir: string, path: string): Promise<string> {
-  const scriptDir = await trackedTmpDir('gha-fragment-');
-  const script = join(scriptDir, 'fragment.sh');
-  await writeFile(script, `set -e\n${fragment}\necho GUARD_DONE\n`);
-  return execFileSync('/bin/sh', [script], { cwd: dir, env: { PATH: path }, encoding: 'utf8' });
+function runFragment(fragment: string, dir: string, path: string): string {
+  return execFileSync('/bin/sh', ['-c', `set -e\n${fragment}\necho GUARD_DONE`], {
+    cwd: dir,
+    env: { PATH: path },
+    encoding: 'utf8',
+  });
 }
 
 describe('GhaRunner construct', () => {
@@ -434,35 +444,35 @@ describe('GhaRunner construct', () => {
     expect(runner.exports.secretName).toBe('runner-github-app');
   });
 
-  it.skipIf(!isLinux)('shebang guard skips the rewrite when sed is missing', async () => {
-    const dir = await shebangFixtures();
+  it.skipIf(!isLinux)('shebang guard skips the rewrite when sed is missing', () => {
+    const dir = shebangFixtures();
     // bash resolves via a stub, so the guard fails specifically at the
     // sed check — not at a later condition.
-    const out = await runFragment(shebangGuardBlock(), dir, await stubBinDir('bash'));
+    const out = runFragment(shebangGuardBlock(), dir, stubBinDir('bash'));
     expect(out).toContain('GUARD_DONE');
     for (const f of ['run.sh', 'run-helper.sh.template', 'bin/env.sh']) {
-      expect(await shebangOf(dir, f)).toBe('#!/bin/bash');
+      expect(shebangOf(dir, f)).toBe('#!/bin/bash');
     }
   });
 
-  it.skipIf(!isLinux)('shebang guard skips the rewrite when bash is missing', async () => {
-    const dir = await shebangFixtures();
+  it.skipIf(!isLinux)('shebang guard skips the rewrite when bash is missing', () => {
+    const dir = shebangFixtures();
     // sed resolves via a stub so the guard fails at the bash check; the
     // .ran marker proves the stub was never executed (guard skipped
     // entirely rather than rewriting through a no-op sed).
-    const bindir = await stubBinDir('sed');
-    const out = await runFragment(shebangGuardBlock(), dir, bindir);
+    const bindir = stubBinDir('sed');
+    const out = runFragment(shebangGuardBlock(), dir, bindir);
     expect(out).toContain('GUARD_DONE');
-    expect(await stubRan(dir, 'sed')).toBe(false);
+    expect(stubRan(dir, 'sed')).toBe(false);
     for (const f of ['run.sh', 'run-helper.sh.template', 'bin/env.sh']) {
-      expect(await shebangOf(dir, f)).toBe('#!/bin/bash');
+      expect(shebangOf(dir, f)).toBe('#!/bin/bash');
     }
   });
 
   it.skipIf(!isLinux || !existsSync('/bin/bash'))(
     'shebang guard skips the rewrite when /bin/bash exists',
-    async () => {
-      const dir = await shebangFixtures();
+    () => {
+      const dir = shebangFixtures();
       const path = process.env.PATH ?? '';
       // Branch attribution: sed, bash, and /usr/bin/env must resolve
       // under this PATH so [ ! -e /bin/bash ] is the only condition
@@ -473,35 +483,35 @@ describe('GhaRunner construct', () => {
         ['-c', 'command -v sed >/dev/null && command -v bash >/dev/null && [ -x /usr/bin/env ]'],
         { env: { PATH: path }, stdio: 'ignore' },
       );
-      const out = await runFragment(shebangGuardBlock(), dir, path);
+      const out = runFragment(shebangGuardBlock(), dir, path);
       expect(out).toContain('GUARD_DONE');
       for (const f of ['run.sh', 'run-helper.sh.template', 'bin/env.sh']) {
-        expect(await shebangOf(dir, f)).toBe('#!/bin/bash');
+        expect(shebangOf(dir, f)).toBe('#!/bin/bash');
       }
     },
   );
 
-  it.skipIf(!isLinux)('shebang guard does not trip set -e when all tools are missing', async () => {
-    const dir = await shebangFixtures();
-    const emptyPath = await trackedTmpDir('gha-empty-path-');
-    const out = await runFragment(shebangGuardBlock(), dir, emptyPath);
+  it.skipIf(!isLinux)('shebang guard does not trip set -e when all tools are missing', () => {
+    const dir = shebangFixtures();
+    const emptyPath = mktempDir('gha-empty-path-');
+    const out = runFragment(shebangGuardBlock(), dir, emptyPath);
     expect(out).toContain('GUARD_DONE');
     for (const f of ['run.sh', 'run-helper.sh.template', 'bin/env.sh']) {
-      expect(await shebangOf(dir, f)).toBe('#!/bin/bash');
+      expect(shebangOf(dir, f)).toBe('#!/bin/bash');
     }
   });
 
-  it.skipIf(!isLinux)('shebang rewrite loop rewrites every glob to env-resolved bash', async () => {
-    const dir = await shebangFixtures();
+  it.skipIf(!isLinux)('shebang rewrite loop rewrites every glob to env-resolved bash', () => {
+    const dir = shebangFixtures();
     // The loop body executed standalone — the guard's rewrite branch
     // needs a container to exercise (usrmerge makes /bin/bash
     // unmaskable on the host). Its isolatable conditions are covered
     // above; [ -x /usr/bin/env ] can't be isolated here since it is an
     // absolute-path check, not a PATH lookup.
-    const out = await runFragment(shebangRewriteLoop(), dir, process.env.PATH ?? '');
+    const out = runFragment(shebangRewriteLoop(), dir, process.env.PATH ?? '');
     expect(out).toContain('GUARD_DONE');
     for (const f of ['run.sh', 'run-helper.sh.template', 'bin/env.sh']) {
-      expect(await shebangOf(dir, f)).toBe('#!/usr/bin/env bash');
+      expect(shebangOf(dir, f)).toBe('#!/usr/bin/env bash');
     }
   });
 
