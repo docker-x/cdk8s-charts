@@ -1,6 +1,9 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { filterByKind, findManifest, type Manifest, synthChart } from '@cdk8s-charts/utils';
 import { Chart, Testing } from 'cdk8s';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { GhaRunner } from './construct';
 
 /** Synthesize a GhaRunner chart for assertions. */
@@ -31,6 +34,105 @@ type Container = {
   volumeMounts: { name: string; mountPath: string; readOnly: boolean }[];
   resources: { requests: { memory: string; cpu: string }; limits: { memory: string; cpu: string } };
 };
+
+const isLinux = process.platform === 'linux';
+
+/** Temp dirs created by the fixture helpers — removed after each test. */
+const tmpDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) {
+    execFileSync('rm', ['-rf', dir]);
+  }
+});
+
+/** mktemp -d variant that registers the dir for afterEach cleanup. */
+function mktempDir(prefix: string): string {
+  const dir = execFileSync('mktemp', ['-d', '-p', tmpdir(), `${prefix}XXXXXX`], {
+    encoding: 'utf8',
+  }).trim();
+  tmpDirs.push(dir);
+  return dir;
+}
+
+/** Run /bin/sh -c <script> with a cwd, returning stdout. */
+function sh(script: string, cwd: string): string {
+  return execFileSync('/bin/sh', ['-c', script], { cwd, encoding: 'utf8' });
+}
+
+/** Synthesized entrypoint.sh from the runner-scripts ConfigMap. */
+function entrypointScript(): string {
+  const cm = findManifest(synth(baseProps), 'ConfigMap', 'runner-scripts');
+  return (cm.data as Record<string, string>)['entrypoint.sh'];
+}
+
+/** Extract the shebang-rewrite guard block from the entrypoint. */
+function shebangGuardBlock(): string {
+  const match = entrypointScript().match(/^if command -v sed[\s\S]*?^fi$/m);
+  expect(match, 'shebang-rewrite guard block not found in entrypoint').not.toBeNull();
+  return (match as RegExpMatchArray)[0];
+}
+
+/** Runner-script fixtures with #!/bin/bash shebangs in a temp dir. */
+function shebangFixtures(): string {
+  const dir = mktempDir('gha-shebang-');
+  sh(
+    "printf '#!/bin/bash\\necho run\\n' > run.sh\n" +
+      "printf '#!/bin/bash\\necho helper\\n' > run-helper.sh.template\n" +
+      'mkdir bin\n' +
+      "printf '#!/bin/bash\\necho env\\n' > bin/env.sh",
+    dir,
+  );
+  return dir;
+}
+
+/** First line of a fixture script — its shebang. */
+function shebangOf(dir: string, rel: string): string {
+  return sh(`head -1 '${rel}'`, dir).trimEnd();
+}
+
+/**
+ * A bindir holding a single executable stub. The stub records being run
+ * via a .ran-<name> marker in $PWD so tests can tell a skipped guard
+ * from a guard that ran against a no-op tool.
+ */
+function stubBinDir(name: string): string {
+  const dir = mktempDir(`gha-stub-${name}-`);
+  sh(`printf '#!/bin/sh\\ntouch "$PWD/.ran-${name}"\\n' > '${name}' && chmod +x '${name}'`, dir);
+  return dir;
+}
+
+/** Whether the .ran-<name> stub marker exists in the fixture dir. */
+function stubRan(dir: string, name: string): boolean {
+  try {
+    sh(`test -e '.ran-${name}'`, dir);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Extract the sed-rewrite loop (for … done) from the guard body. */
+function shebangRewriteLoop(): string {
+  const match = entrypointScript().match(/^ +for f in \.\/\*\.sh[\s\S]*?^ +done$/m);
+  expect(match, 'shebang-rewrite loop not found in entrypoint').not.toBeNull();
+  return (match as RegExpMatchArray)[0];
+}
+
+/**
+ * Run a script fragment in the fixture dir under a controlled PATH via
+ * sh -c. `set -e` wraps the fragment so a failed condition aborting the
+ * script is visible as a missing GUARD_DONE marker (the historical
+ * failure mode). No script file is written, so nothing extra can match
+ * the fragment's own ./*.sh globs.
+ */
+function runFragment(fragment: string, dir: string, path: string): string {
+  return execFileSync('/bin/sh', ['-c', `set -e\n${fragment}\necho GUARD_DONE`], {
+    cwd: dir,
+    env: { PATH: path },
+    encoding: 'utf8',
+  });
+}
 
 describe('GhaRunner construct', () => {
   it('renders Deployment, ConfigMap, Secret, and two PVCs', () => {
@@ -340,5 +442,123 @@ describe('GhaRunner construct', () => {
     expect(runner.exports.runnerPvcName).toBe('runner-runner-home');
     expect(runner.exports.configMapName).toBe('runner-scripts');
     expect(runner.exports.secretName).toBe('runner-github-app');
+  });
+
+  it.skipIf(!isLinux)('shebang guard skips the rewrite when sed is missing', () => {
+    const dir = shebangFixtures();
+    // bash resolves via a stub, so the guard fails specifically at the
+    // sed check — not at a later condition.
+    const out = runFragment(shebangGuardBlock(), dir, stubBinDir('bash'));
+    expect(out).toContain('GUARD_DONE');
+    for (const f of ['run.sh', 'run-helper.sh.template', 'bin/env.sh']) {
+      expect(shebangOf(dir, f)).toBe('#!/bin/bash');
+    }
+  });
+
+  it.skipIf(!isLinux)('shebang guard skips the rewrite when bash is missing', () => {
+    const dir = shebangFixtures();
+    // sed resolves via a stub so the guard fails at the bash check; the
+    // .ran marker proves the stub was never executed (guard skipped
+    // entirely rather than rewriting through a no-op sed).
+    const bindir = stubBinDir('sed');
+    const out = runFragment(shebangGuardBlock(), dir, bindir);
+    expect(out).toContain('GUARD_DONE');
+    expect(stubRan(dir, 'sed')).toBe(false);
+    for (const f of ['run.sh', 'run-helper.sh.template', 'bin/env.sh']) {
+      expect(shebangOf(dir, f)).toBe('#!/bin/bash');
+    }
+  });
+
+  it.skipIf(!isLinux || !existsSync('/bin/bash'))(
+    'shebang guard skips the rewrite when /bin/bash exists',
+    () => {
+      const dir = shebangFixtures();
+      const path = process.env.PATH ?? '';
+      // Branch attribution: sed, bash, and /usr/bin/env must resolve
+      // under this PATH so [ ! -e /bin/bash ] is the only condition
+      // that can skip the rewrite — otherwise the test silently
+      // exercises a different branch than it claims.
+      execFileSync(
+        '/bin/sh',
+        ['-c', 'command -v sed >/dev/null && command -v bash >/dev/null && [ -x /usr/bin/env ]'],
+        { env: { PATH: path }, stdio: 'ignore' },
+      );
+      const out = runFragment(shebangGuardBlock(), dir, path);
+      expect(out).toContain('GUARD_DONE');
+      for (const f of ['run.sh', 'run-helper.sh.template', 'bin/env.sh']) {
+        expect(shebangOf(dir, f)).toBe('#!/bin/bash');
+      }
+    },
+  );
+
+  it.skipIf(!isLinux)('shebang guard does not trip set -e when all tools are missing', () => {
+    const dir = shebangFixtures();
+    const emptyPath = mktempDir('gha-empty-path-');
+    const out = runFragment(shebangGuardBlock(), dir, emptyPath);
+    expect(out).toContain('GUARD_DONE');
+    for (const f of ['run.sh', 'run-helper.sh.template', 'bin/env.sh']) {
+      expect(shebangOf(dir, f)).toBe('#!/bin/bash');
+    }
+  });
+
+  it.skipIf(!isLinux)('shebang rewrite loop rewrites every glob to env-resolved bash', () => {
+    const dir = shebangFixtures();
+    // The loop body executed standalone — the guard's rewrite branch
+    // needs a container to exercise (usrmerge makes /bin/bash
+    // unmaskable on the host). Its isolatable conditions are covered
+    // above; [ -x /usr/bin/env ] can't be isolated here since it is an
+    // absolute-path check, not a PATH lookup.
+    const out = runFragment(shebangRewriteLoop(), dir, process.env.PATH ?? '');
+    expect(out).toContain('GUARD_DONE');
+    for (const f of ['run.sh', 'run-helper.sh.template', 'bin/env.sh']) {
+      expect(shebangOf(dir, f)).toBe('#!/usr/bin/env bash');
+    }
+  });
+
+  it('init and entrypoint flock waits use the same bounded poll', () => {
+    const cm = findManifest(synth(baseProps), 'ConfigMap', 'runner-scripts');
+    const data = cm.data as Record<string, string>;
+    // The poll loop is verbatim-duplicated between the two scripts and
+    // has drifted once already — pin the shared bound and its
+    // consistency with the timeout each script advertises.
+    const boundOf = (script: string) => {
+      const loop = script.match(/while \[ \$i -lt (\d+) \]; do[\s\S]*?sleep (\d+)\ndone/);
+      const advertised = script.match(/timed out waiting for [^(]*\((\d+)s\)/);
+      expect(loop, 'bounded flock-wait loop not found').not.toBeNull();
+      expect(advertised, 'advertised flock timeout not found').not.toBeNull();
+      return {
+        iters: Number((loop as RegExpMatchArray)[1]),
+        sleep: Number((loop as RegExpMatchArray)[2]),
+        advertised: Number((advertised as RegExpMatchArray)[1]),
+      };
+    };
+    const entry = boundOf(data['entrypoint.sh']);
+    const init = boundOf(data['init-nix.sh']);
+    expect(entry).toEqual(init);
+    expect(entry.iters * entry.sleep).toBe(entry.advertised);
+  });
+
+  it('resolves glibc/musl loaders via guarded out-path expansion', () => {
+    const entrypoint = entrypointScript();
+    // A failed nix build must leave the loader var EMPTY — an unguarded
+    // default could collapse into a host path that passes [ -f ] and
+    // points binaries at the wrong interpreter.
+    expect(entrypoint).toContain('GLIBC_LD="${GLIBC_OUT:+$GLIBC_OUT/lib/ld-linux-x86-64.so.2}"');
+    expect(entrypoint).toContain('MUSL_LD="${MUSL_OUT:+$MUSL_OUT/lib/ld-musl-x86_64.so.1}"');
+    // The loader ships under lib/ — a lib64-only lookup broke this once,
+    // so the resolved path must name lib/ explicitly.
+    expect(entrypoint).toContain('$GLIBC_OUT/lib/ld-linux-x86-64.so.2');
+    expect(entrypoint).toContain('$MUSL_OUT/lib/ld-musl-x86_64.so.1');
+    // Only known interpreters are rewritten; non-ELF files fall through
+    // instead of aborting the loop under set -e.
+    expect(entrypoint).toContain('for f in ./bin/* ./externals/*/bin/*');
+    expect(entrypoint).toContain('[ -f "$f" ] || continue');
+    expect(entrypoint).toContain('patchelf --print-interpreter "$f" 2>/dev/null');
+    expect(entrypoint).toContain(
+      '*/ld-linux-x86-64.so.2) [ -f "$GLIBC_LD" ] && patchelf --set-interpreter "$GLIBC_LD" "$f" || true ;;',
+    );
+    expect(entrypoint).toContain(
+      '*/ld-musl-*) [ -f "$MUSL_LD" ] && patchelf --set-interpreter "$MUSL_LD" "$f" || true ;;',
+    );
   });
 });
