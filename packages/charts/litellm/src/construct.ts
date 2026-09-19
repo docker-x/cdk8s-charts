@@ -197,6 +197,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
         props.namespace,
         secretsName,
         payloadSecretName,
+        jobSaName,
         svcHost,
         svcPort,
         props.virtualKeys,
@@ -226,12 +227,14 @@ export class Litellm extends HelmConstruct<LitellmValues> {
     namespace: string,
     secretsName: string,
     payloadSecretName: string,
+    jobSaName: string,
     host: string,
     port: number,
     keys: LitellmVirtualKey[],
   ): void {
     const baseUrl = `http://${host}:${port}`;
     const scriptConfigMapName = `${releaseName}-provision-keys-scripts`;
+    const rbacName = `${releaseName}-provision-keys-rbac`;
     const keySpecs: string[] = [];
     const payloadFiles: Record<string, string> = {};
 
@@ -280,6 +283,10 @@ export class Litellm extends HelmConstruct<LitellmValues> {
             },
             { name: 'LITELLM_KEY_SPECS', value: keySpecs.join('\n') },
             { name: 'LITELLM_KEY_DIR', value: '/keys' },
+            // Rewritten to digest-versioned names after the digest is
+            // computed — RBAC resources are deleted last so the Job does
+            // not lose its own delete grant mid-cleanup.
+            { name: 'PROVISION_CLEANUP_URLS', value: '' },
           ],
           volumeMounts: [
             { name: 'provision-scripts', mountPath: '/scripts', readOnly: true },
@@ -288,6 +295,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
         },
       ],
       restartPolicy: 'OnFailure',
+      serviceAccountName: jobSaName,
       volumes: [
         {
           name: 'provision-scripts',
@@ -318,6 +326,7 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       .slice(0, 12);
     const versionedScriptConfigMapName = `${scriptConfigMapName}-${jobDigest}`;
     const versionedPayloadSecretName = `${payloadSecretName}-${jobDigest}`;
+    const versionedRbacName = `${rbacName}-${jobDigest}`;
     podSpec.volumes = [
       {
         name: 'provision-scripts',
@@ -328,6 +337,17 @@ export class Litellm extends HelmConstruct<LitellmValues> {
         secret: { secretName: versionedPayloadSecretName },
       },
     ];
+    const cleanupUrls = [
+      `/api/v1/namespaces/${namespace}/configmaps/${versionedScriptConfigMapName}`,
+      `/api/v1/namespaces/${namespace}/secrets/${versionedPayloadSecretName}`,
+      `/apis/rbac.authorization.k8s.io/v1/namespaces/${namespace}/roles/${versionedRbacName}`,
+      `/apis/rbac.authorization.k8s.io/v1/namespaces/${namespace}/rolebindings/${versionedRbacName}`,
+    ];
+    for (const e of podSpec.containers[0].env) {
+      if (e.name === 'PROVISION_CLEANUP_URLS' && 'value' in e) {
+        e.value = cleanupUrls.join(' ');
+      }
+    }
 
     const jobName = `${releaseName}-provision-keys-${jobDigest}`;
     // Job names are capped at 63 chars and the Job controller appends a
@@ -338,6 +358,46 @@ export class Litellm extends HelmConstruct<LitellmValues> {
           'minus the -xxxxx suffix the Job controller appends). Use a shorter construct id.',
       );
     }
+
+    // Digest-scoped delete grant so the Job can remove its own snapshot
+    // (mounted ConfigMap/Secret plus this Role/Binding) once provisioning
+    // succeeds — resourceNames keeps the SA from touching anything else.
+    new ApiObject(this, 'provision-keys-role', {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'Role',
+      metadata: { name: versionedRbacName, namespace },
+      rules: [
+        {
+          apiGroups: [''],
+          resources: ['configmaps'],
+          resourceNames: [versionedScriptConfigMapName],
+          verbs: ['delete'],
+        },
+        {
+          apiGroups: [''],
+          resources: ['secrets'],
+          resourceNames: [versionedPayloadSecretName],
+          verbs: ['delete'],
+        },
+        {
+          apiGroups: ['rbac.authorization.k8s.io'],
+          resources: ['roles', 'rolebindings'],
+          resourceNames: [versionedRbacName],
+          verbs: ['delete'],
+        },
+      ],
+    });
+    new ApiObject(this, 'provision-keys-rb', {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'RoleBinding',
+      metadata: { name: versionedRbacName, namespace },
+      roleRef: {
+        apiGroup: 'rbac.authorization.k8s.io',
+        kind: 'Role',
+        name: versionedRbacName,
+      },
+      subjects: [{ kind: 'ServiceAccount', name: jobSaName, namespace }],
+    });
 
     new ApiObject(this, 'provision-scripts', {
       apiVersion: 'v1',

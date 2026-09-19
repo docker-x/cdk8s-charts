@@ -52,3 +52,26 @@ printf '%s\n' "${LITELLM_KEY_SPECS}" | while IFS="${tab}" read -r alias file_nam
 
   echo "---"
 done
+
+# Self-cleanup: delete this Job's digest-versioned snapshot (ConfigMap,
+# Secret, Role, RoleBinding) so config changes do not accumulate stale
+# objects holding old key payloads. RBAC objects go last — deleting the
+# Role first would revoke the grant mid-cleanup. Warn-only: cleanup
+# failure must not fail provisioning.
+if [ -n "${PROVISION_CLEANUP_URLS:-}" ]; then
+  sa_dir=/var/run/secrets/kubernetes.io/serviceaccount
+  sa_token="$(cat "${sa_dir}/token")"
+  for url in ${PROVISION_CLEANUP_URLS}; do
+    code="$(
+      curl -s -o /dev/null -w '%{http_code}' -X DELETE \
+        --cacert "${sa_dir}/ca.crt" \
+        -H "Authorization: Bearer ${sa_token}" \
+        "https://kubernetes.default.svc${url}" || true
+    )"
+    if [ "${code}" = "200" ] || [ "${code}" = "404" ]; then
+      echo "Cleaned up ${url}"
+    else
+      echo "warn: cleanup of ${url} returned ${code}" >&2
+    fi
+  done
+fi
