@@ -384,6 +384,26 @@ function buildWorkspacePodSpec(
     containerObj.command = container.command ?? values.command;
   }
   if (values.lifecycle) containerObj.lifecycle = values.lifecycle;
+  const containers = [
+    containerObj,
+    ...(sidecars.sidecars ?? []),
+    ...(sidecars.valuesSidecars ?? []),
+  ];
+  // Duplicate container names produce a pod spec the API server rejects —
+  // fail at synth time with a clearer error (same rule as volumes).
+  const seenContainers = new Set<string>();
+  for (const c of containers) {
+    const cname = c.name as string | undefined;
+    if (!cname) {
+      throw new Error('Invalid sidecar: every container requires a non-empty name');
+    }
+    if (seenContainers.has(cname)) {
+      throw new Error(
+        `Duplicate container name "${cname}": sidecars must not collide with the workspace container or each other`,
+      );
+    }
+    seenContainers.add(cname);
+  }
   return {
     serviceAccountName: d.saName,
     automountServiceAccountToken: values.automountServiceAccountToken,
@@ -391,7 +411,7 @@ function buildWorkspacePodSpec(
     ...(d.hasPullSecretData || d.hasPullSecretRef
       ? { imagePullSecrets: [{ name: d.pullSecretName }] }
       : {}),
-    containers: [containerObj, ...(sidecars.sidecars ?? []), ...(sidecars.valuesSidecars ?? [])],
+    containers,
     volumes,
   };
 }
