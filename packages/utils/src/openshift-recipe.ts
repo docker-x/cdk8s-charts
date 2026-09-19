@@ -7,7 +7,7 @@ import { getPaseoAutoResumeScript, getPaseoPreStopScript, simpleHash } from './o
 // ---------------------------------------------------------------------------
 
 export const OAUTH_PROXY_IMAGE = 'quay.io/openshift/origin-oauth-proxy:4.18';
-export const OC_CLI_IMAGE = 'quay.io/openshift/origin-cli:latest';
+export const OC_CLI_IMAGE = 'quay.io/openshift/origin-cli:4.18';
 
 // ---------------------------------------------------------------------------
 // Shared types
