@@ -27,8 +27,43 @@ export function buildKeepaliveScript(): string {
     'fi',
     `STATUS=$(oc get pod "$POD" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || true)`,
     'if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Succeeded" ] || [ "$STATUS" = "Unknown" ]; then',
-    '  echo "Pod $POD is in terminal state ($STATUS). Deleting so Deployment recreates it."',
-    '  oc delete pod "$POD" -n "$NAMESPACE" || true',
+    '  if [ "${REPLICAS}" -gt 1 ]; then',
+    // The bounce scales the whole Deployment, which would kill healthy
+    // pods — and there is no scoped way to remove one pod without
+    // pods/delete. Warn and leave the terminal pod for the operator.
+    '    echo "WARNING: pod $POD is terminal ($STATUS) on a $REPLICAS-replica workspace — leaving it (bounce would kill healthy replicas)."',
+    // Fail the Job so the permanent degradation shows in the CronJob's
+    // failedJobsHistoryLimit — exit 0 would hide it in a log line.
+    '    exit 1',
+    '  fi',
+    '  echo "Pod $POD is in terminal state ($STATUS). Bouncing Deployment to recreate it."',
+    // A ReplicaSet will not replace a terminal pod while it still exists,
+    // so the pod must go — but scaling to 0 removes it without granting
+    // this SA pods/delete on every pod in the namespace. Wait for the pod
+    // to disappear before scaling back up (oc wait needs watch, which
+    // this SA lacks, so poll with get).
+    '  oc scale deployment "$WORKSPACE_NAME" -n "$NAMESPACE" --replicas=0 || { echo "Fatal: scale-down failed"; exit 1; }',
+    // Wait for the terminal pod to disappear. Any oc get failure must be
+    // distinguished: NotFound means removed, anything else (API error,
+    // RBAC) means we cannot confirm removal — do not scale up blind.
+    '  REMOVED=0',
+    '  for _ in $(seq 1 30); do',
+    '    if LOOKUP_ERROR=$(oc get pod "$POD" -n "$NAMESPACE" 2>&1 >/dev/null); then',
+    '      sleep 2',
+    '    else',
+    '      case "$LOOKUP_ERROR" in',
+    '        *NotFound*) REMOVED=1; break ;;',
+    '        *) echo "Fatal: failed to check terminal pod $POD: $LOOKUP_ERROR"; exit 1 ;;',
+    '      esac',
+    '    fi',
+    '  done',
+    '  if [ "$REMOVED" -ne 1 ]; then',
+    '    echo "Fatal: terminal pod $POD was not removed before timeout"',
+    '    exit 1',
+    '  fi',
+    // Restore the replica count captured above — an existingPvcName
+    // workspace may legitimately run more than one.
+    '  oc scale deployment "$WORKSPACE_NAME" -n "$NAMESPACE" --replicas="${REPLICAS}" || { echo "Fatal: scale-up failed"; exit 1; }',
     'elif [ "$STATUS" = "Running" ]; then',
     '  echo "Pod $POD is Running. All good."',
     'else',
