@@ -251,29 +251,6 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       keySpecs.push(`${vk.alias}\t${fileName}`);
     });
 
-    new ApiObject(this, 'provision-scripts', {
-      apiVersion: 'v1',
-      kind: 'ConfigMap',
-      metadata: {
-        name: scriptConfigMapName,
-        namespace,
-      },
-      data: {
-        'wait-for-litellm.sh': WAIT_FOR_LITELLM_SCRIPT,
-        'provision-keys.sh': PROVISION_KEYS_SCRIPT,
-      },
-    });
-
-    new ApiObject(this, 'provision-data', {
-      apiVersion: 'v1',
-      kind: 'Secret',
-      metadata: {
-        name: payloadSecretName,
-        namespace,
-      },
-      stringData: payloadFiles,
-    });
-
     const podSpec = {
       initContainers: [
         {
@@ -325,9 +302,10 @@ export class Litellm extends HelmConstruct<LitellmValues> {
 
     // Job pod templates are immutable — a template change on the same Job
     // name fails apply while the old Job exists. The digest covers the
-    // pod spec, the key payloads (mounted via Secret, invisible to the
-    // template), and the provisioning scripts (mounted via a static-named
-    // ConfigMap), so any behavioral change re-runs under a new Job name.
+    // pod spec (built with base names, so the digest itself is stable),
+    // the key payloads, and the provisioning scripts. Mounted resources
+    // are also versioned by the digest so a still-running previous Job
+    // reads its own snapshot instead of the newly applied content.
     const jobDigest = createHash('sha256')
       .update(
         JSON.stringify({
@@ -338,6 +316,19 @@ export class Litellm extends HelmConstruct<LitellmValues> {
       )
       .digest('hex')
       .slice(0, 12);
+    const versionedScriptConfigMapName = `${scriptConfigMapName}-${jobDigest}`;
+    const versionedPayloadSecretName = `${payloadSecretName}-${jobDigest}`;
+    podSpec.volumes = [
+      {
+        name: 'provision-scripts',
+        configMap: { name: versionedScriptConfigMapName, defaultMode: 0o755 },
+      },
+      {
+        name: 'provision-data',
+        secret: { secretName: versionedPayloadSecretName },
+      },
+    ];
+
     const jobName = `${releaseName}-provision-keys-${jobDigest}`;
     // Job names are capped at 63 chars and the Job controller appends a
     // pod suffix (-xxxxx); cap the Job name at 56 so pods stay legal.
@@ -347,6 +338,29 @@ export class Litellm extends HelmConstruct<LitellmValues> {
           'minus the -xxxxx suffix the Job controller appends). Use a shorter construct id.',
       );
     }
+
+    new ApiObject(this, 'provision-scripts', {
+      apiVersion: 'v1',
+      kind: 'ConfigMap',
+      metadata: {
+        name: versionedScriptConfigMapName,
+        namespace,
+      },
+      data: {
+        'wait-for-litellm.sh': WAIT_FOR_LITELLM_SCRIPT,
+        'provision-keys.sh': PROVISION_KEYS_SCRIPT,
+      },
+    });
+
+    new ApiObject(this, 'provision-data', {
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: {
+        name: versionedPayloadSecretName,
+        namespace,
+      },
+      stringData: payloadFiles,
+    });
 
     new ApiObject(this, 'provision-keys', {
       apiVersion: 'batch/v1',
