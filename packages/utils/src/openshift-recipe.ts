@@ -395,6 +395,22 @@ export function buildLifecycle(
   };
 }
 
+export function assertNoChartManagedEnv(
+  env: Record<string, unknown> | undefined,
+  variant: 'devcontainer' | 'devenv' = 'devcontainer',
+): void {
+  const reserved = new Set([
+    variant === 'devenv' ? 'DEVENV' : 'DEVCONTAINER',
+    'PASEO_HOSTNAMES',
+    'PASEO_TRUSTED_PROXIES',
+  ]);
+  for (const key of Object.keys(env ?? {})) {
+    if (reserved.has(key)) {
+      throw new Error(`env.${key} is chart-managed and cannot be overridden`);
+    }
+  }
+}
+
 export function buildWorkspaceEnv(
   name: string,
   namespace: string,
@@ -402,16 +418,7 @@ export function buildWorkspaceEnv(
   extraEnv?: Record<string, string>,
   variant: 'devcontainer' | 'devenv' = 'devcontainer',
 ): Record<string, string> {
-  const reserved = new Set([
-    variant === 'devenv' ? 'DEVENV' : 'DEVCONTAINER',
-    'PASEO_HOSTNAMES',
-    'PASEO_TRUSTED_PROXIES',
-  ]);
-  for (const key of Object.keys(extraEnv ?? {})) {
-    if (reserved.has(key)) {
-      throw new Error(`env.${key} is chart-managed and cannot be overridden`);
-    }
-  }
+  assertNoChartManagedEnv(extraEnv, variant);
   return {
     TERM: 'xterm-256color',
     HUSKY: '0',

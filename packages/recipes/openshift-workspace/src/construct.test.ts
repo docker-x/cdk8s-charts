@@ -44,10 +44,22 @@ describe('OpenShiftWorkspace recipe', () => {
   });
 
   it('throws when env collides with a chart-managed name', () => {
-    expect(() => synth({ ...baseProps, env: { DEVCONTAINER: 'false' } })).toThrow(/chart-managed/);
-    expect(() => synth({ ...baseProps, env: { PASEO_HOSTNAMES: 'evil.example' } })).toThrow(
-      /chart-managed/,
-    );
+    for (const key of ['DEVCONTAINER', 'PASEO_HOSTNAMES', 'PASEO_TRUSTED_PROXIES']) {
+      expect(() => synth({ ...baseProps, env: { [key]: 'x' } })).toThrow(/chart-managed/);
+      expect(() => synth({ ...baseProps, values: { env: { [key]: 'x' } } })).toThrow(
+        /chart-managed/,
+      );
+    }
+  });
+
+  it('allows env overrides for non-managed names like TERM', () => {
+    const m = synth({ ...baseProps, env: { TERM: 'xterm-kitty', HUSKY: '1' } });
+    const dep = findManifest(m, 'Deployment', 'workspace');
+    const spec = dep.spec as {
+      template: { spec: { containers: Array<{ env: Array<{ name: string; value?: string }> }> } };
+    };
+    const env = spec.template.spec.containers[0].env;
+    expect(env.find((e) => e.name === 'TERM')?.value).toBe('xterm-kitty');
   });
 
   it('throws on a values sidecar colliding with a recipe-injected container name', () => {
