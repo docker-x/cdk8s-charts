@@ -261,7 +261,7 @@ if [[ -z "$TARGETS" ]]; then
   log "no agents to resume"
   exit 0
 fi
-[[ "$MAX_AGENTS" =~ ^[0-9]+$ ]] || MAX_AGENTS=10`;
+[[ "$MAX_AGENTS" =~ ^(0|[1-9][0-9]*)$ ]] || MAX_AGENTS=10`;
 }
 
 function paseoAutoResumeBody(): string {
@@ -338,9 +338,12 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 TMP_MARKER="$MARKER.tmp.$$"
-# One node process scans every record — a node spawn per file can exceed
-# the pod termination grace period once the agents directory grows, and a
-# killed hook must leave no marker rather than a truncated one.
+# Invalidate the previous snapshot up front: if the hook is killed
+# mid-scan, postStart must fall back to the daemon listing rather than
+# resume a stale set. One node process scans every record — a node spawn
+# per file can exceed the pod termination grace period once the agents
+# directory grows.
+rm -f "$MARKER"
 if ! node -e '
   const fs = require("fs"), path = require("path");
   const dir = process.argv[1];
@@ -365,10 +368,14 @@ if ! node -e '
   if (out.length) process.stdout.write(out.join("\\n") + "\\n");
 ' "$AGENTS_DIR" > "$TMP_MARKER" 2>/dev/null; then
   log "snapshot scan failed, discarding"
-  rm -f "$TMP_MARKER" "$MARKER"
+  rm -f "$TMP_MARKER"
   exit 0
 fi
-mv "$TMP_MARKER" "$MARKER"
+if ! mv "$TMP_MARKER" "$MARKER" 2>/dev/null; then
+  log "snapshot publish failed, postStart will use fallback"
+  rm -f "$TMP_MARKER"
+  exit 0
+fi
 log "snapshotted $(wc -l < "$MARKER" | tr -d ' ') open agent(s) to $MARKER"`;
 }
 
