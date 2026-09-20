@@ -199,7 +199,20 @@ fi
 
 # The daemon is the source of truth for which agents can be resumed —
 # persisted records outlive their workspaces and are not all loadable.
-KNOWN_AGENTS="$(paseo ls -g --json 2>/dev/null || true)"
+# Without a usable listing the snapshot is kept for a later retry rather
+# than sprayed at possibly-stale IDs.
+KNOWN_AGENTS=""
+for i in 1 2 3; do
+  if KNOWN_AGENTS="$(paseo ls -g --json 2>/dev/null)"; then
+    break
+  fi
+  KNOWN_AGENTS=""
+  sleep 5
+done
+if [[ -z "$KNOWN_AGENTS" ]]; then
+  log "WARNING: could not list daemon agents, keeping snapshot for retry"
+  exit 0
+fi
 
 if [[ -f "$MARKER" ]]; then
   log "resuming agents from pre-stop snapshot"
@@ -211,27 +224,32 @@ fi
 # knows (records whose workspace vanished are skipped). Without one
 # (crash, SIGKILL, hook killed by the grace period): every non-closed
 # agent the daemon reports — closed means explicitly closed by the user.
-TARGETS="$(printf '%s' "$KNOWN_AGENTS" | node -e '
+if ! TARGETS="$(printf '%s' "$KNOWN_AGENTS" | node -e '
   const fs = require("fs");
-  let known = null;
-  try { known = JSON.parse(fs.readFileSync(0, "utf8")); } catch (e) { known = null; }
+  let known;
+  try { known = JSON.parse(fs.readFileSync(0, "utf8")); } catch (e) { process.exit(2); }
   const markerPath = process.argv[1];
   const out = [];
   if (fs.existsSync(markerPath)) {
-    const knownIds = known ? new Set(known.map((a) => a.id)) : null;
+    // Skip IDs the daemon reports closed — a session closed between the
+    // snapshot and this boot must not be resurrected.
+    const knownIds = new Set(known.filter((a) => a.status !== "closed").map((a) => a.id));
     for (const line of fs.readFileSync(markerPath, "utf8").split("\\n")) {
       const tab = line.indexOf("\\t");
       const id = (tab === -1 ? line : line.slice(0, tab)).trim();
       const status = tab === -1 ? "" : line.slice(tab + 1).trim();
-      if (id && (!knownIds || knownIds.has(id))) out.push(id + "\\t" + status);
+      if (id && knownIds.has(id)) out.push(id + "\\t" + status);
     }
-  } else if (known) {
+  } else {
     for (const a of known) {
       if (a.id && a.status && a.status !== "closed") out.push(a.id + "\\t" + a.status);
     }
   }
   process.stdout.write(out.join("\\n"));
-' "$MARKER" 2>/dev/null || true)"
+' "$MARKER" 2>/dev/null)"; then
+  log "WARNING: could not parse daemon agent list, keeping snapshot for retry"
+  exit 0
+fi
 rm -f "$MARKER" "$MARKER".tmp.*
 
 if [[ -z "$TARGETS" ]]; then
@@ -255,8 +273,9 @@ while IFS=$'\\t' read -r agent_id agent_status; do
   case "$agent_status" in
     idle|error)
       # Quiet sessions only need their provider runtime reattached —
-      # a prompt would start work nobody asked for.
-      if out=$(paseo agent reload "$agent_id" 2>&1); then
+      # a prompt would start work nobody asked for. stdin is /dev/null so
+      # a CLI that reads it cannot swallow the remaining target lines.
+      if out=$(paseo agent reload "$agent_id" </dev/null 2>&1); then
         log "agent $agent_id reloaded (was $agent_status)"
         restored=$((restored + 1))
       else
@@ -266,7 +285,7 @@ while IFS=$'\\t' read -r agent_id agent_status; do
     *)
       # running/initializing or unmarked entries: an in-flight turn was
       # lost — nudge the agent to continue.
-      if out=$(paseo send "$agent_id" "$RESUME_PROMPT" --no-wait 2>&1); then
+      if out=$(paseo send "$agent_id" "$RESUME_PROMPT" --no-wait </dev/null 2>&1); then
         log "agent $agent_id resumed (was \${agent_status:-unknown})"
         restored=$((restored + 1))
       else

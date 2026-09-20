@@ -36,7 +36,9 @@ function makeStubBin(lsJson: object[] | null): { binDir: string; callLog: string
     join(binDir, 'paseo'),
     `#!/bin/bash
 printf '%s\\n' "$*" >> "${callLog}"
+if [[ "$1" == "ls" && -n "\${STUB_LS_FAIL:-}" ]]; then exit 1; fi
 if [[ "$1" == "ls" ]]; then cat "${lsFile}"; exit 0; fi
+if [[ -n "\${STUB_READ_STDIN:-}" ]]; then cat >/dev/null; fi
 if [[ "$1" == "send" && -n "\${STUB_SEND_FAIL:-}" ]]; then echo "Session not found" >&2; exit 1; fi
 if [[ "$1" == "agent" && "$2" == "reload" && -n "\${STUB_RELOAD_FAIL:-}" ]]; then echo "Agent not found" >&2; exit 1; fi
 exit 0
@@ -182,6 +184,50 @@ describe('paseo auto-resume', () => {
       PASEO_AUTO_RESUME_MAX: 'abc',
     });
     expect(calls.some((c) => c.startsWith('send id-run '))).toBe(true);
+  });
+
+  it('does not let a stdin-reading CLI consume the remaining targets', () => {
+    const { home, binDir, callLog } = setup('id-a\trunning\nid-b\tidle\nid-c\trunning\n', [
+      { id: 'id-a' },
+      { id: 'id-b' },
+      { id: 'id-c' },
+    ]);
+    const { stdout, calls } = runScript(getPaseoAutoResumeScript('devenv'), {
+      PASEO_HOME: home,
+      PATH: `${binDir}:${process.env.PATH}`,
+      STUB_CALL_LOG: callLog,
+      STUB_READ_STDIN: '1',
+    });
+    expect(calls.some((c) => c.startsWith('send id-a '))).toBe(true);
+    expect(calls).toContain('agent reload id-b');
+    expect(calls.some((c) => c.startsWith('send id-c '))).toBe(true);
+    expect(stdout).toContain('3 agent(s) restored');
+  });
+
+  it('does not resurrect sessions the daemon reports closed since the snapshot', () => {
+    const { home, binDir, callLog } = setup('id-run\trunning\n', [
+      { id: 'id-run', status: 'closed' },
+    ]);
+    const { stdout, calls } = runScript(getPaseoAutoResumeScript('devenv'), {
+      PASEO_HOME: home,
+      PATH: `${binDir}:${process.env.PATH}`,
+      STUB_CALL_LOG: callLog,
+    });
+    expect(calls.some((c) => c.includes('id-run') && !c.startsWith('ls'))).toBe(false);
+    expect(stdout).toContain('no agents to resume');
+  });
+
+  it('keeps the snapshot for a later retry when the daemon listing fails', () => {
+    const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
+    const { stdout, calls } = runScript(getPaseoAutoResumeScript('devenv'), {
+      PASEO_HOME: home,
+      PATH: `${binDir}:${process.env.PATH}`,
+      STUB_CALL_LOG: callLog,
+      STUB_LS_FAIL: '1',
+    });
+    expect(stdout).toContain('keeping snapshot for retry');
+    expect(calls.some((c) => c.startsWith('send '))).toBe(false);
+    expect(existsSync(join(home, '.was-running'))).toBe(true);
   });
 
   it('surfaces send failures instead of masking them', () => {
