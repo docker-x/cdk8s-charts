@@ -219,6 +219,8 @@ describe('paseo auto-resume', () => {
 
   it('keeps the snapshot for a later retry when the daemon listing fails', () => {
     const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
+    const orphanTmp = join(home, '.was-running.tmp.999');
+    writeFileSync(orphanTmp, 'id-stale\trunning\n');
     const { stdout, calls } = runScript(getPaseoAutoResumeScript('devenv'), {
       PASEO_HOME: home,
       PATH: `${binDir}:${process.env.PATH}`,
@@ -228,6 +230,8 @@ describe('paseo auto-resume', () => {
     expect(stdout).toContain('keeping snapshot for retry');
     expect(calls.some((c) => c.startsWith('send '))).toBe(false);
     expect(existsSync(join(home, '.was-running'))).toBe(true);
+    // killed mid-write snapshots are dropped even on the early exit
+    expect(existsSync(orphanTmp)).toBe(false);
   });
 
   it('surfaces reload failures instead of masking them', () => {

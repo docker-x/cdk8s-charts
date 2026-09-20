@@ -197,6 +197,11 @@ if ! command -v paseo >/dev/null 2>&1; then
   exit 0
 fi
 
+# Orphaned tmp files are snapshot attempts killed mid-write (e.g. by the
+# termination grace period) — always safe to drop; only the committed
+# marker matters.
+rm -f "$MARKER".tmp.*
+
 # The daemon is the source of truth for which agents can be resumed —
 # persisted records outlive their workspaces and are not all loadable.
 # Without a usable listing the snapshot is kept for a later retry rather
@@ -250,7 +255,7 @@ if ! TARGETS="$(printf '%s' "$KNOWN_AGENTS" | node -e '
   log "WARNING: could not parse daemon agent list, keeping snapshot for retry"
   exit 0
 fi
-rm -f "$MARKER" "$MARKER".tmp.*
+rm -f "$MARKER"
 
 if [[ -z "$TARGETS" ]]; then
   log "no agents to resume"
