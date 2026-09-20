@@ -1067,11 +1067,14 @@ production remote workspace:
 3. **OpenShift Routes** — edge-terminated TLS routes for Paseo web UI and preview
 4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
 5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2
-6. **Paseo auto-resume** — preStop hook snapshots live (non-closed, non-idle,
-   non-archived) agent IDs to `$PASEO_HOME/.was-running`; postStart waits for
-   daemon health and resumes exactly those via `paseo send` (lazy provider
-   resume + "continue" prompt). Without a snapshot (SIGKILL/crash) it falls
-   back to all `closed` non-archived agents, capped by `PASEO_AUTO_RESUME_MAX`.
+6. **Paseo auto-resume** — preStop hook snapshots open (non-closed,
+   non-archived) agents as `id<TAB>status` to `$PASEO_HOME/.was-running`
+   in a single `node` pass, atomically; postStart waits for daemon health,
+   intersects the snapshot with `paseo ls -g` (daemon-known only), then
+   `paseo send`s a "continue" prompt to agents that were mid-turn and
+   `paseo agent reload`s quiet ones (reattach runtime, no spurious turn).
+   Without a snapshot (SIGKILL/crash/hook timeout) it resumes every
+   non-closed agent the daemon reports. Capped by `PASEO_AUTO_RESUME_MAX`.
 7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform
    deployments. Secret RBAC is split: `create` stays namespace-wide
    (`resourceNames` cannot restrict `create` — the object has no name
@@ -1223,11 +1226,14 @@ but using the Devenv chart:
 3. **OpenShift Routes** — edge-terminated TLS routes for Paseo web UI and preview
 4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
 5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2
-6. **Paseo auto-resume** — preStop hook snapshots live (non-closed, non-idle,
-   non-archived) agent IDs to `$PASEO_HOME/.was-running`; postStart waits for
-   daemon health and resumes exactly those via `paseo send` (lazy provider
-   resume + "continue" prompt). Without a snapshot (SIGKILL/crash) it falls
-   back to all `closed` non-archived agents, capped by `PASEO_AUTO_RESUME_MAX`.
+6. **Paseo auto-resume** — preStop hook snapshots open (non-closed,
+   non-archived) agents as `id<TAB>status` to `$PASEO_HOME/.was-running`
+   in a single `node` pass, atomically; postStart waits for daemon health,
+   intersects the snapshot with `paseo ls -g` (daemon-known only), then
+   `paseo send`s a "continue" prompt to agents that were mid-turn and
+   `paseo agent reload`s quiet ones (reattach runtime, no spurious turn).
+   Without a snapshot (SIGKILL/crash/hook timeout) it resumes every
+   non-closed agent the daemon reports. Capped by `PASEO_AUTO_RESUME_MAX`.
 7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform
    deployments. Secret RBAC is split: `create` stays namespace-wide
    (`resourceNames` cannot restrict `create` — the object has no name

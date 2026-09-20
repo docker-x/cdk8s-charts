@@ -161,7 +161,8 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
 
 function paseoAutoResumeSetup(defaultHome: string): string {
   return `#!/bin/bash
-# Auto-resume closed Paseo agents after daemon restart.
+# Restore open Paseo sessions after daemon restart: agents that were
+# mid-turn get a resume prompt, quiet ones get their runtime reattached.
 set -euo pipefail
 
 PASEO_HOME="\${PASEO_HOME:-${defaultHome}}"
@@ -191,64 +192,115 @@ fi
 log "Paseo daemon is healthy"
 sleep 5
 
-if [[ ! -d "$AGENTS_DIR" ]]; then
-  log "no agents directory found, nothing to resume"
+if ! command -v paseo >/dev/null 2>&1; then
+  log "paseo not on PATH, nothing to resume"
   exit 0
 fi
 
-CLOSED_AGENTS=()
+# Orphaned tmp files are snapshot attempts killed mid-write (e.g. by the
+# termination grace period) — always safe to drop; only the committed
+# marker matters.
+rm -f "$MARKER".tmp.*
+
+# The daemon is the source of truth for which agents can be resumed —
+# persisted records outlive their workspaces and are not all loadable.
+# Without a usable listing the snapshot is kept for a later retry rather
+# than sprayed at possibly-stale IDs.
+KNOWN_AGENTS=""
+for i in 1 2 3; do
+  if KNOWN_AGENTS="$(paseo ls -g --json 2>/dev/null)"; then
+    break
+  fi
+  KNOWN_AGENTS=""
+  sleep 5
+done
+if [[ -z "$KNOWN_AGENTS" ]]; then
+  log "WARNING: could not list daemon agents, keeping snapshot for retry"
+  exit 0
+fi
+
 if [[ -f "$MARKER" ]]; then
-  # preStop snapshotted agents that were live when the pod stopped —
-  # resume exactly those, not every historically-closed agent.
-  while IFS= read -r agent_id; do
-    [[ -n "$agent_id" ]] && CLOSED_AGENTS+=("$agent_id")
-  done < "$MARKER"
-  rm -f "$MARKER"
-  log "resuming \${#CLOSED_AGENTS[@]} agent(s) from pre-stop snapshot"
+  log "resuming agents from pre-stop snapshot"
 else
-  # No snapshot (SIGKILL/crash or hook never ran): fall back to all
-  # closed non-archived agents.
-  for json_file in "$AGENTS_DIR"/*/*.json; do
-    [[ -f "$json_file" ]] || continue
-    agent_id=$(node -e '
-      try {
-        const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-        if (d.lastStatus === "closed" && !d.archivedAt) {
-          process.stdout.write(d.id || "");
-        }
-      } catch (e) { /* skip invalid */ }
-    ' "$json_file" 2>/dev/null || true)
-    if [[ -n "$agent_id" ]]; then
-      CLOSED_AGENTS+=("$agent_id")
-    fi
-  done
+  log "no pre-stop snapshot — falling back to daemon-known open agents"
 fi
 
-if [[ \${#CLOSED_AGENTS[@]} -eq 0 ]]; then
-  log "no closed agents found, nothing to resume"
+# Emits "id<TAB>status" lines. With a marker: entries the daemon still
+# knows (records whose workspace vanished are skipped). Without one
+# (crash, SIGKILL, hook killed by the grace period): every non-closed
+# agent the daemon reports — closed means explicitly closed by the user.
+if ! TARGETS="$(printf '%s' "$KNOWN_AGENTS" | node -e '
+  const fs = require("fs");
+  let known;
+  try { known = JSON.parse(fs.readFileSync(0, "utf8")); } catch (e) { process.exit(2); }
+  const markerPath = process.argv[1];
+  const out = [];
+  if (fs.existsSync(markerPath)) {
+    // Skip IDs the daemon reports closed — a session closed between the
+    // snapshot and this boot must not be resurrected.
+    const knownIds = new Set(known.filter((a) => a.status !== "closed").map((a) => a.id));
+    for (const line of fs.readFileSync(markerPath, "utf8").split("\\n")) {
+      const tab = line.indexOf("\\t");
+      const id = (tab === -1 ? line : line.slice(0, tab)).trim();
+      const status = tab === -1 ? "" : line.slice(tab + 1).trim();
+      if (id && knownIds.has(id)) out.push(id + "\\t" + status);
+    }
+  } else {
+    for (const a of known) {
+      if (a.id && a.status && a.status !== "closed") out.push(a.id + "\\t" + a.status);
+    }
+  }
+  process.stdout.write(out.join("\\n"));
+' "$MARKER" 2>/dev/null)"; then
+  log "WARNING: could not parse daemon agent list, keeping snapshot for retry"
   exit 0
-fi`;
+fi
+rm -f "$MARKER"
+
+if [[ -z "$TARGETS" ]]; then
+  log "no agents to resume"
+  exit 0
+fi
+[[ "$MAX_AGENTS" =~ ^(0|[1-9][0-9]*)$ ]] || MAX_AGENTS=10`;
 }
 
 function paseoAutoResumeBody(): string {
   return `
-log "found \${#CLOSED_AGENTS[@]} closed agent(s) to resume"
-resumed=0
-for agent_id in "\${CLOSED_AGENTS[@]}"; do
-  if [[ $resumed -ge $MAX_AGENTS ]]; then
+restored=0
+attempted=0
+while IFS=$'\\t' read -r agent_id agent_status; do
+  [[ -n "$agent_id" ]] || continue
+  if [[ $attempted -ge $MAX_AGENTS ]]; then
     log "reached max agents limit ($MAX_AGENTS), stopping"
     break
   fi
-  log "resuming agent $agent_id..."
-  if paseo send "$agent_id" "$RESUME_PROMPT" --no-wait 2>/dev/null; then
-    log "agent $agent_id resumed successfully"
-    resumed=$((resumed + 1))
-  else
-    log "WARNING: failed to resume agent $agent_id"
-  fi
+  attempted=$((attempted + 1))
+  case "$agent_status" in
+    idle|error)
+      # Quiet sessions only need their provider runtime reattached —
+      # a prompt would start work nobody asked for. stdin is /dev/null so
+      # a CLI that reads it cannot swallow the remaining target lines.
+      if out=$(paseo agent reload "$agent_id" </dev/null 2>&1); then
+        log "agent $agent_id reloaded (was $agent_status)"
+        restored=$((restored + 1))
+      else
+        log "WARNING: failed to reload agent $agent_id: $out"
+      fi
+      ;;
+    *)
+      # running/initializing or unmarked entries: an in-flight turn was
+      # lost — nudge the agent to continue.
+      if out=$(paseo send "$agent_id" "$RESUME_PROMPT" --no-wait </dev/null 2>&1); then
+        log "agent $agent_id resumed (was \${agent_status:-unknown})"
+        restored=$((restored + 1))
+      else
+        log "WARNING: failed to resume agent $agent_id: $out"
+      fi
+      ;;
+  esac
   sleep 2
-done
-log "auto-resume complete: $resumed agent(s) resumed"`;
+done <<< "$TARGETS"
+log "auto-resume complete: $restored agent(s) restored"`;
 }
 
 export function getPaseoAutoResumeScript(
@@ -264,9 +316,8 @@ export function getPaseoAutoResumeScript(
 
 function paseoPreStopBody(defaultHome: string): string {
   return `#!/bin/bash
-# Snapshot live Paseo agents before pod termination so the postStart
-# auto-resume only picks up agents that were actually running — not
-# every historically-closed agent.
+# Snapshot open Paseo agents (anything not closed/archived) before pod
+# termination so the postStart auto-resume knows which sessions were live.
 set -uo pipefail
 
 PASEO_HOME="\${PASEO_HOME:-${defaultHome}}"
@@ -275,6 +326,11 @@ MARKER="$PASEO_HOME/.was-running"
 
 log() { echo "[pre-stop] $*"; }
 
+# Any previous snapshot is stale the moment this hook runs — invalidate it
+# before every early exit so postStart falls back to the daemon listing
+# instead of resuming an old set.
+rm -f "$MARKER"
+
 if [[ ! -d "$AGENTS_DIR" ]]; then
   log "no agents directory, nothing to snapshot"
   exit 0
@@ -282,28 +338,46 @@ fi
 
 if ! command -v node >/dev/null 2>&1; then
   log "node not on PATH, skipping snapshot — postStart will use fallback"
-  rm -f "$MARKER"
   exit 0
 fi
 
 TMP_MARKER="$MARKER.tmp.$$"
-: > "$TMP_MARKER" || { log "cannot write snapshot, skipping"; rm -f "$TMP_MARKER"; exit 0; }
-for json_file in "$AGENTS_DIR"/*/*.json; do
-  [[ -f "$json_file" ]] || continue
-  if ! node -e '
+# One node process scans every record — a node spawn per file can exceed
+# the pod termination grace period once the agents directory grows, and a
+# killed hook must leave no marker rather than a truncated one.
+if ! node -e '
+  const fs = require("fs"), path = require("path");
+  const dir = process.argv[1];
+  const out = [];
+  const scan = (file) => {
     try {
-      const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-      const live = d.lastStatus && d.lastStatus !== "closed" && d.lastStatus !== "idle" && !d.archivedAt;
-      if (live && d.id) process.stdout.write(d.id + "\\n");
+      const d = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (d.id && d.lastStatus && d.lastStatus !== "closed" && !d.archivedAt) {
+        out.push(d.id + "\\t" + d.lastStatus);
+      }
     } catch (e) { /* skip invalid */ }
-  ' "$json_file" >> "$TMP_MARKER" 2>/dev/null; then
-    log "snapshot write failed, discarding"
-    rm -f "$TMP_MARKER" "$MARKER"
-    exit 0
-  fi
-done
-mv "$TMP_MARKER" "$MARKER"
-log "snapshotted $(wc -l < "$MARKER" | tr -d ' ') live agent(s) to $MARKER"`;
+  };
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      for (const f of fs.readdirSync(path.join(dir, entry.name))) {
+        if (f.endsWith(".json")) scan(path.join(dir, entry.name, f));
+      }
+    } else if (entry.isFile() && entry.name.endsWith(".json")) {
+      scan(path.join(dir, entry.name));
+    }
+  }
+  if (out.length) process.stdout.write(out.join("\\n") + "\\n");
+' "$AGENTS_DIR" > "$TMP_MARKER" 2>/dev/null; then
+  log "snapshot scan failed, discarding"
+  rm -f "$TMP_MARKER"
+  exit 0
+fi
+if ! mv "$TMP_MARKER" "$MARKER" 2>/dev/null; then
+  log "snapshot publish failed, postStart will use fallback"
+  rm -f "$TMP_MARKER"
+  exit 0
+fi
+log "snapshotted $(wc -l < "$MARKER" | tr -d ' ') open agent(s) to $MARKER"`;
 }
 
 export function getPaseoPreStopScript(variant: 'devcontainer' | 'devenv' = 'devcontainer'): string {
