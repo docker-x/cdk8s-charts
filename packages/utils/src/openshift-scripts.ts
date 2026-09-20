@@ -326,6 +326,11 @@ MARKER="$PASEO_HOME/.was-running"
 
 log() { echo "[pre-stop] $*"; }
 
+# Any previous snapshot is stale the moment this hook runs — invalidate it
+# before every early exit so postStart falls back to the daemon listing
+# instead of resuming an old set.
+rm -f "$MARKER"
+
 if [[ ! -d "$AGENTS_DIR" ]]; then
   log "no agents directory, nothing to snapshot"
   exit 0
@@ -333,17 +338,13 @@ fi
 
 if ! command -v node >/dev/null 2>&1; then
   log "node not on PATH, skipping snapshot — postStart will use fallback"
-  rm -f "$MARKER"
   exit 0
 fi
 
 TMP_MARKER="$MARKER.tmp.$$"
-# Invalidate the previous snapshot up front: if the hook is killed
-# mid-scan, postStart must fall back to the daemon listing rather than
-# resume a stale set. One node process scans every record — a node spawn
-# per file can exceed the pod termination grace period once the agents
-# directory grows.
-rm -f "$MARKER"
+# One node process scans every record — a node spawn per file can exceed
+# the pod termination grace period once the agents directory grows, and a
+# killed hook must leave no marker rather than a truncated one.
 if ! node -e '
   const fs = require("fs"), path = require("path");
   const dir = process.argv[1];
