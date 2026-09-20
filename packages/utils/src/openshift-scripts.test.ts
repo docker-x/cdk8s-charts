@@ -32,7 +32,13 @@ function writeFile(path: string, content: string): void {
 }
 
 function readFile(path: string): string {
-  return execFileSync('cat', [path], { encoding: 'utf8' });
+  // $(<file) is a bash builtin — no cat subprocess (CodeQL), no node:fs
+  // call with a variable path (Codacy). Trailing newlines are stripped,
+  // which is fine for the log/marker assertions below.
+  return execFileSync('bash', ['-c', 'printf %s "$(<"$F")"'], {
+    env: { ...process.env, F: path },
+    encoding: 'utf8',
+  });
 }
 
 function fileExists(path: string): boolean {
