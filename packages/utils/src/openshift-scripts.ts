@@ -225,32 +225,35 @@ else
   log "no pre-stop snapshot — falling back to daemon-known open agents"
 fi
 
-# Emits "id<TAB>status" lines. With a marker: entries the daemon still
-# knows (records whose workspace vanished are skipped). Without one
-# (crash, SIGKILL, hook killed by the grace period): every non-closed
-# agent the daemon reports — closed means explicitly closed by the user.
+# Emits "id<TAB>status" lines, mid-turn agents first so a capped run drops
+# warm-up reloads rather than continuation prompts. The daemon is the
+# authoritative membership set: every non-closed, non-archived agent it
+# reports was open at kill time — a partial or stale snapshot (missing
+# marker, empty intersection, legacy id-only entries) must not shrink it.
+# The marker only refines dispatch: its kill-time status decides send vs
+# reload, and a status-less legacy entry means mid-turn.
 if ! TARGETS="$(printf '%s' "$KNOWN_AGENTS" | node -e '
   const fs = require("fs");
   let known;
   try { known = JSON.parse(fs.readFileSync(0, "utf8")); } catch (e) { process.exit(2); }
   const markerPath = process.argv[1];
-  const out = [];
+  const markerStatus = new Map();
   if (fs.existsSync(markerPath)) {
-    // Skip IDs the daemon reports closed — a session closed between the
-    // snapshot and this boot must not be resurrected.
-    const knownIds = new Set(known.filter((a) => a.status !== "closed").map((a) => a.id));
     for (const line of fs.readFileSync(markerPath, "utf8").split("\\n")) {
       const tab = line.indexOf("\\t");
       const id = (tab === -1 ? line : line.slice(0, tab)).trim();
-      const status = tab === -1 ? "" : line.slice(tab + 1).trim();
-      if (id && knownIds.has(id)) out.push(id + "\\t" + status);
-    }
-  } else {
-    for (const a of known) {
-      if (a.id && a.status && a.status !== "closed") out.push(a.id + "\\t" + a.status);
+      if (id) markerStatus.set(id, tab === -1 ? "" : line.slice(tab + 1).trim());
     }
   }
-  process.stdout.write(out.join("\\n"));
+  const mid = [];
+  const quiet = [];
+  for (const a of known) {
+    if (!a.id || a.status === "closed" || a.archivedAt) continue;
+    const status = markerStatus.has(a.id) ? markerStatus.get(a.id) : (a.status ?? "");
+    if (status === "idle" || status === "error") quiet.push(a.id + "\\t" + status);
+    else mid.push(a.id + "\\t" + status);
+  }
+  process.stdout.write(mid.concat(quiet).join("\\n"));
 ' "$MARKER" 2>/dev/null)"; then
   log "WARNING: could not parse daemon agent list, keeping snapshot for retry"
   exit 0

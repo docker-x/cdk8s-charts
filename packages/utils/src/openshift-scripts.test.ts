@@ -289,4 +289,48 @@ describe('paseo auto-resume', () => {
     expect(stdout).toContain('WARNING: failed to resume agent id-run');
     expect(stdout).toContain('Session not found');
   });
+
+  it('does not let a partial or stale snapshot shrink the resume set', () => {
+    // Prod case: a snapshot written by the old per-file pre-stop held a
+    // single stale ID while the daemon knew many open sessions — the resume
+    // set must come from the daemon, not the marker's coverage.
+    const { home, binDir, callLog } = setup('id-dead\trunning\n', [
+      { id: 'id-dead', status: 'closed' },
+      { id: 'id-a', status: 'idle' },
+      { id: 'id-b', status: 'idle' },
+    ]);
+    const { stdout, calls } = runScript(
+      getPaseoAutoResumeScript('devenv'),
+      stubEnv(home, binDir, callLog),
+    );
+    expect(calls.some((c) => c.includes('id-dead') && !c.startsWith('ls'))).toBe(false);
+    expect(calls).toContain('agent reload id-a');
+    expect(calls).toContain('agent reload id-b');
+    expect(stdout).toContain('2 agent(s) restored');
+  });
+
+  it('prefers kill-time snapshot status over the daemon status for dispatch', () => {
+    // The turn was in flight when the pod died even though the daemon now
+    // reports the agent idle — it still needs its continuation prompt.
+    const { home, binDir, callLog } = setup('id-run\trunning\n', [
+      { id: 'id-run', status: 'idle' },
+    ]);
+    const { calls } = runScript(getPaseoAutoResumeScript('devenv'), stubEnv(home, binDir, callLog));
+    expect(calls.some((c) => c.startsWith('send id-run '))).toBe(true);
+    expect(calls).not.toContain('agent reload id-run');
+  });
+
+  it('spends the cap on mid-turn agents before warm-up reloads', () => {
+    const { home, binDir, callLog } = setup('id-idle\tidle\nid-run\trunning\n', [
+      { id: 'id-idle' },
+      { id: 'id-run' },
+    ]);
+    const { stdout, calls } = runScript(
+      getPaseoAutoResumeScript('devenv'),
+      stubEnv(home, binDir, callLog, { PASEO_AUTO_RESUME_MAX: '1' }),
+    );
+    expect(calls.some((c) => c.startsWith('send id-run '))).toBe(true);
+    expect(calls.some((c) => c.includes('id-idle'))).toBe(false);
+    expect(stdout).toContain('reached max agents limit (1)');
+  });
 });
