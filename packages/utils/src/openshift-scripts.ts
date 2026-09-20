@@ -237,7 +237,8 @@ rm -f "$MARKER" "$MARKER".tmp.*
 if [[ -z "$TARGETS" ]]; then
   log "no agents to resume"
   exit 0
-fi`;
+fi
+[[ "$MAX_AGENTS" =~ ^[0-9]+$ ]] || MAX_AGENTS=10`;
 }
 
 function paseoAutoResumeBody(): string {

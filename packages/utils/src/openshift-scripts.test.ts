@@ -173,6 +173,17 @@ describe('paseo auto-resume', () => {
     expect(calls.some((c) => c.includes('id-closed'))).toBe(false);
   });
 
+  it('falls back to the default cap when PASEO_AUTO_RESUME_MAX is malformed', () => {
+    const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
+    const { calls } = runScript(getPaseoAutoResumeScript('devenv'), {
+      PASEO_HOME: home,
+      PATH: `${binDir}:${process.env.PATH}`,
+      STUB_CALL_LOG: callLog,
+      PASEO_AUTO_RESUME_MAX: 'abc',
+    });
+    expect(calls.some((c) => c.startsWith('send id-run '))).toBe(true);
+  });
+
   it('surfaces send failures instead of masking them', () => {
     const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
     const { stdout } = runScript(getPaseoAutoResumeScript('devenv'), {
