@@ -230,6 +230,18 @@ describe('paseo auto-resume', () => {
     expect(existsSync(join(home, '.was-running'))).toBe(true);
   });
 
+  it('surfaces reload failures instead of masking them', () => {
+    const { home, binDir, callLog } = setup('id-idle\tidle\n', [{ id: 'id-idle' }]);
+    const { stdout } = runScript(getPaseoAutoResumeScript('devenv'), {
+      PASEO_HOME: home,
+      PATH: `${binDir}:${process.env.PATH}`,
+      STUB_CALL_LOG: callLog,
+      STUB_RELOAD_FAIL: '1',
+    });
+    expect(stdout).toContain('WARNING: failed to reload agent id-idle');
+    expect(stdout).toContain('Agent not found');
+  });
+
   it('surfaces send failures instead of masking them', () => {
     const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
     const { stdout } = runScript(getPaseoAutoResumeScript('devenv'), {
