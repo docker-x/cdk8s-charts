@@ -320,6 +320,25 @@ describe('paseo auto-resume', () => {
     expect(calls).not.toContain('agent reload id-run');
   });
 
+  it('skips daemon records without a status instead of prompting them', () => {
+    // Unclassifiable daemon entries get no spurious "continue" prompt —
+    // status-less means mid-turn only for legacy snapshot entries.
+    const { home, binDir, callLog } = setup('id-idle\tidle\n', [
+      { id: 'id-idle' },
+      { id: 'id-nostatus' },
+    ]);
+    const { calls } = runScript(getPaseoAutoResumeScript('devenv'), stubEnv(home, binDir, callLog));
+    expect(calls).toContain('agent reload id-idle');
+    expect(calls.some((c) => c.includes('id-nostatus') && !c.startsWith('ls'))).toBe(false);
+  });
+
+  it('keeps the first status for duplicate snapshot IDs', () => {
+    const { home, binDir, callLog } = setup('id-dup\tidle\nid-dup\trunning\n', [{ id: 'id-dup' }]);
+    const { calls } = runScript(getPaseoAutoResumeScript('devenv'), stubEnv(home, binDir, callLog));
+    expect(calls).toContain('agent reload id-dup');
+    expect(calls.some((c) => c.startsWith('send id-dup '))).toBe(false);
+  });
+
   it('spends the cap on mid-turn agents before warm-up reloads', () => {
     const { home, binDir, callLog } = setup('id-idle\tidle\nid-run\trunning\n', [
       { id: 'id-idle' },

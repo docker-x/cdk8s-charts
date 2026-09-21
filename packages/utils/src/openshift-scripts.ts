@@ -231,7 +231,8 @@ fi
 # reports was open at kill time — a partial or stale snapshot (missing
 # marker, empty intersection, legacy id-only entries) must not shrink it.
 # The marker only refines dispatch: its kill-time status decides send vs
-# reload, and a status-less legacy entry means mid-turn.
+# reload, and a status-less legacy entry means mid-turn. A status-less
+# daemon record is unclassifiable — skipped rather than prompted.
 if ! TARGETS="$(printf '%s' "$KNOWN_AGENTS" | node -e '
   const fs = require("fs");
   let known;
@@ -242,16 +243,21 @@ if ! TARGETS="$(printf '%s' "$KNOWN_AGENTS" | node -e '
     for (const line of fs.readFileSync(markerPath, "utf8").split("\\n")) {
       const tab = line.indexOf("\\t");
       const id = (tab === -1 ? line : line.slice(0, tab)).trim();
-      if (id) markerStatus.set(id, tab === -1 ? "" : line.slice(tab + 1).trim());
+      // First occurrence wins — a duplicate ID must not flip an earlier
+      // quiet status into a continuation prompt.
+      if (id && !markerStatus.has(id)) {
+        markerStatus.set(id, tab === -1 ? "" : line.slice(tab + 1).trim());
+      }
     }
   }
   const mid = [];
   const quiet = [];
+  const push = (id, status) =>
+    (status === "idle" || status === "error" ? quiet : mid).push(id + "\\t" + status);
   for (const a of known) {
     if (!a.id || a.status === "closed" || a.archivedAt) continue;
-    const status = markerStatus.has(a.id) ? markerStatus.get(a.id) : (a.status ?? "");
-    if (status === "idle" || status === "error") quiet.push(a.id + "\\t" + status);
-    else mid.push(a.id + "\\t" + status);
+    if (markerStatus.has(a.id)) push(a.id, markerStatus.get(a.id));
+    else if (a.status) push(a.id, a.status);
   }
   process.stdout.write(mid.concat(quiet).join("\\n"));
 ' "$MARKER" 2>/dev/null)"; then
