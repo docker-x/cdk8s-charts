@@ -1064,7 +1064,9 @@ production remote workspace:
 
 1. **Devcontainer workspace** — the base Deployment + PVC + SSH
 2. **OAuth proxy sidecar** — OpenShift OAuth proxy for SSO-protected web access
-3. **OpenShift Routes** — edge-terminated TLS routes for Paseo web UI and preview
+3. **OpenShift Routes** — edge-terminated TLS route for the Paseo web UI;
+   the preview Route is opt-in (`previewRoute: true`) because it bypasses
+   oauth-proxy
 4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
 5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2
 6. **Paseo auto-resume** — preStop hook snapshots open (non-closed,
@@ -1111,6 +1113,7 @@ production remote workspace:
 | `keepalive` | `{ enabled, schedule }` | no | Keepalive CronJob config |
 | `paseoAutoResume` | `{ enabled }` | no | Paseo auto-resume hook |
 | `tfDeployer` | `{ enabled }` | no | TF deployer SA + RBAC |
+| `previewRoute` | `boolean` | no | Public Route for the preview port, unauthenticated (default: `false`) |
 | `values` | `DeepPartial<Values>` | no | Raw devcontainer value overrides |
 
 **Exports (`OpenShiftWorkspaceExports`):**
@@ -1120,8 +1123,8 @@ production remote workspace:
 | `pvcName` | `string` | Durable PVC name |
 | `paseoRouteName` | `string` | OpenShift Route name for Paseo |
 | `paseoRouteUrl` | `string` | Full Paseo Route URL |
-| `previewRouteName` | `string` | OpenShift Route name for preview |
-| `previewRouteUrl` | `string` | Full preview Route URL |
+| `previewRouteName` | `string` | OpenShift Route name for preview (empty unless `previewRoute`) |
+| `previewRouteUrl` | `string` | Full preview Route URL (empty unless `previewRoute`) |
 | `backupCronJobName` | `string` | Backup CronJob name |
 | `keepaliveCronJobName` | `string` | Keepalive CronJob name |
 | `tfDeployerSaName` | `string` | TF deployer ServiceAccount name |
@@ -1228,7 +1231,9 @@ but using the Devenv chart:
 
 1. **Devenv workspace** — the base Deployment + PVC + SSH + process ports
 2. **OAuth proxy sidecar** — OpenShift OAuth proxy for SSO-protected web access
-3. **OpenShift Routes** — edge-terminated TLS routes for Paseo web UI and preview
+3. **OpenShift Routes** — edge-terminated TLS route for the Paseo web UI;
+   the preview Route is opt-in (`previewRoute: true`) because it bypasses
+   oauth-proxy
 4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
 5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2
 6. **Paseo auto-resume** — preStop hook snapshots open (non-closed,
@@ -1294,6 +1299,7 @@ but using the Devenv chart:
 | `paseoAutoResume` | `{ enabled }` | no | Paseo auto-resume hook |
 | `tfDeployer` | `{ enabled }` | no | TF deployer SA + RBAC |
 | `podSandbox` | `{ enabled }` | no | Workspace SA pod-spawn RBAC (default: enabled) |
+| `previewRoute` | `boolean` | no | Public Route for the preview port, unauthenticated (default: `false`) |
 | `values` | `DeepPartial<DevenvValues>` | no | Raw devenv value overrides |
 
 **Exports (`OpenShiftDevenvExports`):**
@@ -1303,8 +1309,8 @@ but using the Devenv chart:
 | `pvcName` | `string` | Durable PVC name |
 | `paseoRouteName` | `string` | OpenShift Route name for Paseo |
 | `paseoRouteUrl` | `string` | Full Paseo Route URL |
-| `previewRouteName` | `string` | OpenShift Route name for preview |
-| `previewRouteUrl` | `string` | Full preview Route URL |
+| `previewRouteName` | `string` | OpenShift Route name for preview (empty unless `previewRoute`) |
+| `previewRouteUrl` | `string` | Full preview Route URL (empty unless `previewRoute`) |
 | `backupCronJobName` | `string` | Backup CronJob name |
 | `keepaliveCronJobName` | `string` | Keepalive CronJob name |
 | `tfDeployerSaName` | `string` | TF deployer ServiceAccount name |

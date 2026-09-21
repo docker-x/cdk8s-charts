@@ -448,6 +448,7 @@ export function createRoutes(
   namespace: string,
   appsDomain: string,
   serviceName: string,
+  previewRoute = false,
 ) {
   const paseoRouteName = `${name}-paseo`;
   const previewRouteName = `${name}-preview`;
@@ -463,17 +464,24 @@ export function createRoutes(
       tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' },
     },
   });
-  new ApiObject(scope, 'preview-route', {
-    apiVersion: 'route.openshift.io/v1',
-    kind: 'Route',
-    metadata: { name: previewRouteName, namespace, labels: buildLabels(name) },
-    spec: {
-      to: { kind: 'Service', name: serviceName, weight: 100 },
-      port: { targetPort: 'preview' },
-      tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' },
-    },
-  });
-  return { paseoRouteName, previewRouteName, paseoRouteUrl, previewRouteUrl };
+  // The preview Route bypasses oauth-proxy — opt-in only.
+  if (previewRoute)
+    new ApiObject(scope, 'preview-route', {
+      apiVersion: 'route.openshift.io/v1',
+      kind: 'Route',
+      metadata: { name: previewRouteName, namespace, labels: buildLabels(name) },
+      spec: {
+        to: { kind: 'Service', name: serviceName, weight: 100 },
+        port: { targetPort: 'preview' },
+        tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' },
+      },
+    });
+  return {
+    paseoRouteName,
+    paseoRouteUrl,
+    previewRouteName: previewRoute ? previewRouteName : '',
+    previewRouteUrl: previewRoute ? previewRouteUrl : '',
+  };
 }
 
 // ---------------------------------------------------------------------------

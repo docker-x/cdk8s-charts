@@ -1,4 +1,4 @@
-import { findManifest, type Manifest, synthChart } from '@cdk8s-charts/utils';
+import { filterByKind, findManifest, type Manifest, synthChart } from '@cdk8s-charts/utils';
 import { Testing } from 'cdk8s';
 import { describe, expect, it } from 'vitest';
 import { OpenShiftWorkspace } from './construct';
@@ -138,13 +138,20 @@ describe('OpenShiftWorkspace recipe', () => {
     expect(ann['serviceaccounts.openshift.io/oauth-redirecturi.primary']).toBeDefined();
   });
 
-  it('creates OpenShift Routes for Paseo and preview', () => {
+  it('creates an OpenShift Route for Paseo; preview Route is opt-in', () => {
     const m = synth(baseProps);
     const paseoRoute = findManifest(m, 'Route', 'workspace-paseo');
-    const previewRoute = findManifest(m, 'Route', 'workspace-preview');
+    const routeNames = filterByKind(m, 'Route').map((r) => (r.metadata as { name: string }).name);
     expect(paseoRoute).toBeDefined();
-    expect(previewRoute).toBeDefined();
+    expect(routeNames).not.toContain('workspace-preview');
     expect((paseoRoute.spec as { tls: { termination: string } }).tls.termination).toBe('edge');
+  });
+
+  it('creates the preview Route when previewRoute is enabled', () => {
+    const m = synth({ ...baseProps, previewRoute: true });
+    const previewRoute = findManifest(m, 'Route', 'workspace-preview');
+    expect(previewRoute).toBeDefined();
+    expect((previewRoute.spec as { port: { targetPort: string } }).port.targetPort).toBe('preview');
   });
 
   it('lifecycle postStart hook includes mkdir -p for .paseo directory', () => {
@@ -269,8 +276,18 @@ describe('OpenShiftWorkspace recipe', () => {
     const app = Testing.app();
     const ws = new OpenShiftWorkspace(app, 'test', baseProps);
     expect(ws.exports.paseoRouteUrl).toBe('https://workspace-paseo-test-ns.apps.example.com');
-    expect(ws.exports.previewRouteUrl).toBe('https://workspace-preview-test-ns.apps.example.com');
+    // Preview Route is opt-in — exports stay empty when it is not created,
+    // matching the '' convention for absent resources.
+    expect(ws.exports.previewRouteName).toBe('');
+    expect(ws.exports.previewRouteUrl).toBe('');
     expect(ws.exports.keepaliveCronJobName).toBe('workspace-keepalive');
     expect(ws.exports.tfDeployerSaName).toBe('workspace-tf-deployer');
+
+    const app2 = Testing.app();
+    const wsOptIn = new OpenShiftWorkspace(app2, 'test', { ...baseProps, previewRoute: true });
+    expect(wsOptIn.exports.previewRouteName).toBe('workspace-preview');
+    expect(wsOptIn.exports.previewRouteUrl).toBe(
+      'https://workspace-preview-test-ns.apps.example.com',
+    );
   });
 });
