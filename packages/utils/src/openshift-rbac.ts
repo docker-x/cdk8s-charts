@@ -325,6 +325,11 @@ export function createTfDeployer(
 ): void {
   validateGeneratedName(name, '-tf-deployer-token', 63);
   const saName = `${name}-tf-deployer`;
+  // Blank names produce dead RBAC entries — surface at synth time.
+  for (const s of managedSecrets) {
+    if (!s || !s.trim()) throw new Error('tf-deployer managed secret name must be non-empty');
+  }
+  const uniqueSecrets = [...new Set([...managedSecrets, `${saName}-token`])];
   new ApiObject(scope, 'tf-deployer-sa', {
     apiVersion: 'v1',
     kind: 'ServiceAccount',
@@ -345,7 +350,7 @@ export function createTfDeployer(
     apiVersion: 'rbac.authorization.k8s.io/v1',
     kind: 'Role',
     metadata: { name: saName, namespace, labels: componentLabels(name, 'tf-deployer') },
-    rules: buildTfDeployerRules([...managedSecrets, `${saName}-token`], opts),
+    rules: buildTfDeployerRules(uniqueSecrets, opts),
   });
   new ApiObject(scope, 'tf-deployer-rb', {
     apiVersion: 'rbac.authorization.k8s.io/v1',

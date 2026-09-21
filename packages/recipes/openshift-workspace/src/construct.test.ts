@@ -283,8 +283,26 @@ describe('OpenShiftWorkspace recipe', () => {
       verbs: string[];
       resourceNames?: string[];
     }[];
-    const scoped = rules.find((r) => r.resources?.includes('secrets') && r.verbs.includes('get'));
-    expect(scoped?.resourceNames).toContain('gha-runner-github-app');
+    const secretRules = rules.filter((r) => r.resources?.includes('secrets'));
+    // Extras append to the managed set — recipe secrets must survive.
+    const managed = [
+      'workspace-oauth-cookie',
+      'workspace-sa-token',
+      'workspace-ssh-keys',
+      'workspace-tf-deployer-token',
+      'gha-runner-github-app',
+    ];
+    for (const rule of secretRules.filter((r) =>
+      r.verbs.some((v) => ['delete', 'get', 'patch', 'update'].includes(v)),
+    )) {
+      expect([...(rule.resourceNames ?? [])].sort()).toEqual([...managed].sort());
+    }
+  });
+
+  it('tfDeployer.extraManagedSecrets rejects blank names at synth time', () => {
+    expect(() => synth({ ...baseProps, tfDeployer: { extraManagedSecrets: ['  '] } })).toThrow(
+      /non-empty/,
+    );
   });
 
   it('exports correct route URLs and resource names', () => {
