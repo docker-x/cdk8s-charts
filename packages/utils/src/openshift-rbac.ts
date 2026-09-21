@@ -327,7 +327,7 @@ export function createTfDeployer(
   const saName = `${name}-tf-deployer`;
   // Blank names produce dead RBAC entries — surface at synth time.
   for (const s of managedSecrets) {
-    if (!s?.trim()) throw new Error('tf-deployer managed secret name must be non-empty');
+    if (!s.trim()) throw new Error('tf-deployer managed secret name must be non-empty');
   }
   const uniqueSecrets = [...new Set([...managedSecrets, `${saName}-token`])];
   new ApiObject(scope, 'tf-deployer-sa', {
