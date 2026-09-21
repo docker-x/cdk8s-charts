@@ -32,9 +32,7 @@ export interface PaseoAutoResumeConfig {
   enabled?: boolean;
 }
 
-export interface TfDeployerConfig {
-  enabled?: boolean;
-}
+export type { TfDeployerConfig } from '@cdk8s-charts/utils';
 
 export interface PodSandboxConfig {
   /** Grant the workspace SA rights to spawn sibling pods (oc run). Default: true. */

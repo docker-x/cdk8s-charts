@@ -139,6 +139,7 @@ export class OpenShiftDevenv extends Chart {
             hasBackupSecrets ? r2SecretName : '',
           ].filter(Boolean),
           ...devenv.exports.managedSecretNames,
+          ...(tfDeployer.extraManagedSecrets ?? []),
         ],
         // Pod write+exec verbs are needed only to delegate them to the
         // workspace SA (pod-sandbox) — RBAC escalation prevention.

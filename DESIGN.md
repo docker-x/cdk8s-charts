@@ -1087,8 +1087,8 @@ production remote workspace:
    (`resourceNames` cannot restrict `create` — the object has no name
    at authorization time), while `get`/`patch`/`update`/`delete` are
    scoped via `resourceNames` to the secrets the stack actually manages
-   — recipe secrets plus the chart's `managedSecretNames` export and the
-   deployer's own token. Pods are read-only (`get`/`list`/`watch`) —
+   — recipe secrets plus the chart's `managedSecretNames` export, any
+   `tfDeployer.extraManagedSecrets`, and the deployer's own token. Pods are read-only (`get`/`list`/`watch`) —
    this recipe has no pod-sandbox, so the deployer gets no pod
    write/exec verbs that could mount arbitrary secrets.
 8. **All secrets** — R2 credentials, SSH keys, OAuth cookie, GHCR pull secret
@@ -1112,7 +1112,7 @@ production remote workspace:
 | `backup` | `BackupConfig` | no | R2 backup configuration |
 | `keepalive` | `{ enabled, schedule }` | no | Keepalive CronJob config |
 | `paseoAutoResume` | `{ enabled }` | no | Paseo auto-resume hook |
-| `tfDeployer` | `{ enabled }` | no | TF deployer SA + RBAC |
+| `tfDeployer` | `{ enabled, extraManagedSecrets }` | no | TF deployer SA + RBAC; `extraManagedSecrets` adds names to the scoped secrets set |
 | `previewRoute` | `boolean` | no | Public Route for the preview port, unauthenticated (default: `false`) |
 | `values` | `DeepPartial<Values>` | no | Raw devcontainer value overrides |
 
@@ -1254,8 +1254,8 @@ but using the Devenv chart:
    (`resourceNames` cannot restrict `create` — the object has no name
    at authorization time), while `get`/`patch`/`update`/`delete` are
    scoped via `resourceNames` to the secrets the stack actually manages
-   — recipe secrets plus the chart's `managedSecretNames` export and the
-   deployer's own token. Pods are read-only (`get`/`list`/`watch`):
+   — recipe secrets plus the chart's `managedSecretNames` export, any
+   `tfDeployer.extraManagedSecrets`, and the deployer's own token. Pods are read-only (`get`/`list`/`watch`):
    `pods create`/`exec` would let the deployer mount any namespace
    secret and read it, so write verbs are granted only when
    `podSandbox.enabled` — RBAC escalation prevention requires holding
@@ -1297,7 +1297,7 @@ but using the Devenv chart:
 | `backup` | `BackupConfig` | no | R2 backup configuration |
 | `keepalive` | `{ enabled, schedule }` | no | Keepalive CronJob config |
 | `paseoAutoResume` | `{ enabled }` | no | Paseo auto-resume hook |
-| `tfDeployer` | `{ enabled }` | no | TF deployer SA + RBAC |
+| `tfDeployer` | `{ enabled, extraManagedSecrets }` | no | TF deployer SA + RBAC; `extraManagedSecrets` adds names to the scoped secrets set |
 | `podSandbox` | `{ enabled }` | no | Workspace SA pod-spawn RBAC (default: enabled) |
 | `previewRoute` | `boolean` | no | Public Route for the preview port, unauthenticated (default: `false`) |
 | `values` | `DeepPartial<DevenvValues>` | no | Raw devenv value overrides |

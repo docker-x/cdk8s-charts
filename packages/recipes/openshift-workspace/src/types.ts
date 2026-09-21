@@ -32,9 +32,7 @@ export interface PaseoAutoResumeConfig {
   enabled?: boolean;
 }
 
-export interface TfDeployerConfig {
-  enabled?: boolean;
-}
+export type { TfDeployerConfig } from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
 // Construct props & exports

@@ -18,6 +18,14 @@ const baseProps = {
   oauthCookieSecret: Buffer.from('0123456789abcdef0123456789abcdef', 'utf8').toString('base64'),
 };
 
+// The recipe-managed secret set the tf-deployer Role scopes to.
+const MANAGED_SECRETS = [
+  'workspace-oauth-cookie',
+  'workspace-sa-token',
+  'workspace-ssh-keys',
+  'workspace-tf-deployer-token',
+];
+
 describe('OpenShiftWorkspace recipe', () => {
   it('throws on invalid workspace name with dots', () => {
     expect(() => synth({ ...baseProps, name: 'invalid.name' })).toThrow(/DNS-label/);
@@ -253,23 +261,44 @@ describe('OpenShiftWorkspace recipe', () => {
       resourceNames?: string[];
     }[];
     const secretRules = rules.filter((r) => r.resources?.includes('secrets'));
-    const managed = [
-      'workspace-oauth-cookie',
-      'workspace-sa-token',
-      'workspace-ssh-keys',
-      'workspace-tf-deployer-token',
-    ];
     // Every read/write-capable secrets rule must be scoped to exactly
     // the managed set — an unscoped or extra-named rule widens privilege.
     for (const rule of secretRules.filter((r) =>
       r.verbs.some((v) => ['delete', 'get', 'patch', 'update'].includes(v)),
     )) {
-      expect([...(rule.resourceNames ?? [])].sort()).toEqual([...managed].sort());
+      expect([...(rule.resourceNames ?? [])].sort()).toEqual([...MANAGED_SECRETS].sort());
     }
     // Only create stays namespace-wide: it can't be resourceNames-scoped
     // because the object has no name at authorization time.
     const wideRule = secretRules.find((r) => r.resourceNames === undefined);
     expect(wideRule?.verbs).toEqual(['create']);
+  });
+
+  it('tfDeployer.extraManagedSecrets widens the scoped secret set', () => {
+    const m = synth({
+      ...baseProps,
+      tfDeployer: { extraManagedSecrets: ['gha-runner-github-app'] },
+    });
+    const role = findManifest(m, 'Role', 'workspace-tf-deployer');
+    const rules = role.rules as {
+      resources?: string[];
+      verbs: string[];
+      resourceNames?: string[];
+    }[];
+    const secretRules = rules.filter((r) => r.resources?.includes('secrets'));
+    // Extras append to the managed set — recipe secrets must survive.
+    const managed = [...MANAGED_SECRETS, 'gha-runner-github-app'];
+    for (const rule of secretRules.filter((r) =>
+      r.verbs.some((v) => ['delete', 'get', 'patch', 'update'].includes(v)),
+    )) {
+      expect([...(rule.resourceNames ?? [])].sort()).toEqual(managed.sort());
+    }
+  });
+
+  it('tfDeployer.extraManagedSecrets rejects blank names at synth time', () => {
+    expect(() => synth({ ...baseProps, tfDeployer: { extraManagedSecrets: ['  '] } })).toThrow(
+      /non-empty/,
+    );
   });
 
   it('exports correct route URLs and resource names', () => {
