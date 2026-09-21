@@ -105,6 +105,7 @@ export class OpenShiftWorkspace extends Chart {
       namespace,
       appsDomain,
       devcontainer.exports.serviceName,
+      props.previewRoute,
     );
     if (keepalive.enabled) createKeepaliveRbac(this, name, namespace);
     if (keepalive.enabled) createKeepaliveCronJob(this, name, namespace, keepalive);

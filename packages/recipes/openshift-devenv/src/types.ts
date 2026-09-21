@@ -83,6 +83,12 @@ export interface OpenShiftDevenvProps {
   tfDeployer?: TfDeployerConfig;
   /** Workspace pod sandbox — lets the workspace SA spawn sibling pods (default: enabled). */
   podSandbox?: PodSandboxConfig;
+  /**
+   * Create a public Route for the preview port. The preview Route bypasses
+   * oauth-proxy — anything listening on the port is reachable without auth.
+   * Default: false (use `oc port-forward` for previews instead).
+   */
+  previewRoute?: boolean;
   /** Raw devenv value overrides. */
   values?: DeepPartial<DevenvValues>;
 }

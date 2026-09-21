@@ -110,7 +110,14 @@ export class OpenShiftDevenv extends Chart {
         lifecycle,
       }) as unknown as ConstructorParameters<typeof Devenv>[2],
     );
-    const routes = createRoutes(this, name, namespace, appsDomain, devenv.exports.serviceName);
+    const routes = createRoutes(
+      this,
+      name,
+      namespace,
+      appsDomain,
+      devenv.exports.serviceName,
+      props.previewRoute,
+    );
     if (keepalive.enabled) createKeepaliveRbac(this, name, namespace);
     if (keepalive.enabled) createKeepaliveCronJob(this, name, namespace, keepalive);
     if (hasBackupSecrets) createBackupRbac(this, name, namespace);

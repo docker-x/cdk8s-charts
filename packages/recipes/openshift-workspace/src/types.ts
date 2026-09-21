@@ -76,6 +76,12 @@ export interface OpenShiftWorkspaceProps {
   paseoAutoResume?: PaseoAutoResumeConfig;
   /** TF deployer SA + RBAC. */
   tfDeployer?: TfDeployerConfig;
+  /**
+   * Create a public Route for the preview port. The preview Route bypasses
+   * oauth-proxy — anything listening on the port is reachable without auth.
+   * Default: false (use `oc port-forward` for previews instead).
+   */
+  previewRoute?: boolean;
   /** Raw devcontainer value overrides. */
   values?: DeepPartial<DevcontainerValues>;
 }
