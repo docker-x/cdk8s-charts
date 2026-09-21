@@ -476,7 +476,12 @@ export function createRoutes(
         tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' },
       },
     });
-  return { paseoRouteName, previewRouteName, paseoRouteUrl, previewRouteUrl };
+  return {
+    paseoRouteName,
+    paseoRouteUrl,
+    previewRouteName: previewRoute ? previewRouteName : '',
+    previewRouteUrl: previewRoute ? previewRouteUrl : '',
+  };
 }
 
 // ---------------------------------------------------------------------------

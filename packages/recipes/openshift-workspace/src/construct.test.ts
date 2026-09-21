@@ -276,8 +276,18 @@ describe('OpenShiftWorkspace recipe', () => {
     const app = Testing.app();
     const ws = new OpenShiftWorkspace(app, 'test', baseProps);
     expect(ws.exports.paseoRouteUrl).toBe('https://workspace-paseo-test-ns.apps.example.com');
-    expect(ws.exports.previewRouteUrl).toBe('https://workspace-preview-test-ns.apps.example.com');
+    // Preview Route is opt-in — exports stay empty when it is not created,
+    // matching the '' convention for absent resources.
+    expect(ws.exports.previewRouteName).toBe('');
+    expect(ws.exports.previewRouteUrl).toBe('');
     expect(ws.exports.keepaliveCronJobName).toBe('workspace-keepalive');
     expect(ws.exports.tfDeployerSaName).toBe('workspace-tf-deployer');
+
+    const app2 = Testing.app();
+    const wsOptIn = new OpenShiftWorkspace(app2, 'test', { ...baseProps, previewRoute: true });
+    expect(wsOptIn.exports.previewRouteName).toBe('workspace-preview');
+    expect(wsOptIn.exports.previewRouteUrl).toBe(
+      'https://workspace-preview-test-ns.apps.example.com',
+    );
   });
 });

@@ -1123,8 +1123,8 @@ production remote workspace:
 | `pvcName` | `string` | Durable PVC name |
 | `paseoRouteName` | `string` | OpenShift Route name for Paseo |
 | `paseoRouteUrl` | `string` | Full Paseo Route URL |
-| `previewRouteName` | `string` | OpenShift Route name for preview |
-| `previewRouteUrl` | `string` | Full preview Route URL |
+| `previewRouteName` | `string` | OpenShift Route name for preview (empty unless `previewRoute`) |
+| `previewRouteUrl` | `string` | Full preview Route URL (empty unless `previewRoute`) |
 | `backupCronJobName` | `string` | Backup CronJob name |
 | `keepaliveCronJobName` | `string` | Keepalive CronJob name |
 | `tfDeployerSaName` | `string` | TF deployer ServiceAccount name |
@@ -1309,8 +1309,8 @@ but using the Devenv chart:
 | `pvcName` | `string` | Durable PVC name |
 | `paseoRouteName` | `string` | OpenShift Route name for Paseo |
 | `paseoRouteUrl` | `string` | Full Paseo Route URL |
-| `previewRouteName` | `string` | OpenShift Route name for preview |
-| `previewRouteUrl` | `string` | Full preview Route URL |
+| `previewRouteName` | `string` | OpenShift Route name for preview (empty unless `previewRoute`) |
+| `previewRouteUrl` | `string` | Full preview Route URL (empty unless `previewRoute`) |
 | `backupCronJobName` | `string` | Backup CronJob name |
 | `keepaliveCronJobName` | `string` | Keepalive CronJob name |
 | `tfDeployerSaName` | `string` | TF deployer ServiceAccount name |
