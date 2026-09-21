@@ -121,6 +121,7 @@ export class OpenShiftWorkspace extends Chart {
           Boolean,
         ),
         ...devcontainer.exports.managedSecretNames,
+        ...(tfDeployer.extraManagedSecrets ?? []),
       ]);
     }
 

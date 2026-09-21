@@ -272,6 +272,21 @@ describe('OpenShiftWorkspace recipe', () => {
     expect(wideRule?.verbs).toEqual(['create']);
   });
 
+  it('tfDeployer.extraManagedSecrets widens the scoped secret set', () => {
+    const m = synth({
+      ...baseProps,
+      tfDeployer: { extraManagedSecrets: ['gha-runner-github-app'] },
+    });
+    const role = findManifest(m, 'Role', 'workspace-tf-deployer');
+    const rules = role.rules as {
+      resources?: string[];
+      verbs: string[];
+      resourceNames?: string[];
+    }[];
+    const scoped = rules.find((r) => r.resources?.includes('secrets') && r.verbs.includes('get'));
+    expect(scoped?.resourceNames).toContain('gha-runner-github-app');
+  });
+
   it('exports correct route URLs and resource names', () => {
     const app = Testing.app();
     const ws = new OpenShiftWorkspace(app, 'test', baseProps);

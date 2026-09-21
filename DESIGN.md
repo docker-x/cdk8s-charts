@@ -1112,7 +1112,7 @@ production remote workspace:
 | `backup` | `BackupConfig` | no | R2 backup configuration |
 | `keepalive` | `{ enabled, schedule }` | no | Keepalive CronJob config |
 | `paseoAutoResume` | `{ enabled }` | no | Paseo auto-resume hook |
-| `tfDeployer` | `{ enabled }` | no | TF deployer SA + RBAC |
+| `tfDeployer` | `{ enabled, extraManagedSecrets }` | no | TF deployer SA + RBAC; `extraManagedSecrets` adds names to the scoped secrets set |
 | `previewRoute` | `boolean` | no | Public Route for the preview port, unauthenticated (default: `false`) |
 | `values` | `DeepPartial<Values>` | no | Raw devcontainer value overrides |
 
@@ -1297,7 +1297,7 @@ but using the Devenv chart:
 | `backup` | `BackupConfig` | no | R2 backup configuration |
 | `keepalive` | `{ enabled, schedule }` | no | Keepalive CronJob config |
 | `paseoAutoResume` | `{ enabled }` | no | Paseo auto-resume hook |
-| `tfDeployer` | `{ enabled }` | no | TF deployer SA + RBAC |
+| `tfDeployer` | `{ enabled, extraManagedSecrets }` | no | TF deployer SA + RBAC; `extraManagedSecrets` adds names to the scoped secrets set |
 | `podSandbox` | `{ enabled }` | no | Workspace SA pod-spawn RBAC (default: enabled) |
 | `previewRoute` | `boolean` | no | Public Route for the preview port, unauthenticated (default: `false`) |
 | `values` | `DeepPartial<DevenvValues>` | no | Raw devenv value overrides |

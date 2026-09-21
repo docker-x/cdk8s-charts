@@ -34,6 +34,12 @@ export interface PaseoAutoResumeConfig {
 
 export interface TfDeployerConfig {
   enabled?: boolean;
+  /**
+   * Extra Secret names the deployer may get/patch/update/delete, on top of
+   * the recipe's own secrets. For co-namespaced stacks sharing this
+   * deployer SA (e.g. teardown of a sibling stack's Secret).
+   */
+  extraManagedSecrets?: string[];
 }
 
 export interface PodSandboxConfig {
