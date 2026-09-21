@@ -1070,11 +1070,16 @@ production remote workspace:
 6. **Paseo auto-resume** — preStop hook snapshots open (non-closed,
    non-archived) agents as `id<TAB>status` to `$PASEO_HOME/.was-running`
    in a single `node` pass, atomically; postStart waits for daemon health,
-   intersects the snapshot with `paseo ls -g` (daemon-known only), then
-   `paseo send`s a "continue" prompt to agents that were mid-turn and
-   `paseo agent reload`s quiet ones (reattach runtime, no spurious turn).
-   Without a snapshot (SIGKILL/crash/hook timeout) it resumes every
-   non-closed agent the daemon reports. Capped by `PASEO_AUTO_RESUME_MAX`.
+   then resumes every non-closed, non-archived agent `paseo ls -g` reports
+   (the daemon is authoritative — a missing/partial/stale snapshot cannot
+   shrink the set). Snapshot status decides dispatch for snapshotted
+   agents — `paseo send` a "continue" prompt to agents that were
+   mid-turn, `paseo agent reload` quiet ones (reattach runtime, no
+   spurious turn); legacy status-less entries count as mid-turn. Agents
+   absent from the snapshot dispatch on their daemon-reported status
+   with the same mapping; status-less daemon records are skipped.
+   Mid-turn agents run first so the `PASEO_AUTO_RESUME_MAX` cap drops
+   warm-up reloads, not prompts.
 7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform
    deployments. Secret RBAC is split: `create` stays namespace-wide
    (`resourceNames` cannot restrict `create` — the object has no name
@@ -1229,11 +1234,16 @@ but using the Devenv chart:
 6. **Paseo auto-resume** — preStop hook snapshots open (non-closed,
    non-archived) agents as `id<TAB>status` to `$PASEO_HOME/.was-running`
    in a single `node` pass, atomically; postStart waits for daemon health,
-   intersects the snapshot with `paseo ls -g` (daemon-known only), then
-   `paseo send`s a "continue" prompt to agents that were mid-turn and
-   `paseo agent reload`s quiet ones (reattach runtime, no spurious turn).
-   Without a snapshot (SIGKILL/crash/hook timeout) it resumes every
-   non-closed agent the daemon reports. Capped by `PASEO_AUTO_RESUME_MAX`.
+   then resumes every non-closed, non-archived agent `paseo ls -g` reports
+   (the daemon is authoritative — a missing/partial/stale snapshot cannot
+   shrink the set). Snapshot status decides dispatch for snapshotted
+   agents — `paseo send` a "continue" prompt to agents that were
+   mid-turn, `paseo agent reload` quiet ones (reattach runtime, no
+   spurious turn); legacy status-less entries count as mid-turn. Agents
+   absent from the snapshot dispatch on their daemon-reported status
+   with the same mapping; status-less daemon records are skipped.
+   Mid-turn agents run first so the `PASEO_AUTO_RESUME_MAX` cap drops
+   warm-up reloads, not prompts.
 7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform
    deployments. Secret RBAC is split: `create` stays namespace-wide
    (`resourceNames` cannot restrict `create` — the object has no name
