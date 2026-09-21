@@ -32,15 +32,7 @@ export interface PaseoAutoResumeConfig {
   enabled?: boolean;
 }
 
-export interface TfDeployerConfig {
-  enabled?: boolean;
-  /**
-   * Extra Secret names the deployer may get/patch/update/delete, on top of
-   * the recipe's own secrets. For co-namespaced stacks sharing this
-   * deployer SA (e.g. teardown of a sibling stack's Secret).
-   */
-  extraManagedSecrets?: string[];
-}
+export type { TfDeployerConfig } from '@cdk8s-charts/utils';
 
 export interface PodSandboxConfig {
   /** Grant the workspace SA rights to spawn sibling pods (oc run). Default: true. */
