@@ -176,10 +176,8 @@ NUDGE_STATE="$PASEO_HOME/.auto-resume-nudged"
 # turn) while a genuinely dead turn — 'running' forever — gets re-nudged
 # once the cooldown expires.
 NUDGE_COOLDOWN="\${PASEO_AUTO_RESUME_NUDGE_COOLDOWN:-1800}"
-[[ "$NUDGE_COOLDOWN" =~ ^[0-9]+$ ]] || NUDGE_COOLDOWN=1800
-# Force base-10 (a leading zero would read as octal) and reset values that
-# overflowed int64 into the negatives.
-NUDGE_COOLDOWN=$((10#$NUDGE_COOLDOWN))
+[[ "$NUDGE_COOLDOWN" =~ ^(0|[1-9][0-9]*)$ ]] || NUDGE_COOLDOWN=1800
+# int64 overflow wraps to negative — reset to the default.
 (( NUDGE_COOLDOWN < 0 )) && NUDGE_COOLDOWN=1800 || true
 
 log() { echo "[auto-resume] $*"; }`;
