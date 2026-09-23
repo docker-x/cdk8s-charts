@@ -177,6 +177,10 @@ NUDGE_STATE="$PASEO_HOME/.auto-resume-nudged"
 # once the cooldown expires.
 NUDGE_COOLDOWN="\${PASEO_AUTO_RESUME_NUDGE_COOLDOWN:-1800}"
 [[ "$NUDGE_COOLDOWN" =~ ^[0-9]+$ ]] || NUDGE_COOLDOWN=1800
+# Force base-10 (a leading zero would read as octal) and reset values that
+# overflowed int64 into the negatives.
+NUDGE_COOLDOWN=$((10#$NUDGE_COOLDOWN))
+(( NUDGE_COOLDOWN < 0 )) && NUDGE_COOLDOWN=1800 || true
 
 log() { echo "[auto-resume] $*"; }`;
 }
@@ -284,7 +288,6 @@ function paseoAutoResumeBody(): string {
   return `
 restored=0
 attempted=0
-now=$(date +%s)
 while IFS=$'\\t' read -r agent_id agent_status; do
   [[ -n "$agent_id" ]] || continue
   if [[ $attempted -ge $MAX_AGENTS ]]; then
@@ -294,7 +297,9 @@ while IFS=$'\\t' read -r agent_id agent_status; do
   if [[ "$agent_status" != "idle" && "$agent_status" != "error" ]]; then
     # Skip a still-mid-turn agent nudged within the cooldown — the previous
     # prompt is plausibly still executing. Skips cost no provider turn, so
-    # they don't consume the cap either.
+    # they don't consume the cap either. 'now' is read per-agent: the loop
+    # sleeps between sends, so a single pre-loop timestamp would go stale.
+    now=$(date +%s)
     last_nudge=$(grep -F "$agent_id"$'\\t' "$NUDGE_STATE" 2>/dev/null | tail -1 | cut -f2 || true)
     if [[ "$last_nudge" =~ ^[0-9]+$ ]] && (( now - last_nudge < NUDGE_COOLDOWN )); then
       log "agent $agent_id nudged $(( (now - last_nudge) / 60 ))m ago, still \${agent_status:-unknown} — skipping re-nudge"
@@ -329,7 +334,7 @@ while IFS=$'\\t' read -r agent_id agent_status; do
       if out=$(paseo send "$agent_id" "$RESUME_PROMPT" --no-wait </dev/null 2>&1); then
         log "agent $agent_id resumed (was \${agent_status:-unknown})"
         restored=$((restored + 1))
-        printf '%s\\t%s\\n' "$agent_id" "$now" >> "$NUDGE_STATE" ||
+        printf '%s\\t%s\\n' "$agent_id" "$(date +%s)" >> "$NUDGE_STATE" ||
           log "WARNING: failed to record nudge for $agent_id"
       else
         log "WARNING: failed to resume agent $agent_id: $out"

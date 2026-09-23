@@ -166,6 +166,15 @@ describe('paseo auto-resume', () => {
     };
   }
 
+  // Records a nudge for `id` stamped `ageSec` seconds in the past.
+  function seedNudge(home: string, id: string, ageSec: number): void {
+    sh('printf "%s\\t%s\\n" "$ID" "$(( $(date +%s) - AGE ))" > "$F"', {
+      F: join(home, '.auto-resume-nudged'),
+      ID: id,
+      AGE: String(ageSec),
+    });
+  }
+
   it('sends a continue prompt to mid-turn agents and reloads quiet ones', () => {
     const { home, binDir, callLog } = setup('id-run\trunning\nid-idle\tidle\nid-old\n', [
       { id: 'id-run' },
@@ -364,9 +373,7 @@ describe('paseo auto-resume', () => {
     // Crash-loop case: the pod restarted again while the previous nudge's
     // turn is plausibly still in flight — re-sending burns a provider turn.
     const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
-    sh('printf "id-run\\t%s\\n" "$(date +%s)" > "$F"', {
-      F: join(home, '.auto-resume-nudged'),
-    });
+    seedNudge(home, 'id-run', 0);
     const { stdout, calls } = runScript(
       getPaseoAutoResumeScript('devenv'),
       stubEnv(home, binDir, callLog),
@@ -379,9 +386,7 @@ describe('paseo auto-resume', () => {
     // A turn that genuinely died stays 'running' forever — after the
     // cooldown the nudge is the only thing that can unstick it.
     const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
-    sh('printf "id-run\\t%s\\n" "$(( $(date +%s) - 7200 ))" > "$F"', {
-      F: join(home, '.auto-resume-nudged'),
-    });
+    seedNudge(home, 'id-run', 7200);
     const { calls } = runScript(getPaseoAutoResumeScript('devenv'), stubEnv(home, binDir, callLog));
     expect(calls.some((c) => c.startsWith('send id-run '))).toBe(true);
   });
@@ -390,9 +395,7 @@ describe('paseo auto-resume', () => {
     // Nudge consumed: the agent went quiet, so a future mid-turn crash
     // must get a fresh prompt rather than hit the cooldown.
     const { home, binDir, callLog } = setup('id-idle\tidle\n', [{ id: 'id-idle' }]);
-    sh('printf "id-idle\\t%s\\n" "$(date +%s)" > "$F"', {
-      F: join(home, '.auto-resume-nudged'),
-    });
+    seedNudge(home, 'id-idle', 0);
     runScript(getPaseoAutoResumeScript('devenv'), stubEnv(home, binDir, callLog));
     expect(readFile(join(home, '.auto-resume-nudged'))).not.toContain('id-idle');
   });
@@ -402,9 +405,7 @@ describe('paseo auto-resume', () => {
       { id: 'id-stuck' },
       { id: 'id-run' },
     ]);
-    sh('printf "id-stuck\\t%s\\n" "$(date +%s)" > "$F"', {
-      F: join(home, '.auto-resume-nudged'),
-    });
+    seedNudge(home, 'id-stuck', 0);
     const { calls } = runScript(
       getPaseoAutoResumeScript('devenv'),
       stubEnv(home, binDir, callLog, { PASEO_AUTO_RESUME_MAX: '1' }),
@@ -416,9 +417,7 @@ describe('paseo auto-resume', () => {
 
   it('falls back to the default cooldown when malformed', () => {
     const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
-    sh('printf "id-run\\t%s\\n" "$(date +%s)" > "$F"', {
-      F: join(home, '.auto-resume-nudged'),
-    });
+    seedNudge(home, 'id-run', 0);
     const { calls } = runScript(
       getPaseoAutoResumeScript('devenv'),
       stubEnv(home, binDir, callLog, { PASEO_AUTO_RESUME_NUDGE_COOLDOWN: 'abc' }),
@@ -429,9 +428,7 @@ describe('paseo auto-resume', () => {
 
   it('honors PASEO_AUTO_RESUME_NUDGE_COOLDOWN', () => {
     const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
-    sh('printf "id-run\\t%s\\n" "$(( $(date +%s) - 600 ))" > "$F"', {
-      F: join(home, '.auto-resume-nudged'),
-    });
+    seedNudge(home, 'id-run', 600);
     // 10-minute-old nudge, 60s cooldown → expired → send
     const { calls } = runScript(
       getPaseoAutoResumeScript('devenv'),
