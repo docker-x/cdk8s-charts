@@ -1081,7 +1081,19 @@ production remote workspace:
    absent from the snapshot dispatch on their daemon-reported status
    with the same mapping; status-less daemon records are skipped.
    Mid-turn agents run first so the `PASEO_AUTO_RESUME_MAX` cap drops
-   warm-up reloads, not prompts.
+   warm-up reloads, not prompts. A successful `send` appends the agent's
+   nudge epoch to `$PASEO_HOME/.auto-resume-nudged` (`id<TAB>epoch`,
+   best-effort — a
+   failed append is logged and treated as unrecorded); a still-mid-turn
+   agent nudged within `PASEO_AUTO_RESUME_NUDGE_COOLDOWN` (default 1800s)
+   is skipped so a crash-looping pod cannot burn one provider turn per
+   restart — a genuinely dead turn stays `running` forever and is
+   re-nudged once the recorded nudge is older than the cooldown (a
+   backward clock adjustment only delays this — skipping is the
+   conservative direction). Agents observed `idle`/`error`
+   drop their entry (the nudge was consumed), failed sends record
+   nothing (next restart retries), and skips cost no provider turn so
+   they do not consume the cap.
 7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform
    deployments. Secret RBAC is split: `create` stays namespace-wide
    (`resourceNames` cannot restrict `create` — the object has no name
@@ -1248,7 +1260,19 @@ but using the Devenv chart:
    absent from the snapshot dispatch on their daemon-reported status
    with the same mapping; status-less daemon records are skipped.
    Mid-turn agents run first so the `PASEO_AUTO_RESUME_MAX` cap drops
-   warm-up reloads, not prompts.
+   warm-up reloads, not prompts. A successful `send` appends the agent's
+   nudge epoch to `$PASEO_HOME/.auto-resume-nudged` (`id<TAB>epoch`,
+   best-effort — a
+   failed append is logged and treated as unrecorded); a still-mid-turn
+   agent nudged within `PASEO_AUTO_RESUME_NUDGE_COOLDOWN` (default 1800s)
+   is skipped so a crash-looping pod cannot burn one provider turn per
+   restart — a genuinely dead turn stays `running` forever and is
+   re-nudged once the recorded nudge is older than the cooldown (a
+   backward clock adjustment only delays this — skipping is the
+   conservative direction). Agents observed `idle`/`error`
+   drop their entry (the nudge was consumed), failed sends record
+   nothing (next restart retries), and skips cost no provider turn so
+   they do not consume the cap.
 7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform
    deployments. Secret RBAC is split: `create` stays namespace-wide
    (`resourceNames` cannot restrict `create` — the object has no name
