@@ -166,6 +166,15 @@ describe('paseo auto-resume', () => {
     };
   }
 
+  // Records a nudge for `id` stamped `ageSec` seconds in the past.
+  function seedNudge(home: string, id: string, ageSec: number): void {
+    sh('printf "%s\\t%s\\n" "$ID" "$(( $(date +%s) - AGE ))" > "$F"', {
+      F: join(home, '.auto-resume-nudged'),
+      ID: id,
+      AGE: String(ageSec),
+    });
+  }
+
   it('sends a continue prompt to mid-turn agents and reloads quiet ones', () => {
     const { home, binDir, callLog } = setup('id-run\trunning\nid-idle\tidle\nid-old\n', [
       { id: 'id-run' },
@@ -351,5 +360,80 @@ describe('paseo auto-resume', () => {
     expect(calls.some((c) => c.startsWith('send id-run '))).toBe(true);
     expect(calls.some((c) => c.includes('id-idle'))).toBe(false);
     expect(stdout).toContain('reached max agents limit (1)');
+  });
+
+  it('records a nudge after a successful send', () => {
+    const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
+    runScript(getPaseoAutoResumeScript('devenv'), stubEnv(home, binDir, callLog));
+    const state = readFile(join(home, '.auto-resume-nudged'));
+    expect(state).toContain('id-run');
+  });
+
+  it('skips a still-running agent nudged within the cooldown', () => {
+    // Crash-loop case: the pod restarted again while the previous nudge's
+    // turn is plausibly still in flight — re-sending burns a provider turn.
+    const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
+    seedNudge(home, 'id-run', 0);
+    const { stdout, calls } = runScript(
+      getPaseoAutoResumeScript('devenv'),
+      stubEnv(home, binDir, callLog),
+    );
+    expect(calls.some((c) => c.startsWith('send '))).toBe(false);
+    expect(stdout).toContain('skipping re-nudge');
+  });
+
+  it('re-nudges an agent whose cooldown has expired', () => {
+    // A turn that genuinely died stays 'running' forever — after the
+    // cooldown the nudge is the only thing that can unstick it.
+    const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
+    seedNudge(home, 'id-run', 7200);
+    const { calls } = runScript(getPaseoAutoResumeScript('devenv'), stubEnv(home, binDir, callLog));
+    expect(calls.some((c) => c.startsWith('send id-run '))).toBe(true);
+  });
+
+  it('forgets the nudge once the agent is observed idle', () => {
+    // Nudge consumed: the agent went quiet, so a future mid-turn crash
+    // must get a fresh prompt rather than hit the cooldown.
+    const { home, binDir, callLog } = setup('id-idle\tidle\n', [{ id: 'id-idle' }]);
+    seedNudge(home, 'id-idle', 0);
+    runScript(getPaseoAutoResumeScript('devenv'), stubEnv(home, binDir, callLog));
+    expect(readFile(join(home, '.auto-resume-nudged'))).not.toContain('id-idle');
+  });
+
+  it('does not spend the cap on skipped re-nudges', () => {
+    const { home, binDir, callLog } = setup('id-stuck\trunning\nid-run\trunning\n', [
+      { id: 'id-stuck' },
+      { id: 'id-run' },
+    ]);
+    seedNudge(home, 'id-stuck', 0);
+    const { calls } = runScript(
+      getPaseoAutoResumeScript('devenv'),
+      stubEnv(home, binDir, callLog, { PASEO_AUTO_RESUME_MAX: '1' }),
+    );
+    // id-stuck is skipped without consuming the cap, so id-run still sends
+    expect(calls.some((c) => c.startsWith('send id-run '))).toBe(true);
+    expect(calls.some((c) => c.startsWith('send id-stuck '))).toBe(false);
+  });
+
+  it('falls back to the default cooldown when malformed', () => {
+    const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
+    seedNudge(home, 'id-run', 0);
+    const { calls } = runScript(
+      getPaseoAutoResumeScript('devenv'),
+      stubEnv(home, binDir, callLog, { PASEO_AUTO_RESUME_NUDGE_COOLDOWN: 'abc' }),
+    );
+    // Malformed value falls back to 1800 — a fresh nudge is still skipped
+    expect(calls.some((c) => c.startsWith('send '))).toBe(false);
+  });
+
+  it('honors PASEO_AUTO_RESUME_NUDGE_COOLDOWN', () => {
+    const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
+    seedNudge(home, 'id-run', 600);
+    // 10-minute-old nudge, 60s cooldown → expired → send
+    const { calls } = runScript(
+      getPaseoAutoResumeScript('devenv'),
+      stubEnv(home, binDir, callLog, { PASEO_AUTO_RESUME_NUDGE_COOLDOWN: '60' }),
+    );
+    expect(calls.some((c) => c.startsWith('send id-run '))).toBe(true);
   });
 });
