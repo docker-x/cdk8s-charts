@@ -176,6 +176,7 @@ NUDGE_STATE="$PASEO_HOME/.auto-resume-nudged"
 # turn) while a genuinely dead turn — 'running' forever — gets re-nudged
 # once the cooldown expires.
 NUDGE_COOLDOWN="\${PASEO_AUTO_RESUME_NUDGE_COOLDOWN:-1800}"
+[[ "$NUDGE_COOLDOWN" =~ ^[0-9]+$ ]] || NUDGE_COOLDOWN=1800
 
 log() { echo "[auto-resume] $*"; }`;
 }
@@ -206,7 +207,7 @@ fi
 # Orphaned tmp files are snapshot attempts killed mid-write (e.g. by the
 # termination grace period) — always safe to drop; only the committed
 # marker matters.
-rm -f "$MARKER".tmp.*
+rm -f "$MARKER".tmp.* "$NUDGE_STATE".tmp.*
 
 # The daemon is the source of truth for which agents can be resumed —
 # persisted records outlive their workspaces and are not all loadable.
@@ -309,8 +310,11 @@ while IFS=$'\\t' read -r agent_id agent_status; do
       # A quiet state also means any earlier nudge was consumed — forget it
       # so a future mid-turn crash gets a fresh prompt.
       if [[ -f "$NUDGE_STATE" ]]; then
-        grep -v -F "$agent_id"$'\\t' "$NUDGE_STATE" > "$NUDGE_STATE.tmp.$$" 2>/dev/null || true
-        mv "$NUDGE_STATE.tmp.$$" "$NUDGE_STATE"
+        # grep exits 1 when every line matched — the empty result is still
+        # the correct new state, so its exit code is informational only.
+        grep -v -F "$agent_id"$'\\t' "$NUDGE_STATE" > "$NUDGE_STATE.tmp.$$" || true
+        mv "$NUDGE_STATE.tmp.$$" "$NUDGE_STATE" ||
+          log "WARNING: failed to clear nudge state for $agent_id"
       fi
       if out=$(paseo agent reload "$agent_id" </dev/null 2>&1); then
         log "agent $agent_id reloaded (was $agent_status)"
@@ -325,7 +329,8 @@ while IFS=$'\\t' read -r agent_id agent_status; do
       if out=$(paseo send "$agent_id" "$RESUME_PROMPT" --no-wait </dev/null 2>&1); then
         log "agent $agent_id resumed (was \${agent_status:-unknown})"
         restored=$((restored + 1))
-        printf '%s\\t%s\\n' "$agent_id" "$now" >> "$NUDGE_STATE"
+        printf '%s\\t%s\\n' "$agent_id" "$now" >> "$NUDGE_STATE" ||
+          log "WARNING: failed to record nudge for $agent_id"
       else
         log "WARNING: failed to resume agent $agent_id: $out"
       fi

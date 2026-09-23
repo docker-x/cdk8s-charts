@@ -414,6 +414,19 @@ describe('paseo auto-resume', () => {
     expect(calls.some((c) => c.startsWith('send id-stuck '))).toBe(false);
   });
 
+  it('falls back to the default cooldown when malformed', () => {
+    const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
+    sh('printf "id-run\\t%s\\n" "$(date +%s)" > "$F"', {
+      F: join(home, '.auto-resume-nudged'),
+    });
+    const { calls } = runScript(
+      getPaseoAutoResumeScript('devenv'),
+      stubEnv(home, binDir, callLog, { PASEO_AUTO_RESUME_NUDGE_COOLDOWN: 'abc' }),
+    );
+    // Malformed value falls back to 1800 — a fresh nudge is still skipped
+    expect(calls.some((c) => c.startsWith('send '))).toBe(false);
+  });
+
   it('honors PASEO_AUTO_RESUME_NUDGE_COOLDOWN', () => {
     const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
     sh('printf "id-run\\t%s\\n" "$(( $(date +%s) - 600 ))" > "$F"', {
