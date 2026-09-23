@@ -170,6 +170,12 @@ AGENTS_DIR="$PASEO_HOME/agents"
 MARKER="$PASEO_HOME/.was-running"
 RESUME_PROMPT="\${PASEO_AUTO_RESUME_PROMPT:-Continue working on your last task. Pick up where you left off.}"
 MAX_AGENTS="\${PASEO_AUTO_RESUME_MAX:-10}"
+NUDGE_STATE="$PASEO_HOME/.auto-resume-nudged"
+# Seconds a nudged-but-still-running agent is left alone before retrying.
+# Bounds provider-turn burn on crash-looping pods (each prompt is a billed
+# turn) while a genuinely dead turn — 'running' forever — gets re-nudged
+# once the cooldown expires.
+NUDGE_COOLDOWN="\${PASEO_AUTO_RESUME_NUDGE_COOLDOWN:-1800}"
 
 log() { echo "[auto-resume] $*"; }`;
 }
@@ -277,11 +283,22 @@ function paseoAutoResumeBody(): string {
   return `
 restored=0
 attempted=0
+now=$(date +%s)
 while IFS=$'\\t' read -r agent_id agent_status; do
   [[ -n "$agent_id" ]] || continue
   if [[ $attempted -ge $MAX_AGENTS ]]; then
     log "reached max agents limit ($MAX_AGENTS), stopping"
     break
+  fi
+  if [[ "$agent_status" != "idle" && "$agent_status" != "error" ]]; then
+    # Skip a still-mid-turn agent nudged within the cooldown — the previous
+    # prompt is plausibly still executing. Skips cost no provider turn, so
+    # they don't consume the cap either.
+    last_nudge=$(grep -F "$agent_id"$'\\t' "$NUDGE_STATE" 2>/dev/null | tail -1 | cut -f2 || true)
+    if [[ "$last_nudge" =~ ^[0-9]+$ ]] && (( now - last_nudge < NUDGE_COOLDOWN )); then
+      log "agent $agent_id nudged $(( (now - last_nudge) / 60 ))m ago, still \${agent_status:-unknown} — skipping re-nudge"
+      continue
+    fi
   fi
   attempted=$((attempted + 1))
   case "$agent_status" in
@@ -289,6 +306,12 @@ while IFS=$'\\t' read -r agent_id agent_status; do
       # Quiet sessions only need their provider runtime reattached —
       # a prompt would start work nobody asked for. stdin is /dev/null so
       # a CLI that reads it cannot swallow the remaining target lines.
+      # A quiet state also means any earlier nudge was consumed — forget it
+      # so a future mid-turn crash gets a fresh prompt.
+      if [[ -f "$NUDGE_STATE" ]]; then
+        grep -v -F "$agent_id"$'\\t' "$NUDGE_STATE" > "$NUDGE_STATE.tmp.$$" 2>/dev/null || true
+        mv "$NUDGE_STATE.tmp.$$" "$NUDGE_STATE"
+      fi
       if out=$(paseo agent reload "$agent_id" </dev/null 2>&1); then
         log "agent $agent_id reloaded (was $agent_status)"
         restored=$((restored + 1))
@@ -302,6 +325,7 @@ while IFS=$'\\t' read -r agent_id agent_status; do
       if out=$(paseo send "$agent_id" "$RESUME_PROMPT" --no-wait </dev/null 2>&1); then
         log "agent $agent_id resumed (was \${agent_status:-unknown})"
         restored=$((restored + 1))
+        printf '%s\\t%s\\n' "$agent_id" "$now" >> "$NUDGE_STATE"
       else
         log "WARNING: failed to resume agent $agent_id: $out"
       fi
