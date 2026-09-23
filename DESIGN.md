@@ -1082,7 +1082,8 @@ production remote workspace:
    with the same mapping; status-less daemon records are skipped.
    Mid-turn agents run first so the `PASEO_AUTO_RESUME_MAX` cap drops
    warm-up reloads, not prompts. A successful `send` appends the agent's
-   nudge epoch to `$PASEO_HOME/.auto-resume-nudged` (best-effort — a
+   nudge epoch to `$PASEO_HOME/.auto-resume-nudged` (`id<TAB>epoch`,
+   best-effort — a
    failed append is logged and treated as unrecorded); a still-mid-turn
    agent nudged within `PASEO_AUTO_RESUME_NUDGE_COOLDOWN` (default 1800s)
    is skipped so a crash-looping pod cannot burn one provider turn per
@@ -1260,7 +1261,8 @@ but using the Devenv chart:
    with the same mapping; status-less daemon records are skipped.
    Mid-turn agents run first so the `PASEO_AUTO_RESUME_MAX` cap drops
    warm-up reloads, not prompts. A successful `send` appends the agent's
-   nudge epoch to `$PASEO_HOME/.auto-resume-nudged` (best-effort — a
+   nudge epoch to `$PASEO_HOME/.auto-resume-nudged` (`id<TAB>epoch`,
+   best-effort — a
    failed append is logged and treated as unrecorded); a still-mid-turn
    agent nudged within `PASEO_AUTO_RESUME_NUDGE_COOLDOWN` (default 1800s)
    is skipped so a crash-looping pod cannot burn one provider turn per
