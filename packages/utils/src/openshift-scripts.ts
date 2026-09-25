@@ -164,12 +164,15 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
  * workspace starts. Streams the newest backup object back out of R2 and
  * extracts it into the PVC home mount.
  *
- * Safety model (three gates, evaluated in order):
+ * Safety model (gates, evaluated in order):
  * 1. Marker file `.r2-restore-complete` — restore ran once; never again.
- * 2. Non-empty home without a marker — this PVC predates the restore
+ * 2. Tool preflight — runs before the emptiness check so a broken image
+ *    fails loudly instead of silently classifying a populated home as
+ *    empty.
+ * 3. Non-empty home without a marker — this PVC predates the restore
  *    feature; restoring would clobber live data, so mark it done and
  *    leave it alone forever.
- * 3. No backup objects yet — first-ever boot; exit clean and let the
+ * 4. No backup objects yet — first-ever boot; exit clean and let the
  *    workspace start empty (no marker, so a later wipe can restore).
  *
  * Extraction goes to `.r2-restore-stage` on the same PVC and is moved
@@ -182,6 +185,9 @@ export function buildRestoreScript(): string {
     'MARKER="${HOME_MOUNT_PATH}/.r2-restore-complete"',
     'STAGE="${HOME_MOUNT_PATH}/.r2-restore-stage"',
     'if [ -f "${MARKER}" ]; then echo "Restore already completed (marker present) — skipping."; exit 0; fi',
+    'for tool in aws openssl tar grep sort head tr; do',
+    '  if ! command -v "$tool" >/dev/null 2>&1; then echo "Fatal: $tool is required for restore but not found in the image."; exit 1; fi',
+    'done',
     `if [ -n "$(ls -A "\${HOME_MOUNT_PATH}" | grep -vxE 'lost\\+found|\\.r2-restore-stage')" ]; then`,
     '  echo "Home mount is not empty and no restore marker — skipping restore to protect existing data."',
     '  touch "${MARKER}"',
@@ -191,13 +197,10 @@ export function buildRestoreScript(): string {
     '  if [ ! -f "$f" ]; then echo "Fatal: missing R2 credential file $f"; exit 1; fi',
     'done',
     'for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET BACKUP_PASSWORD; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
-    'for tool in aws openssl tar jq; do',
-    '  if ! command -v "$tool" >/dev/null 2>&1; then echo "Fatal: $tool is required for restore but not found in workspace image."; exit 1; fi',
-    'done',
     'R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"',
-    'aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "${BACKUP_PREFIX}" --endpoint-url "${R2_ENDPOINT}" --region auto --output json --query "Contents[*].Key" > /tmp/listing.json || { echo "Fatal: failed to list R2 objects"; rm -f /tmp/listing.json; exit 1; }',
-    'KEY=$(jq -r ".[]?" /tmp/listing.json | sort -r | head -n 1)',
-    'rm -f /tmp/listing.json',
+    // --output text emits the key list tab-separated on one line ("None"
+    // when Contents is null), avoiding a jq dependency.
+    'KEY=$(aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "${BACKUP_PREFIX}" --endpoint-url "${R2_ENDPOINT}" --region auto --query "Contents[*].Key" --output text | tr "\t" "\n" | grep -vxF None | sort -r | head -n 1)',
     'if [ -z "${KEY}" ]; then echo "No backups found with prefix ${BACKUP_PREFIX} — starting with an empty home."; exit 0; fi',
     'echo "Restoring ${KEY} into ${HOME_MOUNT_PATH}..."',
     'rm -rf "${STAGE}"; mkdir -p "${STAGE}"',

@@ -1,4 +1,4 @@
-import { findManifest, type Manifest, synthChart } from '@cdk8s-charts/utils';
+import { AWS_CLI_IMAGE, findManifest, type Manifest, synthChart } from '@cdk8s-charts/utils';
 import { Testing } from 'cdk8s';
 import { describe, expect, it } from 'vitest';
 import { OpenShiftDevenv } from './construct';
@@ -48,7 +48,9 @@ describe('OpenShiftDevenv recipe — R2 restore init container', () => {
     const spec = podSpec(synth({ ...baseProps, ...backupProps }));
     const init = spec.initContainers?.find((c) => c.name === 'r2-restore');
     expect(init).toBeDefined();
-    expect(init?.image).toBe(baseProps.image);
+    // Dedicated tooling image — the workspace image's `aws` lives on the
+    // PVC profile, which is absent on the wiped PVC restore targets.
+    expect(init?.image).toBe(AWS_CLI_IMAGE);
     expect(init?.command[0]).toBe('/bin/sh');
     expect(init?.command[1]).toBe('-ec');
     const env = Object.fromEntries((init?.env ?? []).map((e) => [e.name, e.value]));

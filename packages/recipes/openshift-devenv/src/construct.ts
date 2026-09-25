@@ -92,7 +92,7 @@ export class OpenShiftDevenv extends Chart {
     const oauthProxySidecar = buildOauthProxySidecar(namespace, saName, paseoPort);
     const initContainers =
       hasBackupSecrets && (backup.restore ?? true)
-        ? [buildRestoreInitContainer(name, props.image, homeMountPath)]
+        ? [buildRestoreInitContainer(name, homeMountPath)]
         : [];
     const lifecycle = buildLifecycle(paseoAutoResume, homeMountPath, 'devenv');
     const workspaceEnv = buildWorkspaceEnv(name, namespace, appsDomain, props.env, 'devenv');
