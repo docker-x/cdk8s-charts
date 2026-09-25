@@ -25,6 +25,13 @@ export interface BackupConfig {
    * an init container (never overwrites a populated home). Default: true.
    */
   restore?: boolean;
+  /**
+   * One-shot re-restore trigger: when set and different from the token
+   * recorded on the PVC, the init container overlays the newest backup
+   * onto the current home regardless of the marker/empty gates, then
+   * records the token so restarts skip. Change the value to retrigger.
+   */
+  restoreToken?: string;
 }
 
 export interface KeepaliveConfig {
