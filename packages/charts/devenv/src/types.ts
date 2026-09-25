@@ -1,5 +1,6 @@
 import type {
   DeepPartial,
+  Probe,
   ResourceValues,
   SecretRefs,
   SidecarContainer,
@@ -77,6 +78,10 @@ export interface Values {
   sidecars?: SidecarContainer[];
   /** Pod lifecycle hooks (postStart, preStop). */
   lifecycle?: Lifecycle;
+  /** Container probes — copied verbatim to the workspace container. */
+  livenessProbe?: Probe;
+  readinessProbe?: Probe;
+  startupProbe?: Probe;
   /** Extra service ports to expose (in addition to ssh, paseo, caddy, preview). */
   extraServicePorts?: ServicePort[];
   /** SA name (default: {id}-sa). */

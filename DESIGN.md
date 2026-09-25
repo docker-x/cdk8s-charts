@@ -1026,6 +1026,9 @@ following the same pattern as `@cdk8s-charts/devpod` and `@cdk8s-charts/gascity`
 | `annotations` | `Record<string, string>` | no | Extra pod annotations |
 | `volumes` | `Volume[]` | no | Extra volumes (secrets, configmaps, etc.) |
 | `volumeMounts` | `VolumeMount[]` | no | Extra volume mounts |
+| `livenessProbe` | `Probe` | no | Container liveness probe (verbatim) |
+| `readinessProbe` | `Probe` | no | Container readiness probe (verbatim) |
+| `startupProbe` | `Probe` | no | Container startup probe (verbatim) |
 | `serviceAccountName` | `string` | no | SA name (default: `{id}-sa`) |
 | `automountServiceAccountToken` | `boolean` | no | Automount SA token (default: `true`) |
 | `runAsNonRoot` | `boolean` | no | Security context (default: `true`) |
@@ -1062,7 +1065,10 @@ following the same pattern as `@cdk8s-charts/devpod` and `@cdk8s-charts/gascity`
 Composes the Devcontainer construct with OpenShift-specific resources for a
 production remote workspace:
 
-1. **Devcontainer workspace** — the base Deployment + PVC + SSH
+1. **Devcontainer workspace** — the base Deployment + PVC + SSH, with
+   startup/liveness/readiness probes on the Paseo daemon `/healthz`
+   endpoint (default enabled via `paseoHealthCheck`) so a hung daemon is
+   restarted instead of 502ing the Route forever
 2. **OAuth proxy sidecar** — OpenShift OAuth proxy for SSO-protected web access
 3. **OpenShift Routes** — edge-terminated TLS route for the Paseo web UI;
    the preview Route is opt-in (`previewRoute: true`) because it bypasses
@@ -1124,6 +1130,7 @@ production remote workspace:
 | `backup` | `BackupConfig` | no | R2 backup configuration |
 | `keepalive` | `{ enabled, schedule }` | no | Keepalive CronJob config |
 | `paseoAutoResume` | `{ enabled }` | no | Paseo auto-resume hook |
+| `paseoHealthCheck` | `{ enabled }` | no | Kubelet probes on the Paseo daemon `/healthz` endpoint (default: enabled) |
 | `tfDeployer` | `{ enabled, extraManagedSecrets }` | no | TF deployer SA + RBAC; `extraManagedSecrets` adds names to the scoped secrets set |
 | `previewRoute` | `boolean` | no | Public Route for the preview port, unauthenticated (default: `false`) |
 | `values` | `DeepPartial<Values>` | no | Raw devcontainer value overrides |
@@ -1188,6 +1195,9 @@ following the same pattern as `@cdk8s-charts/devcontainer`.
 | `volumeMounts` | `VolumeMount[]` | no | Extra volume mounts |
 | `sidecars` | `SidecarContainer[]` | no | Sidecar containers to add to the pod |
 | `lifecycle` | `Lifecycle` | no | Pod lifecycle hooks (postStart, preStop) |
+| `livenessProbe` | `Probe` | no | Container liveness probe (verbatim) |
+| `readinessProbe` | `Probe` | no | Container readiness probe (verbatim) |
+| `startupProbe` | `Probe` | no | Container startup probe (verbatim) |
 | `extraServicePorts` | `ServicePort[]` | no | Extra service ports (in addition to ssh, paseo, caddy, preview) |
 | `serviceAccountName` | `string` | no | SA name (default: `{id}-sa`) |
 | `serviceAccountAnnotations` | `Record<string, string>` | no | SA annotations (e.g. OpenShift OAuth redirect URIs) |
@@ -1241,7 +1251,10 @@ Composes the Devenv construct with OpenShift-specific resources for a
 production remote workspace — identical structure to OpenShiftWorkspace
 but using the Devenv chart:
 
-1. **Devenv workspace** — the base Deployment + PVC + SSH + process ports
+1. **Devenv workspace** — the base Deployment + PVC + SSH + process ports,
+   with startup/liveness/readiness probes on the Paseo daemon `/healthz`
+   endpoint (default enabled via `paseoHealthCheck`) so a hung daemon is
+   restarted instead of 502ing the Route forever
 2. **OAuth proxy sidecar** — OpenShift OAuth proxy for SSO-protected web access
 3. **OpenShift Routes** — edge-terminated TLS route for the Paseo web UI;
    the preview Route is opt-in (`previewRoute: true`) because it bypasses
@@ -1321,6 +1334,7 @@ but using the Devenv chart:
 | `backup` | `BackupConfig` | no | R2 backup configuration |
 | `keepalive` | `{ enabled, schedule }` | no | Keepalive CronJob config |
 | `paseoAutoResume` | `{ enabled }` | no | Paseo auto-resume hook |
+| `paseoHealthCheck` | `{ enabled }` | no | Kubelet probes on the Paseo daemon `/healthz` endpoint (default: enabled) |
 | `tfDeployer` | `{ enabled, extraManagedSecrets }` | no | TF deployer SA + RBAC; `extraManagedSecrets` adds names to the scoped secrets set |
 | `podSandbox` | `{ enabled }` | no | Workspace SA pod-spawn RBAC (default: enabled) |
 | `previewRoute` | `boolean` | no | Public Route for the preview port, unauthenticated (default: `false`) |

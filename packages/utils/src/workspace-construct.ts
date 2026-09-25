@@ -1,6 +1,7 @@
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import { deepMerge } from './helm-construct';
+import type { Probe } from './k8s-types';
 import type { PodLifecycle } from './openshift-recipe';
 import { validateHomeMountPath } from './openshift-recipe';
 
@@ -40,6 +41,9 @@ export interface WorkspaceValues {
   image?: string;
   command?: string[];
   lifecycle?: PodLifecycle;
+  livenessProbe?: Probe;
+  readinessProbe?: Probe;
+  startupProbe?: Probe;
   resources?: Record<string, unknown>;
   sshPort?: number;
   previewPort?: number;
@@ -384,6 +388,9 @@ function buildWorkspacePodSpec(
     containerObj.command = container.command ?? values.command;
   }
   if (values.lifecycle) containerObj.lifecycle = values.lifecycle;
+  if (values.livenessProbe) containerObj.livenessProbe = values.livenessProbe;
+  if (values.readinessProbe) containerObj.readinessProbe = values.readinessProbe;
+  if (values.startupProbe) containerObj.startupProbe = values.startupProbe;
   const containers = [
     containerObj,
     ...(sidecars.sidecars ?? []),
@@ -472,6 +479,9 @@ export interface WorkspaceValuesProps {
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
   lifecycle?: PodLifecycle;
+  livenessProbe?: Probe;
+  readinessProbe?: Probe;
+  startupProbe?: Probe;
   extraServicePorts?: Array<{ port: number; targetPort: string | number; name: string }>;
   serviceAccountName?: string;
   serviceAccountAnnotations?: Record<string, string>;
@@ -511,6 +521,9 @@ export function buildWorkspaceComputedValues(
     labels: props.labels,
     annotations: props.annotations,
     lifecycle: props.lifecycle,
+    livenessProbe: props.livenessProbe,
+    readinessProbe: props.readinessProbe,
+    startupProbe: props.startupProbe,
     extraServicePorts: props.extraServicePorts,
     serviceAccountName: props.serviceAccountName ?? `${name}-sa`,
     serviceAccountAnnotations: props.serviceAccountAnnotations,
