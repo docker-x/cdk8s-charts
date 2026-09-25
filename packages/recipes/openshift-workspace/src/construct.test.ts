@@ -46,7 +46,7 @@ describe('OpenShiftWorkspace recipe', () => {
   });
 
   it('throws on non-numeric replicas', () => {
-    expect(() => synth({ ...baseProps, values: { replicas: 'abc' } })).toThrow(
+    expect(() => synth({ ...baseProps, values: { replicas: 'abc' as unknown as number } })).toThrow(
       /non-negative integer/,
     );
   });
@@ -188,6 +188,33 @@ describe('OpenShiftWorkspace recipe', () => {
     const cmd = spec.template.spec.containers[0].lifecycle.postStart.exec.command.join('\n');
     expect(cmd).toContain('/home/custom/.paseo');
     expect(cmd).not.toContain('/home/vscode');
+  });
+
+  it('adds default health probes on the Paseo /healthz endpoint', () => {
+    const m = synth(baseProps);
+    const dep = findManifest(m, 'Deployment', 'workspace');
+    const spec = dep.spec as {
+      template: {
+        spec: {
+          containers: {
+            livenessProbe?: { httpGet: { path: string; port: number } };
+            startupProbe?: { httpGet: { path: string; port: number } };
+          }[];
+        };
+      };
+    };
+    const c = spec.template.spec.containers[0];
+    expect(c.livenessProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
+    expect(c.startupProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
+  });
+
+  it('omits probes when paseoHealthCheck is disabled', () => {
+    const m = synth({ ...baseProps, paseoHealthCheck: { enabled: false } });
+    const dep = findManifest(m, 'Deployment', 'workspace');
+    const spec = dep.spec as {
+      template: { spec: { containers: { livenessProbe?: unknown }[] } };
+    };
+    expect(spec.template.spec.containers[0].livenessProbe).toBeUndefined();
   });
 
   it('keepalive CronJob uses env vars instead of string interpolation', () => {

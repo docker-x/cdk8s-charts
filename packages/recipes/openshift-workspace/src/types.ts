@@ -1,5 +1,10 @@
 import type { Values as DevcontainerValues } from '@cdk8s-charts/devcontainer';
-import type { DeepPartial, ResourceValues } from '@cdk8s-charts/utils';
+import type {
+  DeepPartial,
+  PaseoHealthCheckConfig,
+  ResourceValues,
+  TfDeployerConfig,
+} from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
 // Sub-configs
@@ -32,7 +37,7 @@ export interface PaseoAutoResumeConfig {
   enabled?: boolean;
 }
 
-export type { TfDeployerConfig } from '@cdk8s-charts/utils';
+export type { PaseoHealthCheckConfig, TfDeployerConfig } from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
 // Construct props & exports
@@ -72,6 +77,12 @@ export interface OpenShiftWorkspaceProps {
   keepalive?: KeepaliveConfig;
   /** Paseo auto-resume hook. */
   paseoAutoResume?: PaseoAutoResumeConfig;
+  /**
+   * Kubelet health probes on the Paseo daemon's /healthz endpoint
+   * (default: enabled). A hung daemon otherwise 502s the route forever —
+   * nothing restarts it.
+   */
+  paseoHealthCheck?: PaseoHealthCheckConfig;
   /** TF deployer SA + RBAC. */
   tfDeployer?: TfDeployerConfig;
   /**

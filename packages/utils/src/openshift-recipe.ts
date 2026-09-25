@@ -1,5 +1,6 @@
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
+import type { Probe } from './k8s-types';
 import { getPaseoAutoResumeScript, getPaseoPreStopScript, simpleHash } from './openshift-scripts';
 
 // ---------------------------------------------------------------------------
@@ -48,6 +49,10 @@ export interface PaseoAutoResumeConfig {
   enabled?: boolean;
 }
 
+export interface PaseoHealthCheckConfig {
+  enabled?: boolean;
+}
+
 export interface TfDeployerConfig {
   enabled?: boolean;
   /**
@@ -65,6 +70,7 @@ export interface PodSandboxConfig {
 export type ResolvedBackup = { schedule: string; keep: number } & BackupConfig;
 export type ResolvedKeepalive = { enabled: boolean; schedule: string } & KeepaliveConfig;
 export type ResolvedPaseoAutoResume = { enabled: boolean } & PaseoAutoResumeConfig;
+export type ResolvedPaseoHealthCheck = { enabled: boolean } & PaseoHealthCheckConfig;
 export type ResolvedTfDeployer = { enabled: boolean } & TfDeployerConfig;
 export type ResolvedPodSandbox = { enabled: boolean } & PodSandboxConfig;
 export type R2SecretResult = { r2SecretName: string; hasBackupSecrets: boolean };
@@ -351,6 +357,28 @@ export function buildOauthProxySidecar(
   };
 }
 
+/**
+ * Default kubelet probes on the Paseo daemon's /healthz endpoint. The
+ * oauth-proxy sidecar skips auth on that path and proxies it straight to
+ * the daemon, so a hung daemon turns the Route into a persistent 502 —
+ * without a liveness probe nothing ever restarts it. httpGet (not
+ * tcpSocket) is required: a wedged daemon still accepts TCP connections.
+ */
+export function buildPaseoHealthProbes(paseoPort = 6767): {
+  startupProbe: Probe;
+  livenessProbe: Probe;
+  readinessProbe: Probe;
+} {
+  const httpGet = { path: '/healthz', port: paseoPort };
+  return {
+    // devenv up + daemon start can take minutes on a cold pod — the
+    // startup budget must cover that without a liveness kill.
+    startupProbe: { httpGet, periodSeconds: 5, timeoutSeconds: 10, failureThreshold: 60 },
+    livenessProbe: { httpGet, periodSeconds: 15, timeoutSeconds: 10, failureThreshold: 4 },
+    readinessProbe: { httpGet, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 3 },
+  };
+}
+
 export function buildLifecycle(
   paseoAutoResume: ResolvedPaseoAutoResume,
   homeMountPath: string,
@@ -535,6 +563,11 @@ export interface CreateWorkspaceRecipeOpts {
   extraVolumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }>;
   oauthProxySidecar: SidecarContainer;
   lifecycle: PodLifecycle | undefined;
+  probes?: {
+    livenessProbe?: Probe;
+    readinessProbe?: Probe;
+    startupProbe?: Probe;
+  };
 }
 
 export function buildWorkspaceRecipeValues(
@@ -588,6 +621,7 @@ export function buildWorkspaceRecipeProps(
     volumeMounts: extraVolumeMounts,
     sidecars: [oauthProxySidecar],
     lifecycle,
+    ...(opts.probes ?? {}),
     extraServicePorts: [{ name: 'oauth-proxy', port: 4180, targetPort: 'oauth-proxy' }],
     values: buildWorkspaceRecipeValues(name, namespace, appsDomain, props),
   };

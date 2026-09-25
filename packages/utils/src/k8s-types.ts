@@ -75,6 +75,29 @@ export interface TcpProbeConfig {
   failureThreshold?: number;
 }
 
+/**
+ * Full container probe (liveness/readiness/startup). Ports accept a number
+ * or a named containerPort. successThreshold must be 1 for liveness and
+ * startup probes (Kubernetes API constraint — not enforced here).
+ */
+export interface Probe {
+  httpGet?: {
+    path?: string;
+    port?: number | string;
+    scheme?: 'HTTP' | 'HTTPS';
+    httpHeaders?: Array<{ name: string; value: string }>;
+  };
+  tcpSocket?: { port?: number | string };
+  exec?: { command?: string[] };
+  grpc?: { port?: number; service?: string };
+  initialDelaySeconds?: number;
+  periodSeconds?: number;
+  timeoutSeconds?: number;
+  successThreshold?: number;
+  failureThreshold?: number;
+  terminationGracePeriodSeconds?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Scheduling & topology
 // ---------------------------------------------------------------------------

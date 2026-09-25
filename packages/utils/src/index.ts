@@ -10,6 +10,7 @@ export type {
   IngressHost,
   IngressTls,
   PodDisruptionBudgetConfig,
+  Probe,
   ResourceRequirements,
   SecretEnvRef,
   SecretRefs,
