@@ -39,6 +39,7 @@ export interface WorkspaceValues {
   fsGroup?: number;
   image?: string;
   command?: string[];
+  initContainers?: Array<Record<string, unknown>>;
   lifecycle?: PodLifecycle;
   resources?: Record<string, unknown>;
   sshPort?: number;
@@ -306,6 +307,11 @@ export interface WorkspaceSidecars {
   valuesSidecars?: Array<Record<string, unknown>>;
 }
 
+export interface WorkspaceInitContainers {
+  initContainers?: Array<Record<string, unknown>>;
+  valuesInitContainers?: Array<Record<string, unknown>>;
+}
+
 export function createWorkspaceDeployment(
   scope: Construct,
   opts: {
@@ -318,10 +324,21 @@ export function createWorkspaceDeployment(
     volumes: ReturnType<typeof buildWorkspaceVolumes>;
     container: WorkspaceContainerSpec;
     sidecars: WorkspaceSidecars;
+    initContainers?: WorkspaceInitContainers;
   },
 ): void {
-  const { name, namespace, values, d, containerEnv, volumeMounts, volumes, container, sidecars } =
-    opts;
+  const {
+    name,
+    namespace,
+    values,
+    d,
+    containerEnv,
+    volumeMounts,
+    volumes,
+    container,
+    sidecars,
+    initContainers,
+  } = opts;
   const podAnnotations = {
     'rollouts.dev/image-digest': values.imageDigest ?? 'unknown',
     ...values.annotations,
@@ -349,6 +366,7 @@ export function createWorkspaceDeployment(
           volumes,
           container,
           sidecars,
+          initContainers,
         ),
       },
     },
@@ -363,6 +381,7 @@ function buildWorkspacePodSpec(
   volumes: ReturnType<typeof buildWorkspaceVolumes>,
   container: WorkspaceContainerSpec,
   sidecars: WorkspaceSidecars,
+  initContainers?: WorkspaceInitContainers,
 ) {
   const containerObj: Record<string, unknown> = {
     name: container.name,
@@ -404,9 +423,14 @@ function buildWorkspacePodSpec(
     }
     seenContainers.add(cname);
   }
+  const init = [
+    ...(initContainers?.initContainers ?? []),
+    ...(initContainers?.valuesInitContainers ?? []),
+  ];
   return {
     serviceAccountName: d.saName,
     automountServiceAccountToken: values.automountServiceAccountToken,
+    ...(init.length > 0 ? { initContainers: init } : {}),
     ...(values.fsGroup !== undefined ? { securityContext: { fsGroup: values.fsGroup } } : {}),
     ...(d.hasPullSecretData || d.hasPullSecretRef
       ? { imagePullSecrets: [{ name: d.pullSecretName }] }

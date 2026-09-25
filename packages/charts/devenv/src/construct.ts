@@ -43,6 +43,12 @@ export class Devenv extends HelmConstruct<Values> {
         sidecars: props.sidecars as Array<Record<string, unknown>> | undefined,
         valuesSidecars: props.values?.sidecars as Array<Record<string, unknown>> | undefined,
       },
+      initContainers: {
+        initContainers: props.initContainers as Array<Record<string, unknown>> | undefined,
+        valuesInitContainers: props.values?.initContainers as
+          | Array<Record<string, unknown>>
+          | undefined,
+      },
     });
     createWorkspaceService(this, values.name as string, props.namespace, values as Values, {
       ports: [

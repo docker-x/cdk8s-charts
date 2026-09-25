@@ -1,6 +1,11 @@
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
-import { getPaseoAutoResumeScript, getPaseoPreStopScript, simpleHash } from './openshift-scripts';
+import {
+  buildRestoreScript,
+  getPaseoAutoResumeScript,
+  getPaseoPreStopScript,
+  simpleHash,
+} from './openshift-scripts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -37,6 +42,12 @@ export interface BackupConfig {
   r2SecretAccessKey?: string;
   r2BucketName?: string;
   resticPassword?: string;
+  /**
+   * Restore the newest backup into the home mount at pod start via an
+   * init container (only when R2 credentials are configured and the PVC
+   * is empty — never overwrites a populated home). Default: true.
+   */
+  restore?: boolean;
 }
 
 export interface KeepaliveConfig {
@@ -304,6 +315,43 @@ export function buildExtraVolumes(opts: {
   return { extraVolumes, extraVolumeMounts };
 }
 
+/**
+ * Init container that restores the newest R2 backup into an empty home
+ * mount before the workspace container starts. Runs in the same pod, so
+ * the ReadWriteOnce PVC needs no multi-attach. Mounted volumes mirror the
+ * workspace container: `workspace-state` at homeMountPath and the
+ * `r2-credentials` secret (present only when hasBackupSecrets — the recipe
+ * gates the container on the same condition).
+ */
+export function buildRestoreInitContainer(
+  name: string,
+  image: string,
+  homeMountPath: string,
+): SidecarContainer {
+  return {
+    name: 'r2-restore',
+    image,
+    command: ['/bin/sh', '-ec', buildRestoreScript()],
+    securityContext: {
+      runAsNonRoot: true,
+      allowPrivilegeEscalation: false,
+      capabilities: { drop: ['ALL'] },
+    },
+    env: [
+      { name: 'HOME_MOUNT_PATH', value: homeMountPath },
+      { name: 'BACKUP_PREFIX', value: `workspace-state-${name}-` },
+    ],
+    volumeMounts: [
+      { name: 'workspace-state', mountPath: homeMountPath },
+      { name: 'r2-credentials', mountPath: '/etc/r2-credentials', readOnly: true },
+    ],
+    resources: {
+      requests: { cpu: '50m', memory: '128Mi' },
+      limits: { cpu: '500m', memory: '512Mi' },
+    },
+  };
+}
+
 export function buildOauthProxySidecar(
   namespace: string,
   saName: string,
@@ -535,6 +583,7 @@ export interface CreateWorkspaceRecipeOpts {
   extraVolumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }>;
   oauthProxySidecar: SidecarContainer;
   lifecycle: PodLifecycle | undefined;
+  initContainers?: Array<Record<string, unknown>>;
 }
 
 export function buildWorkspaceRecipeValues(
@@ -568,6 +617,7 @@ export function buildWorkspaceRecipeProps(
     extraVolumeMounts,
     oauthProxySidecar,
     lifecycle,
+    initContainers,
   } = opts;
   return {
     namespace,
@@ -587,6 +637,7 @@ export function buildWorkspaceRecipeProps(
     volumes: extraVolumes,
     volumeMounts: extraVolumeMounts,
     sidecars: [oauthProxySidecar],
+    initContainers,
     lifecycle,
     extraServicePorts: [{ name: 'oauth-proxy', port: 4180, targetPort: 'oauth-proxy' }],
     values: buildWorkspaceRecipeValues(name, namespace, appsDomain, props),

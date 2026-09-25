@@ -75,6 +75,8 @@ export interface Values {
   volumeMounts?: VolumeMount[];
   /** Sidecar containers to add to the pod. */
   sidecars?: SidecarContainer[];
+  /** Init containers that run before the workspace container starts. */
+  initContainers?: SidecarContainer[];
   /** Pod lifecycle hooks (postStart, preStop). */
   lifecycle?: Lifecycle;
   /** Extra service ports to expose (in addition to ssh, paseo, caddy, preview). */

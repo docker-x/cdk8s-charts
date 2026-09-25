@@ -1248,7 +1248,22 @@ but using the Devenv chart:
    oauth-proxy
 4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
 5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2
-6. **Paseo auto-resume** — preStop hook snapshots open (non-closed,
+6. **R2 restore init container** — when R2 credentials are configured and
+   `backup.restore` is not `false`, an `r2-restore` init container runs in
+   the workspace pod before the main container (same pod, so the RWO PVC
+   needs no multi-attach). It mounts `workspace-state` at the home path
+   and the `r2-credentials` secret, then streams the newest
+   `workspace-state-{name}-*.tar.gz.enc` object back through
+   `openssl enc -d | tar xz`. Three gates, in order: an existing
+   `.r2-restore-complete` marker skips; a home mount containing anything
+   besides `lost+found`/`.r2-restore-stage` without a marker means the
+   PVC predates the feature — the marker is written and live data is
+   never touched; no backup objects means first boot — exit clean with
+   no marker so a later wipe can still restore. Extraction goes to
+   `.r2-restore-stage` and is moved into place only after the pipeline
+   succeeds, so a failed run retries instead of exposing a half-written
+   home.
+7. **Paseo auto-resume** — preStop hook snapshots open (non-closed,
    non-archived) agents as `id<TAB>status` to `$PASEO_HOME/.was-running`
    in a single `node` pass, atomically; postStart waits for daemon health,
    then resumes every non-closed, non-archived agent `paseo ls -g` reports
@@ -1273,7 +1288,7 @@ but using the Devenv chart:
    drop their entry (the nudge was consumed), failed sends record
    nothing (next restart retries), and skips cost no provider turn so
    they do not consume the cap.
-7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform
+8. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform
    deployments. Secret RBAC is split: `create` stays namespace-wide
    (`resourceNames` cannot restrict `create` — the object has no name
    at authorization time), while `get`/`patch`/`update`/`delete` are
@@ -1284,7 +1299,7 @@ but using the Devenv chart:
    secret and read it, so write verbs are granted only when
    `podSandbox.enabled` — RBAC escalation prevention requires holding
    the verbs it delegates to the workspace SA.
-8. **Pod sandbox RBAC** — Role + RoleBinding granting the workspace SA pod
+9. **Pod sandbox RBAC** — Role + RoleBinding granting the workspace SA pod
    lifecycle (`oc run`/`kubectl run` sibling pods) plus `pods/exec`.
    In-pod docker/podman is impossible under restricted SCC
    (user namespaces blocked); sibling pods are the supported equivalent.
@@ -1298,7 +1313,7 @@ but using the Devenv chart:
    same secrets and the namespace is a single trust domain — stricter
    isolation would require a cluster-scoped ValidatingAdmissionPolicy,
    which is outside the deployer SA's RBAC.
-9. **All secrets** — R2 credentials, SSH keys, OAuth cookie, GHCR pull secret
+10. **All secrets** — R2 credentials, SSH keys, OAuth cookie, GHCR pull secret
 
 **Props (`OpenShiftDevenvProps`):**
 

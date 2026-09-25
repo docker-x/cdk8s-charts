@@ -20,6 +20,11 @@ export interface BackupConfig {
   r2BucketName?: string;
   /** Encryption password for backup archive. */
   resticPassword?: string;
+  /**
+   * Restore the newest backup into an empty home mount at pod start via
+   * an init container (never overwrites a populated home). Default: true.
+   */
+  restore?: boolean;
 }
 
 export interface KeepaliveConfig {
