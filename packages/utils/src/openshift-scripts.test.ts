@@ -443,13 +443,17 @@ describe('paseo auto-resume', () => {
 });
 
 describe('buildRestoreScript gates', () => {
-  function runRestore(home: string): { ok: boolean; out: string } {
+  function runRestore(
+    home: string,
+    extraEnv: Record<string, string> = {},
+  ): { ok: boolean; out: string } {
     try {
       const out = execFileSync('bash', ['-c', buildRestoreScript()], {
         env: {
           ...process.env,
           HOME_MOUNT_PATH: home,
           BACKUP_PREFIX: 'workspace-state-devenv-',
+          ...extraEnv,
         },
         encoding: 'utf8',
       });
@@ -493,5 +497,28 @@ describe('buildRestoreScript gates', () => {
     expect(ok).toBe(false);
     expect(out).toContain('missing R2 credential file');
     expect(fileExists(join(home, '.r2-restore-complete'))).toBe(false);
+  });
+
+  it('a consumed restore token skips even over populated data — no marker write', () => {
+    const home = makeDir('restore-');
+    writeFile(join(home, '.bashrc'), 'x');
+    writeFile(join(home, '.r2-restore-token'), 'tok-1');
+    const { ok, out } = runRestore(home, { RESTORE_TOKEN: 'tok-1' });
+    expect(ok).toBe(true);
+    expect(out).toContain('token already consumed');
+    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(false);
+  });
+
+  it('a fresh restore token bypasses the marker and non-empty gates', () => {
+    const home = makeDir('restore-');
+    writeFile(join(home, '.bashrc'), 'x');
+    writeFile(join(home, '.r2-restore-complete'), '');
+    writeFile(join(home, '.r2-restore-token'), 'tok-1');
+    // Reaches the creds check (missing in test env) — proves both gates
+    // were bypassed; marker untouched by the run itself.
+    const { ok, out } = runRestore(home, { RESTORE_TOKEN: 'tok-2' });
+    expect(ok).toBe(false);
+    expect(out).toContain('force-restoring');
+    expect(out).toContain('missing R2 credential file');
   });
 });

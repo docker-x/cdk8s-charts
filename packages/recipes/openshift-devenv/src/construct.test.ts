@@ -80,6 +80,22 @@ describe('OpenShiftDevenv recipe — R2 restore init container', () => {
     expect(spec.initContainers ?? []).toHaveLength(0);
   });
 
+  it('passes backup.restoreToken through as RESTORE_TOKEN env', () => {
+    const spec = podSpec(
+      synth({ ...baseProps, backup: { ...backupProps.backup, restoreToken: 'run-42' } }),
+    );
+    const init = spec.initContainers?.find((c) => c.name === 'r2-restore');
+    const env = Object.fromEntries((init?.env ?? []).map((e) => [e.name, e.value]));
+    expect(env.RESTORE_TOKEN).toBe('run-42');
+  });
+
+  it('omits RESTORE_TOKEN env when no restoreToken is set', () => {
+    const spec = podSpec(synth({ ...baseProps, ...backupProps }));
+    const init = spec.initContainers?.find((c) => c.name === 'r2-restore');
+    const env = Object.fromEntries((init?.env ?? []).map((e) => [e.name, e.value]));
+    expect(env.RESTORE_TOKEN).toBeUndefined();
+  });
+
   it('omits the init container when backup.restore is false', () => {
     const spec = podSpec(
       synth({ ...baseProps, backup: { ...backupProps.backup, restore: false } }),

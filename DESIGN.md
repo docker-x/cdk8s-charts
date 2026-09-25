@@ -1257,7 +1257,10 @@ but using the Devenv chart:
    `openssl enc -d | tar xz`. It runs on `AWS_CLI_IMAGE`
    (`bitnamilegacy/aws-cli`, Debian) — not the workspace image, whose
    `aws` only exists under the PVC's `.devenv/profile/bin` and so is
-   absent on a wiped PVC. Three gates, in order: an existing
+   absent on a wiped PVC. Gates, in order: an unconsumed `RESTORE_TOKEN`
+   env (`backup.restoreToken`) force-restores over the current home
+   regardless of the other gates and is then recorded in
+   `.r2-restore-token` — a one-shot operator trigger; an existing
    `.r2-restore-complete` marker skips; a tool preflight
    (`aws`/`openssl`/`tar`/`grep`/`sort`/`head`/`tr`) fails loudly — it
    runs before the emptiness check so a broken image can never silently
@@ -1266,9 +1269,10 @@ but using the Devenv chart:
    PVC predates the feature — the marker is written and live data is
    never touched; no backup objects means first boot — exit clean with
    no marker so a later wipe can still restore. Extraction goes to
-   `.r2-restore-stage` and is moved into place only after the pipeline
-   succeeds, so a failed run retries instead of exposing a half-written
-   home.
+   `.r2-restore-stage` and lands only after the pipeline succeeds —
+   moved on an empty home, overlaid via `cp -a` in force mode so files
+   the archive lacks are kept — so a failed run retries instead of
+   exposing a half-written home.
 7. **Paseo auto-resume** — preStop hook snapshots open (non-closed,
    non-archived) agents as `id<TAB>status` to `$PASEO_HOME/.was-running`
    in a single `node` pass, atomically; postStart waits for daemon health,

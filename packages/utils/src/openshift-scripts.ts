@@ -165,14 +165,22 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
  * extracts it into the PVC home mount.
  *
  * Safety model (gates, evaluated in order):
- * 1. Marker file `.r2-restore-complete` — restore ran once; never again.
- * 2. Tool preflight — runs before the emptiness check so a broken image
+ * 1. One-shot force: when RESTORE_TOKEN is set and differs from the
+ *    token recorded in `.r2-restore-token`, restore regardless of the
+ *    gates below (operator-triggered re-restore, e.g. after a sandbox
+ *    wipe repopulated the PVC with a bootstrap skeleton). The token is
+ *    recorded after a successful restore, so restarts never re-run it —
+ *    a new token is required to retrigger. In force mode the staged
+ *    content is overlaid onto the home (`cp -a`), preserving files the
+ *    archive does not contain.
+ * 2. Marker file `.r2-restore-complete` — restore ran once; never again.
+ * 3. Tool preflight — runs before the emptiness check so a broken image
  *    fails loudly instead of silently classifying a populated home as
  *    empty.
- * 3. Non-empty home without a marker — this PVC predates the restore
+ * 4. Non-empty home without a marker — this PVC predates the restore
  *    feature; restoring would clobber live data, so mark it done and
  *    leave it alone forever.
- * 4. No backup objects yet — first-ever boot; exit clean and let the
+ * 5. No backup objects yet — first-ever boot; exit clean and let the
  *    workspace start empty (no marker, so a later wipe can restore).
  *
  * Extraction goes to `.r2-restore-stage` on the same PVC and is moved
@@ -184,11 +192,21 @@ export function buildRestoreScript(): string {
   return [
     'MARKER="${HOME_MOUNT_PATH}/.r2-restore-complete"',
     'STAGE="${HOME_MOUNT_PATH}/.r2-restore-stage"',
-    'if [ -f "${MARKER}" ]; then echo "Restore already completed (marker present) — skipping."; exit 0; fi',
+    'TOKEN_FILE="${HOME_MOUNT_PATH}/.r2-restore-token"',
+    'FORCE=0',
+    'if [ -n "${RESTORE_TOKEN:-}" ]; then',
+    '  if [ -f "${TOKEN_FILE}" ] && [ "$(cat "${TOKEN_FILE}")" = "${RESTORE_TOKEN}" ]; then',
+    '    echo "Restore token already consumed — skipping."',
+    '    exit 0',
+    '  fi',
+    '  FORCE=1',
+    '  echo "Restore token set — force-restoring newest backup over current home."',
+    'fi',
+    'if [ "${FORCE}" = 0 ] && [ -f "${MARKER}" ]; then echo "Restore already completed (marker present) — skipping."; exit 0; fi',
     'for tool in aws openssl tar grep sort head tr; do',
     '  if ! command -v "$tool" >/dev/null 2>&1; then echo "Fatal: $tool is required for restore but not found in the image."; exit 1; fi',
     'done',
-    `if [ -n "$(ls -A "\${HOME_MOUNT_PATH}" | grep -vxE 'lost\\+found|\\.r2-restore-stage')" ]; then`,
+    `if [ "\${FORCE}" = 0 ] && [ -n "$(ls -A "\${HOME_MOUNT_PATH}" | grep -vxE 'lost\\+found|\\.r2-restore-stage')" ]; then`,
     '  echo "Home mount is not empty and no restore marker — skipping restore to protect existing data."',
     '  touch "${MARKER}"',
     '  exit 0',
@@ -205,11 +223,18 @@ export function buildRestoreScript(): string {
     'echo "Restoring ${KEY} into ${HOME_MOUNT_PATH}..."',
     'rm -rf "${STAGE}"; mkdir -p "${STAGE}"',
     'aws s3 cp "s3://${R2_BUCKET}/${KEY}" - --endpoint-url "${R2_ENDPOINT}" --region auto | openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_PASSWORD | tar xzf - -C "${STAGE}"',
-    'for item in "${STAGE}"/.[!.]* "${STAGE}"/..?* "${STAGE}"/*; do',
-    '  [ -e "${item}" ] || continue',
-    '  mv "${item}" "${HOME_MOUNT_PATH}/"',
-    'done',
-    'rmdir "${STAGE}"',
+    // Force mode overlays (cp -a merges dirs); normal mode promotes by
+    // move — the home is guaranteed empty, so no path collisions.
+    'if [ "${FORCE}" = 1 ]; then',
+    '  cp -a "${STAGE}/." "${HOME_MOUNT_PATH}/" && rm -rf "${STAGE}"',
+    'else',
+    '  for item in "${STAGE}"/.[!.]* "${STAGE}"/..?* "${STAGE}"/*; do',
+    '    [ -e "${item}" ] || continue',
+    '    mv "${item}" "${HOME_MOUNT_PATH}/"',
+    '  done',
+    '  rmdir "${STAGE}"',
+    'fi',
+    'if [ -n "${RESTORE_TOKEN:-}" ]; then printf %s "${RESTORE_TOKEN}" > "${TOKEN_FILE}"; fi',
     'touch "${MARKER}"',
     'echo "Restore complete."',
   ].join('\n');

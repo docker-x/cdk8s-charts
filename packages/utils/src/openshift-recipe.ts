@@ -52,6 +52,14 @@ export interface BackupConfig {
    * is empty — never overwrites a populated home). Default: true.
    */
   restore?: boolean;
+  /**
+   * One-shot re-restore trigger: when set and different from the token
+   * recorded on the PVC (`.r2-restore-token`), the init container
+   * overlays the newest backup onto the current home regardless of the
+   * marker/empty gates, then records the token so restarts skip. Change
+   * the value to retrigger; leave unset for normal gated behavior.
+   */
+  restoreToken?: string;
 }
 
 export interface KeepaliveConfig {
@@ -327,7 +335,11 @@ export function buildExtraVolumes(opts: {
  * `r2-credentials` secret (present only when hasBackupSecrets — the recipe
  * gates the container on the same condition).
  */
-export function buildRestoreInitContainer(name: string, homeMountPath: string): SidecarContainer {
+export function buildRestoreInitContainer(
+  name: string,
+  homeMountPath: string,
+  restoreToken?: string,
+): SidecarContainer {
   return {
     name: 'r2-restore',
     image: AWS_CLI_IMAGE,
@@ -340,6 +352,7 @@ export function buildRestoreInitContainer(name: string, homeMountPath: string): 
     env: [
       { name: 'HOME_MOUNT_PATH', value: homeMountPath },
       { name: 'BACKUP_PREFIX', value: `workspace-state-${name}-` },
+      ...(restoreToken ? [{ name: 'RESTORE_TOKEN', value: restoreToken }] : []),
     ],
     volumeMounts: [
       { name: 'workspace-state', mountPath: homeMountPath },
