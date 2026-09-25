@@ -1254,8 +1254,14 @@ but using the Devenv chart:
    needs no multi-attach). It mounts `workspace-state` at the home path
    and the `r2-credentials` secret, then streams the newest
    `workspace-state-{name}-*.tar.gz.enc` object back through
-   `openssl enc -d | tar xz`. Three gates, in order: an existing
-   `.r2-restore-complete` marker skips; a home mount containing anything
+   `openssl enc -d | tar xz`. It runs on `AWS_CLI_IMAGE`
+   (`bitnamilegacy/aws-cli`, Debian) — not the workspace image, whose
+   `aws` only exists under the PVC's `.devenv/profile/bin` and so is
+   absent on a wiped PVC. Three gates, in order: an existing
+   `.r2-restore-complete` marker skips; a tool preflight
+   (`aws`/`openssl`/`tar`/`grep`/`sort`/`head`/`tr`) fails loudly — it
+   runs before the emptiness check so a broken image can never silently
+   classify a populated home as empty; a home mount containing anything
    besides `lost+found`/`.r2-restore-stage` without a marker means the
    PVC predates the feature — the marker is written and live data is
    never touched; no backup objects means first boot — exit clean with

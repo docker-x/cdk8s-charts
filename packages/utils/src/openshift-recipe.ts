@@ -13,6 +13,10 @@ import {
 
 export const OAUTH_PROXY_IMAGE = 'quay.io/openshift/origin-oauth-proxy:4.18';
 export const OC_CLI_IMAGE = 'quay.io/openshift/origin-cli:4.18';
+// Debian-based aws-cli: carries aws + openssl + tar + gzip in one image.
+// The workspace image's `aws` lives under the PVC's .devenv/profile/bin,
+// so it is absent on a wiped PVC — restore must not depend on it.
+export const AWS_CLI_IMAGE = 'docker.io/bitnamilegacy/aws-cli:2';
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -323,14 +327,10 @@ export function buildExtraVolumes(opts: {
  * `r2-credentials` secret (present only when hasBackupSecrets — the recipe
  * gates the container on the same condition).
  */
-export function buildRestoreInitContainer(
-  name: string,
-  image: string,
-  homeMountPath: string,
-): SidecarContainer {
+export function buildRestoreInitContainer(name: string, homeMountPath: string): SidecarContainer {
   return {
     name: 'r2-restore',
-    image,
+    image: AWS_CLI_IMAGE,
     command: ['/bin/sh', '-ec', buildRestoreScript()],
     securityContext: {
       runAsNonRoot: true,
