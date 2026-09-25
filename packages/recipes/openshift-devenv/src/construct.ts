@@ -13,6 +13,7 @@ import {
   buildLifecycle,
   buildOauthProxySidecar,
   buildPodAnnotations,
+  buildRestoreInitContainer,
   buildWorkspaceEnv,
   buildWorkspaceRecipeProps,
   createBackupCronJob,
@@ -89,6 +90,10 @@ export class OpenShiftDevenv extends Chart {
       autoResumeConfigMapName,
     });
     const oauthProxySidecar = buildOauthProxySidecar(namespace, saName, paseoPort);
+    const initContainers =
+      hasBackupSecrets && (backup.restore ?? true)
+        ? [buildRestoreInitContainer(name, props.image, homeMountPath)]
+        : [];
     const lifecycle = buildLifecycle(paseoAutoResume, homeMountPath, 'devenv');
     const workspaceEnv = buildWorkspaceEnv(name, namespace, appsDomain, props.env, 'devenv');
     assertNoChartManagedEnv(props.values?.env as Record<string, unknown> | undefined, 'devenv');
@@ -108,6 +113,7 @@ export class OpenShiftDevenv extends Chart {
         extraVolumeMounts,
         oauthProxySidecar,
         lifecycle,
+        initContainers,
       }) as unknown as ConstructorParameters<typeof Devenv>[2],
     );
     const routes = createRoutes(

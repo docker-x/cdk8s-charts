@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { getPaseoAutoResumeScript, getPaseoPreStopScript } from './openshift-scripts';
+import {
+  buildRestoreScript,
+  getPaseoAutoResumeScript,
+  getPaseoPreStopScript,
+} from './openshift-scripts';
 
 const dirs: string[] = [];
 
@@ -435,5 +439,59 @@ describe('paseo auto-resume', () => {
       stubEnv(home, binDir, callLog, { PASEO_AUTO_RESUME_NUDGE_COOLDOWN: '60' }),
     );
     expect(calls.some((c) => c.startsWith('send id-run '))).toBe(true);
+  });
+});
+
+describe('buildRestoreScript gates', () => {
+  function runRestore(home: string): { ok: boolean; out: string } {
+    try {
+      const out = execFileSync('bash', ['-c', buildRestoreScript()], {
+        env: {
+          ...process.env,
+          HOME_MOUNT_PATH: home,
+          BACKUP_PREFIX: 'workspace-state-devenv-',
+        },
+        encoding: 'utf8',
+      });
+      return { ok: true, out };
+    } catch (e) {
+      return { ok: false, out: String(e) };
+    }
+  }
+
+  it('skips immediately when the restore marker exists — no creds needed', () => {
+    const home = makeDir('restore-');
+    writeFile(join(home, '.r2-restore-complete'), '');
+    const { ok, out } = runRestore(home);
+    expect(ok).toBe(true);
+    expect(out).toContain('marker present');
+  });
+
+  it('marks and skips a populated home without a marker — never restores over live data', () => {
+    const home = makeDir('restore-');
+    writeFile(join(home, '.bashrc'), 'x');
+    const { ok, out } = runRestore(home);
+    expect(ok).toBe(true);
+    expect(out).toContain('not empty');
+    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(true);
+  });
+
+  it('treats a leftover stage dir as still-empty and proceeds to the creds check', () => {
+    const home = makeDir('restore-');
+    sh('mkdir -p "$D"', { D: join(home, '.r2-restore-stage') });
+    const { ok, out } = runRestore(home);
+    // No /etc/r2-credentials in the test env — reaching the fatal creds
+    // check proves the stage dir did not trip the non-empty guard.
+    expect(ok).toBe(false);
+    expect(out).toContain('missing R2 credential file');
+    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(false);
+  });
+
+  it('an empty home proceeds to the creds check (fail-closed, no marker)', () => {
+    const home = makeDir('restore-');
+    const { ok, out } = runRestore(home);
+    expect(ok).toBe(false);
+    expect(out).toContain('missing R2 credential file');
+    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(false);
   });
 });
