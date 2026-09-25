@@ -221,12 +221,26 @@ export function buildRestoreScript(): string {
     'KEY=$(aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "${BACKUP_PREFIX}" --endpoint-url "${R2_ENDPOINT}" --region auto --query "Contents[*].Key" --output text | tr "\t" "\n" | grep -vxF None | sort -r | head -n 1)',
     'if [ -z "${KEY}" ]; then echo "No backups found with prefix ${BACKUP_PREFIX} — starting with an empty home."; exit 0; fi',
     'echo "Restoring ${KEY} into ${HOME_MOUNT_PATH}..."',
+    // Stage may carry non-writable dirs from a previous run — chmod
+    // first or rm -rf silently leaves them behind.
+    'chmod -R u+rwX "${STAGE}" 2>/dev/null || true',
     'rm -rf "${STAGE}"; mkdir -p "${STAGE}"',
     'aws s3 cp "s3://${R2_BUCKET}/${KEY}" - --endpoint-url "${R2_ENDPOINT}" --region auto | openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_PASSWORD | tar xzf - -C "${STAGE}"',
     // Force mode overlays (cp -a merges dirs); normal mode promotes by
     // move — the home is guaranteed empty, so no path collisions.
+    // Copy per top-level item, not "${STAGE}/." — preserving times on
+    // the destination itself would EPERM on the root-owned mount point.
     'if [ "${FORCE}" = 1 ]; then',
-    '  cp -a "${STAGE}/." "${HOME_MOUNT_PATH}/" && rm -rf "${STAGE}"',
+    '  copy_rc=0',
+    '  for item in "${STAGE}"/.[!.]* "${STAGE}"/..?* "${STAGE}"/*; do',
+    '    [ -e "${item}" ] || continue',
+    '    cp -a "${item}" "${HOME_MOUNT_PATH}/" || copy_rc=1',
+    '  done',
+    '  if [ "${copy_rc}" != 0 ]; then echo "Fatal: overlay copy failed — keeping stage for retry"; exit 1; fi',
+    // Stage may hold non-writable dirs (restored modes) — chmod first
+    // or rm -rf cannot unlink inside them.
+    '  chmod -R u+rwX "${STAGE}" 2>/dev/null || true',
+    '  rm -rf "${STAGE}"',
     'else',
     '  for item in "${STAGE}"/.[!.]* "${STAGE}"/..?* "${STAGE}"/*; do',
     '    [ -e "${item}" ] || continue',

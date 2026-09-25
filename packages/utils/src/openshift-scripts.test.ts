@@ -521,4 +521,15 @@ describe('buildRestoreScript gates', () => {
     expect(out).toContain('force-restoring');
     expect(out).toContain('missing R2 credential file');
   });
+
+  it('force mode overlays per-item and cleans the stage (no "${STAGE}/." copy)', () => {
+    const script = buildRestoreScript();
+    // cp -a on "${STAGE}/." tries to preserve times on the mount root
+    // (root-owned) — EPERM. Per-item copy avoids it and detects real
+    // failures.
+    expect(script).not.toContain('cp -a "${STAGE}/."');
+    expect(script).toContain('cp -a "${item}" "${HOME_MOUNT_PATH}/" || copy_rc=1');
+    // Read-only staged dirs (restored modes) need chmod before rm -rf.
+    expect(script).toContain('chmod -R u+rwX "${STAGE}"');
+  });
 });
