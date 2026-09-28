@@ -162,18 +162,22 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     // Unseekable stdin uploads use a fixed part size — 32MB parts keep
     // the 10,000-part S3 ceiling out of reach for any PVC-sized stream.
     // Buffer cost is chunksize x max_concurrent_requests inside the
-    // workspace container — 32MB x 4 ≈ 128MB cap; defaults (64MB x 10)
-    // could balloon ~640MB on top of paseo/devin load and trip the pod
-    // memory limit (observed: OOMKill mid-backup).
-    '  aws configure set s3.multipart_chunksize 32MB || echo "Warning: could not set multipart_chunksize"',
-    '  aws configure set s3.max_concurrent_requests 4 || echo "Warning: could not set max_concurrent_requests"',
+    // workspace container — 32MB x 4 ≈ 128MB cap; the previous setting
+    // (64MB x default concurrency 10) could hold ~640MB on top of
+    // paseo/devin load and trip the pod memory limit (observed: OOMKill
+    // mid-backup). Fail-closed: an upload that proceeds with unbounded
+    // buffering risks the same OOM.
+    '  aws configure set s3.multipart_chunksize 32MB || { echo "Fatal: could not set multipart_chunksize"; exit 1; }',
+    '  aws configure set s3.max_concurrent_requests 4 || { echo "Fatal: could not set max_concurrent_requests"; exit 1; }',
     // `|| pipe_rc=$?` is required — under `sh -e` a failing pipeline
     // would exit before the rc assignment and skip partial-object cleanup.
     '  ( tar czf - $EXCLUDES $TAR_EXTRA . || echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD || echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
     '  pipe_rc=${pipe_rc:-0}',
     // The snapshot's bytes are already in the stream — drop it so a
     // stale copy doesn't linger on the PVC until the next run's rm.
-    '  rm -f "$DEVIN_SNAP"',
+    // Non-fatal: under `sh -e` a failing rm would otherwise exit before
+    // the rc checks and skip partial-object cleanup.
+    '  rm -f "$DEVIN_SNAP" || echo "Warning: failed to remove devin snapshot"',
     '  tar_rc=$(cat /tmp/.tar-rc 2>/dev/null || echo 0)',
     '  enc_rc=$(cat /tmp/.enc-rc 2>/dev/null || echo 0)',
     '  if [ "${tar_rc}" -ge 2 ] || [ "${enc_rc}" -ne 0 ] || [ "${pipe_rc}" -ne 0 ]; then',
