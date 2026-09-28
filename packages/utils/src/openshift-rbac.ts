@@ -168,6 +168,9 @@ export function createBackupCronJob(
   if (!Number.isInteger(backup.keep) || backup.keep <= 0) {
     throw new Error(`backup.keep must be a positive integer, got: ${backup.keep}`);
   }
+  if (backup.retentionPrefix !== undefined && backup.retentionPrefix.trim() === '') {
+    throw new Error('backup.retentionPrefix must be non-blank when provided');
+  }
   validateGeneratedName(name, '-backup');
   const saName = `${name}-backup`;
   new ApiObject(scope, 'backup-cronjob', {
