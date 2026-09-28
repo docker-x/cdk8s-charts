@@ -293,8 +293,10 @@ log() { echo "[auto-resume] $*"; }
 # provider session; 1 for anything else so the caller logs it generically.
 quarantine_if_gone() {
   [[ "$2" == *"Session not found"* ]] || return 1
-  printf '%s\\n' "$1" >> "$DEAD_STATE" ||
+  if ! printf '%s\\n' "$1" >> "$DEAD_STATE"; then
     log "WARNING: failed to record quarantine for $1"
+    return 1
+  fi
   log "WARNING: agent $1 quarantined — provider session not found (remove its id from $DEAD_STATE to retry)"
   return 0
 }`;
