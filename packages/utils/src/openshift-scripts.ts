@@ -130,6 +130,23 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '  for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET BACKUP_PASSWORD; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
     '  cd -- "$HOME_MOUNT_PATH"',
     ...buildBackupExcludes(extraExcludes),
+    // Consistent snapshot of the devin session DB: archiving the live
+    // sqlite trio (db/shm/wal) mid-write can restore as corruption.
+    // VACUUM INTO is sqlite's hot-backup — quiesced, WAL folded in. The
+    // snapshot lands in the archive AS sessions.db via --transform so
+    // restore unpacks a clean database at the canonical path.
+    '  DEVIN_DB=".local/share/devin/cli/sessions.db"',
+    '  DEVIN_SNAP=".local/share/devin/cli/.sessions.db.snapshot"',
+    '  TAR_EXTRA=""',
+    '  rm -f "$DEVIN_SNAP"',
+    '  if [ -f "$DEVIN_DB" ] && command -v node >/dev/null 2>&1; then',
+    '    if node -e "const{DatabaseSync}=require(\\"node:sqlite\\");const d=new DatabaseSync(process.argv[1]);d.prepare(\\"VACUUM INTO ?\\").run(process.argv[2]);d.close()" "$DEVIN_DB" "$DEVIN_SNAP"; then',
+    '      TAR_EXTRA="--exclude=$DEVIN_DB --exclude=$DEVIN_DB-shm --exclude=$DEVIN_DB-wal --transform=s|\\.sessions\\.db\\.snapshot$|sessions.db|"',
+    '    else',
+    '      rm -f "$DEVIN_SNAP"',
+    '      echo "Warning: devin sessions.db snapshot failed — archiving live database files"',
+    '    fi',
+    '  fi',
     '  DATE=$(date -u +%Y%m%d-%H%M%S)',
     '  export OBJECT_KEY="${BACKUP_PREFIX}${DATE}.tar.gz.enc"',
     '  for tool in tar openssl aws jq; do',
@@ -147,7 +164,7 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '  aws configure set s3.multipart_chunksize 64MB || echo "Warning: could not set multipart_chunksize"',
     // `|| pipe_rc=$?` is required — under `sh -e` a failing pipeline
     // would exit before the rc assignment and skip partial-object cleanup.
-    '  ( tar czf - $EXCLUDES . || echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD || echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
+    '  ( tar czf - $EXCLUDES $TAR_EXTRA . || echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD || echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
     '  pipe_rc=${pipe_rc:-0}',
     '  tar_rc=$(cat /tmp/.tar-rc 2>/dev/null || echo 0)',
     '  enc_rc=$(cat /tmp/.enc-rc 2>/dev/null || echo 0)',
@@ -295,7 +312,17 @@ quarantine_if_gone() {
   [[ "$2" == *"Session not found"* ]] || return 1
   # tmp+mv: a partial >> append could leave a newline-less tail id that
   # grep -x would still match next start. Rename keeps the file whole.
-  cat "$DEAD_STATE" >"$DEAD_STATE.tmp.$$" 2>/dev/null || : >"$DEAD_STATE.tmp.$$"
+  # A read error on the existing file must NOT degrade to an empty copy —
+  # that would silently un-quarantine every recorded agent.
+  if [[ -e "$DEAD_STATE" ]]; then
+    if ! cat "$DEAD_STATE" >"$DEAD_STATE.tmp.$$" 2>/dev/null; then
+      rm -f "$DEAD_STATE.tmp.$$"
+      log "WARNING: failed to read quarantine state for $1"
+      return 1
+    fi
+  else
+    : >"$DEAD_STATE.tmp.$$"
+  fi
   if ! printf '%s\\n' "$1" >>"$DEAD_STATE.tmp.$$" || ! mv "$DEAD_STATE.tmp.$$" "$DEAD_STATE"; then
     rm -f "$DEAD_STATE.tmp.$$"
     log "WARNING: failed to record quarantine for $1"

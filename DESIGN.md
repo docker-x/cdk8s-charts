@@ -1073,7 +1073,12 @@ production remote workspace:
    CLI session store (`.local/share/devin/cli/sessions.db` +
    transcripts) IS included — it is what lets provider sessions
    survive a PVC rebuild — while `credentials.toml`, MCP OAuth
-   data, logs, locks, plugin cache, and CLI downloads stay out
+   data, logs, locks, plugin cache, and CLI downloads stay out.
+   The live sqlite trio (db/shm/wal) is never archived mid-write:
+   sessions.db is snapshotted via `VACUUM INTO` (node:sqlite) and
+   tar-`--transform`ed back to its canonical name, so the archive
+   carries a quiesced database; snapshot failure falls back to
+   archiving the live files with a warning
 6. **Paseo auto-resume** — preStop hook snapshots open (non-closed,
    non-archived) agents as `id<TAB>status` to `$PASEO_HOME/.was-running`
    in a single `node` pass, atomically; postStart waits for daemon health,
@@ -1262,7 +1267,12 @@ but using the Devenv chart:
    CLI session store (`.local/share/devin/cli/sessions.db` +
    transcripts) IS included — it is what lets provider sessions
    survive a PVC rebuild — while `credentials.toml`, MCP OAuth
-   data, logs, locks, plugin cache, and CLI downloads stay out
+   data, logs, locks, plugin cache, and CLI downloads stay out.
+   The live sqlite trio (db/shm/wal) is never archived mid-write:
+   sessions.db is snapshotted via `VACUUM INTO` (node:sqlite) and
+   tar-`--transform`ed back to its canonical name, so the archive
+   carries a quiesced database; snapshot failure falls back to
+   archiving the live files with a warning
 6. **R2 restore init container** — when R2 credentials are configured and
    `backup.restore` is not `false`, an `r2-restore` init container runs in
    the workspace pod before the main container (same pod, so the RWO PVC
