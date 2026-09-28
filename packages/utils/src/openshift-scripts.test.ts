@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  buildBackupScript,
   buildRestoreScript,
   getPaseoAutoResumeScript,
   getPaseoPreStopScript,
@@ -76,7 +77,8 @@ printf '%s\\n' "$*" >> "${callLog}"
 if [[ "$1" == "ls" && -n "\${STUB_LS_FAIL:-}" ]]; then exit 1; fi
 if [[ "$1" == "ls" ]]; then cat "${lsFile}"; exit 0; fi
 if [[ -n "\${STUB_READ_STDIN:-}" ]]; then cat >/dev/null; fi
-if [[ "$1" == "send" && -n "\${STUB_SEND_FAIL:-}" ]]; then echo "Session not found" >&2; exit 1; fi
+if [[ "$1" == "send" && -n "\${STUB_SEND_FAIL:-}" ]]; then echo "\${STUB_SEND_MSG:-Session not found}" >&2; exit 1; fi
+if [[ "$1" == "agent" && "$2" == "reload" && -n "\${STUB_RELOAD_GONE:-}" ]]; then echo "Session not found" >&2; exit 1; fi
 if [[ "$1" == "agent" && "$2" == "reload" && -n "\${STUB_RELOAD_FAIL:-}" ]]; then echo "Agent not found" >&2; exit 1; fi
 exit 0
 `,
@@ -297,10 +299,12 @@ describe('paseo auto-resume', () => {
     const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
     const { stdout } = runScript(
       getPaseoAutoResumeScript('devenv'),
-      stubEnv(home, binDir, callLog, { STUB_SEND_FAIL: '1' }),
+      stubEnv(home, binDir, callLog, { STUB_SEND_FAIL: '1', STUB_SEND_MSG: 'boom' }),
     );
+    // a non-quarantine failure still logs the raw error verbatim
     expect(stdout).toContain('WARNING: failed to resume agent id-run');
-    expect(stdout).toContain('Session not found');
+    expect(stdout).toContain('boom');
+    expect(fileExists(join(home, '.auto-resume-dead'))).toBe(false);
   });
 
   it('does not let a partial or stale snapshot shrink the resume set', () => {
@@ -439,6 +443,67 @@ describe('paseo auto-resume', () => {
       stubEnv(home, binDir, callLog, { PASEO_AUTO_RESUME_NUDGE_COOLDOWN: '60' }),
     );
     expect(calls.some((c) => c.startsWith('send id-run '))).toBe(true);
+  });
+
+  it('dead-letters a mid-turn agent when send reports Session not found', () => {
+    const { home, binDir, callLog } = setup('id-run\trunning\n', [{ id: 'id-run' }]);
+    const { stdout } = runScript(
+      getPaseoAutoResumeScript('devenv'),
+      stubEnv(home, binDir, callLog, { STUB_SEND_FAIL: '1' }),
+    );
+    expect(readFile(join(home, '.auto-resume-dead'))).toContain('id-run');
+    expect(stdout).toContain('quarantined');
+    // A failed send records no nudge — the dead file does suppression.
+    expect(fileExists(join(home, '.auto-resume-nudged'))).toBe(false);
+  });
+
+  it('dead-letters a quiet agent when reload reports Session not found', () => {
+    const { home, binDir, callLog } = setup('id-idle\tidle\n', [{ id: 'id-idle' }]);
+    const { stdout } = runScript(
+      getPaseoAutoResumeScript('devenv'),
+      stubEnv(home, binDir, callLog, { STUB_RELOAD_GONE: '1' }),
+    );
+    expect(readFile(join(home, '.auto-resume-dead'))).toContain('id-idle');
+    expect(stdout).toContain('quarantined');
+  });
+
+  it('does not dead-letter on transient failures', () => {
+    const { home, binDir, callLog } = setup('id-idle\tidle\n', [{ id: 'id-idle' }]);
+    const { stdout } = runScript(
+      getPaseoAutoResumeScript('devenv'),
+      stubEnv(home, binDir, callLog, { STUB_RELOAD_FAIL: '1' }),
+    );
+    expect(fileExists(join(home, '.auto-resume-dead'))).toBe(false);
+    expect(stdout).toContain('failed to reload agent id-idle');
+  });
+
+  it('skips quarantined agents without spending the cap', () => {
+    const { home, binDir, callLog } = setup('id-dead\trunning\nid-run\trunning\n', [
+      { id: 'id-dead' },
+      { id: 'id-run' },
+    ]);
+    writeFile(join(home, '.auto-resume-dead'), 'id-dead\n');
+    const { stdout, calls } = runScript(
+      getPaseoAutoResumeScript('devenv'),
+      stubEnv(home, binDir, callLog, { PASEO_AUTO_RESUME_MAX: '1' }),
+    );
+    expect(stdout).toContain('id-dead quarantined (provider session gone) — skipping');
+    expect(calls.some((c) => c.startsWith('send id-dead '))).toBe(false);
+    expect(calls.some((c) => c.startsWith('send id-run '))).toBe(true);
+  });
+});
+
+describe('backup script', () => {
+  it('excludes devin secrets and regenerable dirs but keeps the session store', () => {
+    const script = buildBackupScript('devenv');
+    expect(script).toContain('--exclude=.local/share/devin/credentials.toml');
+    expect(script).toContain('--exclude=.local/share/devin/mcp');
+    expect(script).toContain('--exclude=.local/share/devin/cli/logs');
+    // The session store is the point — the bare dir must not be excluded.
+    expect(script).not.toContain('--exclude=.local/share/devin ');
+    expect(script).not.toContain('--exclude=.local/share/devin"');
+    expect(script).not.toContain('--exclude=.local/share/devin/cli"');
+    expect(script).not.toContain('--exclude=.local/share/devin/cli ');
   });
 });
 
