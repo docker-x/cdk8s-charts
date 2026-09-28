@@ -146,6 +146,12 @@ function buildBackupContainerSpec(
       { name: 'HOME_MOUNT_PATH', value: homeMountPath },
       { name: 'BACKUP_KEEP', value: String(backup.keep) },
       { name: 'BACKUP_PREFIX', value: `workspace-state-${name}-` },
+      {
+        name: 'BACKUP_RETENTION_PREFIX',
+        // Ternary, not `??` — an explicit empty string must not widen
+        // the sweep to the whole bucket.
+        value: backup.retentionPrefix ? backup.retentionPrefix : `workspace-state-${name}-`,
+      },
     ],
     command: ['/bin/sh', '-ec', buildBackupScript(variant)],
   };
@@ -161,6 +167,9 @@ export function createBackupCronJob(
 ): void {
   if (!Number.isInteger(backup.keep) || backup.keep <= 0) {
     throw new Error(`backup.keep must be a positive integer, got: ${backup.keep}`);
+  }
+  if (backup.retentionPrefix !== undefined && backup.retentionPrefix.trim() === '') {
+    throw new Error('backup.retentionPrefix must be non-blank when provided');
   }
   validateGeneratedName(name, '-backup');
   const saName = `${name}-backup`;

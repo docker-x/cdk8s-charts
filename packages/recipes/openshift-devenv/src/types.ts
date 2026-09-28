@@ -10,6 +10,13 @@ export interface BackupConfig {
   schedule?: string;
   /** Number of backups to retain (default: 3). */
   keep?: number;
+  /**
+   * S3 key prefix the retention sweep trims to `keep` objects
+   * (default: the upload prefix `workspace-state-<name>-`). Widen to a
+   * common stem after a workload rename to reap old-prefix orphans;
+   * pooled keys compete for the same `keep` slots.
+   */
+  retentionPrefix?: string;
   /** R2 account ID. */
   r2AccountId?: string;
   /** R2 access key ID for S3 API. */
