@@ -86,7 +86,7 @@ function buildBackupExcludes(extraExcludes: string): string[] {
 function buildBackupUploadAndCleanup(): string[] {
   return [
     '  echo "Cleaning up old backups (keeping last ${BACKUP_KEEP})..."',
-    '  aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "${BACKUP_PREFIX}" --endpoint-url "${R2_ENDPOINT}" --region auto --output json --query "Contents[*].Key" > /tmp/listing.json || { echo "Fatal: failed to list R2 objects"; rm -f /tmp/backup.tar.gz.enc; exit 1; }',
+    '  aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "${BACKUP_RETENTION_PREFIX}" --endpoint-url "${R2_ENDPOINT}" --region auto --output json --query "Contents[*].Key" > /tmp/listing.json || { echo "Fatal: failed to list R2 objects"; rm -f /tmp/backup.tar.gz.enc; exit 1; }',
     // `.[]?` tolerates a null Contents (empty bucket) — without it the
     // first-ever backup dies in cleanup.
     '  jq -r ".[]?" /tmp/listing.json > /tmp/keys.txt || { echo "Fatal: failed to parse R2 listing"; rm -f /tmp/listing.json /tmp/backup.tar.gz.enc; exit 1; }',
@@ -111,7 +111,7 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '  exit 1',
     'fi',
     'echo "Backing up from pod: ${POD}"',
-    `oc exec -n "\${NAMESPACE}" "\${POD}" -c ${containerName} -- env HOME_MOUNT_PATH="\${HOME_MOUNT_PATH}" BACKUP_KEEP="\${BACKUP_KEEP}" BACKUP_PREFIX="\${BACKUP_PREFIX}" /bin/sh -ec '`,
+    `oc exec -n "\${NAMESPACE}" "\${POD}" -c ${containerName} -- env HOME_MOUNT_PATH="\${HOME_MOUNT_PATH}" BACKUP_KEEP="\${BACKUP_KEEP}" BACKUP_PREFIX="\${BACKUP_PREFIX}" BACKUP_RETENTION_PREFIX="\${BACKUP_RETENTION_PREFIX}" /bin/sh -ec '`,
     // PATH fixed inside the exec'd script: an env-arg $PATH would
     // expand in the CronJob container. The profile dir is appended,
     // not prepended, so image-owned system binaries win over binaries

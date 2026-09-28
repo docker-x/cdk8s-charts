@@ -235,9 +235,38 @@ describe('OpenShiftWorkspace recipe', () => {
     const env = Object.fromEntries(container.env.map((e) => [e.name, e.value]));
     expect(env.HOME_MOUNT_PATH).toBe('/home/vscode');
     expect(env.BACKUP_KEEP).toBe('3');
+    expect(env.BACKUP_RETENTION_PREFIX).toBe('workspace-state-workspace-');
     // Script must reference the env var, not a hardcoded/interpolated path
     expect(container.command[2]).toContain('$HOME_MOUNT_PATH');
     expect(container.command[2]).not.toContain('"/home/vscode"');
+  });
+
+  it('honors backup.retentionPrefix for the retention sweep', () => {
+    const m = synth({
+      ...baseProps,
+      backup: {
+        r2AccountId: 'acct',
+        r2AccessKeyId: 'key',
+        r2SecretAccessKey: 'secret',
+        r2BucketName: 'bucket',
+        resticPassword: 'pass',
+        retentionPrefix: 'workspace-state-',
+      },
+    });
+    const cj = findManifest(m, 'CronJob', 'workspace-backup');
+    expect(cj).toBeDefined();
+    const container = (
+      cj.spec as {
+        jobTemplate: {
+          spec: {
+            template: { spec: { containers: { env: { name: string; value: string }[] }[] } };
+          };
+        };
+      }
+    ).jobTemplate.spec.template.spec.containers[0];
+    const env = Object.fromEntries(container.env.map((e) => [e.name, e.value]));
+    expect(env.BACKUP_RETENTION_PREFIX).toBe('workspace-state-');
+    expect(env.BACKUP_PREFIX).toBe('workspace-state-workspace-');
   });
 
   it('tf-deployer Role does not grant list/watch on Secrets', () => {

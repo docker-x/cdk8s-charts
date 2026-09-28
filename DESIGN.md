@@ -1068,7 +1068,7 @@ production remote workspace:
    the preview Route is opt-in (`previewRoute: true`) because it bypasses
    oauth-proxy
 4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
-5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2
+5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2; retention keeps the newest `backup.keep` objects under `backup.retentionPrefix` (default: the upload prefix `workspace-state-<name>-`). Widening `retentionPrefix` reaps backups orphaned by a workload rename — and any other keys sharing the stem in the bucket
 6. **Paseo auto-resume** — preStop hook snapshots open (non-closed,
    non-archived) agents as `id<TAB>status` to `$PASEO_HOME/.was-running`
    in a single `node` pass, atomically; postStart waits for daemon health,
@@ -1247,7 +1247,7 @@ but using the Devenv chart:
    the preview Route is opt-in (`previewRoute: true`) because it bypasses
    oauth-proxy
 4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
-5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2
+5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2; retention keeps the newest `backup.keep` objects under `backup.retentionPrefix` (default: the upload prefix `workspace-state-<name>-`). Widening `retentionPrefix` reaps backups orphaned by a workload rename — and any other keys sharing the stem in the bucket
 6. **R2 restore init container** — when R2 credentials are configured and
    `backup.restore` is not `false`, an `r2-restore` init container runs in
    the workspace pod before the main container (same pod, so the RWO PVC

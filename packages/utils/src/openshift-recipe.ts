@@ -41,6 +41,16 @@ export interface PodLifecycle {
 export interface BackupConfig {
   schedule?: string;
   keep?: number;
+  /**
+   * S3 key prefix the retention sweep lists and trims to `keep` objects.
+   * Defaults to the upload prefix (`workspace-state-<name>-`). Set a
+   * broader stem after renaming the workload to reap backups orphaned
+   * under the old prefix — they are otherwise invisible to retention.
+   * Widening pools matching keys across prefix variants: the newest
+   * `keep` objects overall survive, so other backups sharing the stem
+   * in the same bucket would be swept too.
+   */
+  retentionPrefix?: string;
   r2AccountId?: string;
   r2AccessKeyId?: string;
   r2SecretAccessKey?: string;

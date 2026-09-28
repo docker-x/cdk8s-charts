@@ -146,6 +146,10 @@ function buildBackupContainerSpec(
       { name: 'HOME_MOUNT_PATH', value: homeMountPath },
       { name: 'BACKUP_KEEP', value: String(backup.keep) },
       { name: 'BACKUP_PREFIX', value: `workspace-state-${name}-` },
+      {
+        name: 'BACKUP_RETENTION_PREFIX',
+        value: backup.retentionPrefix ?? `workspace-state-${name}-`,
+      },
     ],
     command: ['/bin/sh', '-ec', buildBackupScript(variant)],
   };
