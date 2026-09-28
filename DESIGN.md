@@ -1077,8 +1077,13 @@ production remote workspace:
    When sessions.db exists and a `VACUUM INTO` (node:sqlite)
    snapshot succeeds, the live sqlite trio (db/shm/wal) is excluded
    and the snapshot is tar-`--transform`ed back to the canonical
-   name — the archive carries a quiesced database. Otherwise the
-   live files are archived and a warning is emitted
+   name — the archive carries a quiesced database, and the snapshot
+   file is removed from the PVC once the stream finishes. Otherwise
+   the live files are archived and a warning is emitted.
+   Upload memory is bounded inside the workspace container:
+   `s3.multipart_chunksize` 32MB x `s3.max_concurrent_requests` 4
+   (~128MB cap, applied fail-closed) — the previous 64MB x default-10
+   setting (~640MB) OOMKilled the pod mid-backup
 6. **Paseo auto-resume** — preStop hook snapshots open (non-closed,
    non-archived) agents as `id<TAB>status` to `$PASEO_HOME/.was-running`
    in a single `node` pass, atomically; postStart waits for daemon health,
@@ -1271,8 +1276,13 @@ but using the Devenv chart:
    When sessions.db exists and a `VACUUM INTO` (node:sqlite)
    snapshot succeeds, the live sqlite trio (db/shm/wal) is excluded
    and the snapshot is tar-`--transform`ed back to the canonical
-   name — the archive carries a quiesced database. Otherwise the
-   live files are archived and a warning is emitted
+   name — the archive carries a quiesced database, and the snapshot
+   file is removed from the PVC once the stream finishes. Otherwise
+   the live files are archived and a warning is emitted.
+   Upload memory is bounded inside the workspace container:
+   `s3.multipart_chunksize` 32MB x `s3.max_concurrent_requests` 4
+   (~128MB cap, applied fail-closed) — the previous 64MB x default-10
+   setting (~640MB) OOMKilled the pod mid-backup
 6. **R2 restore init container** — when R2 credentials are configured and
    `backup.restore` is not `false`, an `r2-restore` init container runs in
    the workspace pod before the main container (same pod, so the RWO PVC

@@ -505,6 +505,35 @@ describe('backup script', () => {
     expect(script).not.toContain('--exclude=.local/share/devin/cli"');
     expect(script).not.toContain('--exclude=.local/share/devin/cli ');
   });
+
+  it('caps aws multipart buffering inside the workspace pod', () => {
+    const script = buildBackupScript('devenv');
+    // chunksize x concurrency is memory held in the workspace container —
+    // the previous 64MB x 10 setting OOMKilled the pod mid-backup. The
+    // caps must be set before the upload pipeline and be fail-closed.
+    const uploadIdx = script.indexOf('aws s3 cp -');
+    const chunkIdx = script.indexOf('aws configure set s3.multipart_chunksize 32MB');
+    const concIdx = script.indexOf('aws configure set s3.max_concurrent_requests 4');
+    expect(uploadIdx).toBeGreaterThan(-1);
+    expect(chunkIdx).toBeGreaterThan(-1);
+    expect(concIdx).toBeGreaterThan(-1);
+    expect(chunkIdx).toBeLessThan(uploadIdx);
+    expect(concIdx).toBeLessThan(uploadIdx);
+    expect(script).toContain('Fatal: could not set multipart_chunksize');
+    expect(script).toContain('Fatal: could not set max_concurrent_requests');
+  });
+
+  it('removes the devin snapshot after the upload pipeline', () => {
+    const script = buildBackupScript('devenv');
+    // rm must come after the tar|openssl|aws pipeline has consumed the
+    // file, but before the failure branch — a leftover must never be
+    // tar'd into a later archive under its own name.
+    const pipelineEnd = script.indexOf('pipe_rc=${pipe_rc:-0}');
+    expect(pipelineEnd).toBeGreaterThan(-1);
+    const rmIdx = script.indexOf('rm -f "$DEVIN_SNAP"', pipelineEnd);
+    expect(rmIdx).toBeGreaterThan(pipelineEnd);
+    expect(rmIdx).toBeLessThan(script.indexOf('Fatal: streaming backup failed'));
+  });
 });
 
 describe('buildRestoreScript gates', () => {
