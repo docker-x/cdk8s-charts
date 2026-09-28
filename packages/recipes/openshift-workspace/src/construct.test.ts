@@ -267,6 +267,10 @@ describe('OpenShiftWorkspace recipe', () => {
     const env = Object.fromEntries(container.env.map((e) => [e.name, e.value]));
     expect(env.BACKUP_RETENTION_PREFIX).toBe('workspace-state-');
     expect(env.BACKUP_PREFIX).toBe('workspace-state-workspace-');
+    // Guard the wiring, not just the env: the exec forward and the
+    // sweep's --prefix must both use BACKUP_RETENTION_PREFIX.
+    expect(container.command[2]).toContain('BACKUP_RETENTION_PREFIX="${BACKUP_RETENTION_PREFIX}"');
+    expect(container.command[2]).toContain('--prefix "${BACKUP_RETENTION_PREFIX}"');
   });
 
   it('tf-deployer Role does not grant list/watch on Secrets', () => {
