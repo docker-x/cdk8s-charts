@@ -76,7 +76,14 @@ function buildBackupExcludes(extraExcludes: string): string[] {
   return [
     '  EXCLUDES="--exclude=.ssh --exclude=.aws --exclude=.kube --exclude=.gnupg --exclude=.env --exclude=.env.*"',
     '  EXCLUDES="$EXCLUDES --exclude=*_history --exclude=node_modules --exclude=.bun --exclude=.nix-profile --exclude=.local/bin"',
-    '  EXCLUDES="$EXCLUDES --exclude=.local/share/devin --exclude=.local/share/terminal-browser --exclude=.cache --exclude=.npm"',
+    // Devin CLI state is backed up — sessions.db + transcripts are what
+    // let provider sessions survive a PVC rebuild — minus secrets and
+    // regenerable/ephemeral content (credentials, MCP OAuth tokens,
+    // logs, runtime locks, plugin cache, downloaded CLI versions).
+    '  EXCLUDES="$EXCLUDES --exclude=.local/share/devin/credentials.toml --exclude=.local/share/devin/mcp"',
+    '  EXCLUDES="$EXCLUDES --exclude=.local/share/devin/cli/logs --exclude=.local/share/devin/cli/session_locks"',
+    '  EXCLUDES="$EXCLUDES --exclude=.local/share/devin/cli/plugins --exclude=.local/share/devin/cli/_versions"',
+    '  EXCLUDES="$EXCLUDES --exclude=.local/share/terminal-browser --exclude=.cache --exclude=.npm"',
     '  EXCLUDES="$EXCLUDES --exclude=.turbo --exclude=.nx --exclude=.astro --exclude=dist --exclude=build --exclude=.next"',
     '  EXCLUDES="$EXCLUDES --exclude=models --exclude=worktrees --exclude=daemon.log --exclude=.paseo/*-daemon.log --exclude=logs"',
     `  EXCLUDES="$EXCLUDES --exclude=.gc/cache --exclude=.gc/supervisor.log --exclude=lost+found${extraExcludes}"`,
@@ -123,6 +130,23 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '  for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET BACKUP_PASSWORD; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
     '  cd -- "$HOME_MOUNT_PATH"',
     ...buildBackupExcludes(extraExcludes),
+    // Consistent snapshot of the devin session DB: archiving the live
+    // sqlite trio (db/shm/wal) mid-write can restore as corruption.
+    // VACUUM INTO is sqlite's hot-backup — quiesced, WAL folded in. The
+    // snapshot lands in the archive AS sessions.db via --transform so
+    // restore unpacks a clean database at the canonical path.
+    '  DEVIN_DB=".local/share/devin/cli/sessions.db"',
+    '  DEVIN_SNAP=".local/share/devin/cli/.sessions.db.snapshot"',
+    '  TAR_EXTRA=""',
+    '  rm -f "$DEVIN_SNAP"',
+    '  if [ -f "$DEVIN_DB" ]; then',
+    '    if command -v node >/dev/null 2>&1 && node -e "const{DatabaseSync}=require(\\"node:sqlite\\");const d=new DatabaseSync(process.argv[1]);d.prepare(\\"VACUUM INTO ?\\").run(process.argv[2]);d.close()" "$DEVIN_DB" "$DEVIN_SNAP"; then',
+    '      TAR_EXTRA="--exclude=$DEVIN_DB --exclude=$DEVIN_DB-shm --exclude=$DEVIN_DB-wal --transform=s|\\.sessions\\.db\\.snapshot$|sessions.db|"',
+    '    else',
+    '      rm -f "$DEVIN_SNAP"',
+    '      echo "Warning: devin sessions.db snapshot unavailable — archiving live database files"',
+    '    fi',
+    '  fi',
     '  DATE=$(date -u +%Y%m%d-%H%M%S)',
     '  export OBJECT_KEY="${BACKUP_PREFIX}${DATE}.tar.gz.enc"',
     '  for tool in tar openssl aws jq; do',
@@ -140,7 +164,7 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '  aws configure set s3.multipart_chunksize 64MB || echo "Warning: could not set multipart_chunksize"',
     // `|| pipe_rc=$?` is required — under `sh -e` a failing pipeline
     // would exit before the rc assignment and skip partial-object cleanup.
-    '  ( tar czf - $EXCLUDES . || echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD || echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
+    '  ( tar czf - $EXCLUDES $TAR_EXTRA . || echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD || echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
     '  pipe_rc=${pipe_rc:-0}',
     '  tar_rc=$(cat /tmp/.tar-rc 2>/dev/null || echo 0)',
     '  enc_rc=$(cat /tmp/.enc-rc 2>/dev/null || echo 0)',
@@ -274,8 +298,39 @@ NUDGE_COOLDOWN="\${PASEO_AUTO_RESUME_NUDGE_COOLDOWN:-1800}"
 [[ "$NUDGE_COOLDOWN" =~ ^(0|[1-9][0-9]*)$ ]] || NUDGE_COOLDOWN=1800
 # int64 overflow wraps to negative — reset to the default.
 (( NUDGE_COOLDOWN < 0 )) && NUDGE_COOLDOWN=1800 || true
+# Agents whose provider session is permanently gone (resume failed with
+# "Session not found") are dead-lettered here and skipped on later
+# starts — retrying a dead session every restart is pure log spam.
+# Remove an id from this file to retry it.
+DEAD_STATE="$PASEO_HOME/.auto-resume-dead"
 
-log() { echo "[auto-resume] $*"; }`;
+log() { echo "[auto-resume] $*"; }
+
+# Returns 0 (and dead-letters the agent) when the failure was a missing
+# provider session; 1 for anything else so the caller logs it generically.
+quarantine_if_gone() {
+  [[ "$2" == *"Session not found"* ]] || return 1
+  # tmp+mv: a partial >> append could leave a newline-less tail id that
+  # grep -x would still match next start. Rename keeps the file whole.
+  # A read error on the existing file must NOT degrade to an empty copy —
+  # that would silently un-quarantine every recorded agent.
+  if [[ -e "$DEAD_STATE" ]]; then
+    if ! cat "$DEAD_STATE" >"$DEAD_STATE.tmp.$$" 2>/dev/null; then
+      rm -f "$DEAD_STATE.tmp.$$"
+      log "WARNING: failed to read quarantine state for $1"
+      return 1
+    fi
+  else
+    : >"$DEAD_STATE.tmp.$$"
+  fi
+  if ! printf '%s\\n' "$1" >>"$DEAD_STATE.tmp.$$" || ! mv "$DEAD_STATE.tmp.$$" "$DEAD_STATE"; then
+    rm -f "$DEAD_STATE.tmp.$$"
+    log "WARNING: failed to record quarantine for $1"
+    return 1
+  fi
+  log "WARNING: agent $1 quarantined — provider session not found (remove its id from $DEAD_STATE to retry)"
+  return 0
+}`;
 }
 
 function paseoWaitForDaemon(paseoPort: number): string {
@@ -304,7 +359,7 @@ fi
 # Orphaned tmp files are snapshot attempts killed mid-write (e.g. by the
 # termination grace period) — always safe to drop; only the committed
 # marker matters.
-rm -f "$MARKER".tmp.* "$NUDGE_STATE".tmp.*
+rm -f "$MARKER".tmp.* "$NUDGE_STATE".tmp.* "$DEAD_STATE".tmp.*
 
 # The daemon is the source of truth for which agents can be resumed —
 # persisted records outlive their workspaces and are not all loadable.
@@ -383,6 +438,12 @@ restored=0
 attempted=0
 while IFS=$'\\t' read -r agent_id agent_status; do
   [[ -n "$agent_id" ]] || continue
+  # Dead-lettered agents cost nothing and never leave the list — check
+  # before the cap so they don't hold the loop open pointlessly.
+  if grep -qxF "$agent_id" "$DEAD_STATE" 2>/dev/null; then
+    log "agent $agent_id quarantined (provider session gone) — skipping"
+    continue
+  fi
   if [[ $attempted -ge $MAX_AGENTS ]]; then
     log "reached max agents limit ($MAX_AGENTS), stopping"
     break
@@ -418,7 +479,8 @@ while IFS=$'\\t' read -r agent_id agent_status; do
         log "agent $agent_id reloaded (was $agent_status)"
         restored=$((restored + 1))
       else
-        log "WARNING: failed to reload agent $agent_id: $out"
+        quarantine_if_gone "$agent_id" "$out" ||
+          log "WARNING: failed to reload agent $agent_id: $out"
       fi
       ;;
     *)
@@ -430,7 +492,8 @@ while IFS=$'\\t' read -r agent_id agent_status; do
         printf '%s\\t%s\\n' "$agent_id" "$(date +%s)" >> "$NUDGE_STATE" ||
           log "WARNING: failed to record nudge for $agent_id"
       else
-        log "WARNING: failed to resume agent $agent_id: $out"
+        quarantine_if_gone "$agent_id" "$out" ||
+          log "WARNING: failed to resume agent $agent_id: $out"
       fi
       ;;
   esac

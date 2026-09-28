@@ -1069,6 +1069,16 @@ production remote workspace:
    oauth-proxy
 4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
 5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2; retention keeps the newest `backup.keep` objects under `backup.retentionPrefix` (default: the upload prefix `workspace-state-<name>-`). Widening `retentionPrefix` reaps backups orphaned by a workload rename — and any other keys sharing the stem in the bucket
+   The archive excludes secrets and regenerable paths; the Devin
+   CLI session store (`.local/share/devin/cli/sessions.db` +
+   transcripts) IS included — it is what lets provider sessions
+   survive a PVC rebuild — while `credentials.toml`, MCP OAuth
+   data, logs, locks, plugin cache, and CLI downloads stay out.
+   When sessions.db exists and a `VACUUM INTO` (node:sqlite)
+   snapshot succeeds, the live sqlite trio (db/shm/wal) is excluded
+   and the snapshot is tar-`--transform`ed back to the canonical
+   name — the archive carries a quiesced database. Otherwise the
+   live files are archived and a warning is emitted
 6. **Paseo auto-resume** — preStop hook snapshots open (non-closed,
    non-archived) agents as `id<TAB>status` to `$PASEO_HOME/.was-running`
    in a single `node` pass, atomically; postStart waits for daemon health,
@@ -1093,7 +1103,12 @@ production remote workspace:
    conservative direction). Agents observed `idle`/`error`
    drop their entry (the nudge was consumed), failed sends record
    nothing (next restart retries), and skips cost no provider turn so
-   they do not consume the cap.
+   they do not consume the cap. A resume attempt that fails with
+   "Session not found" — the provider-side session is permanently
+   gone — dead-letters the agent id into `$PASEO_HOME/.auto-resume-dead`
+   (one id per line); dead-lettered agents are skipped on later starts
+   without consuming the cap, and removing an id from the file re-enables
+   resume attempts.
 7. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform
    deployments. Secret RBAC is split: `create` stays namespace-wide
    (`resourceNames` cannot restrict `create` — the object has no name
@@ -1248,6 +1263,16 @@ but using the Devenv chart:
    oauth-proxy
 4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
 5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2; retention keeps the newest `backup.keep` objects under `backup.retentionPrefix` (default: the upload prefix `workspace-state-<name>-`). Widening `retentionPrefix` reaps backups orphaned by a workload rename — and any other keys sharing the stem in the bucket
+   The archive excludes secrets and regenerable paths; the Devin
+   CLI session store (`.local/share/devin/cli/sessions.db` +
+   transcripts) IS included — it is what lets provider sessions
+   survive a PVC rebuild — while `credentials.toml`, MCP OAuth
+   data, logs, locks, plugin cache, and CLI downloads stay out.
+   When sessions.db exists and a `VACUUM INTO` (node:sqlite)
+   snapshot succeeds, the live sqlite trio (db/shm/wal) is excluded
+   and the snapshot is tar-`--transform`ed back to the canonical
+   name — the archive carries a quiesced database. Otherwise the
+   live files are archived and a warning is emitted
 6. **R2 restore init container** — when R2 credentials are configured and
    `backup.restore` is not `false`, an `r2-restore` init container runs in
    the workspace pod before the main container (same pod, so the RWO PVC
@@ -1297,7 +1322,12 @@ but using the Devenv chart:
    conservative direction). Agents observed `idle`/`error`
    drop their entry (the nudge was consumed), failed sends record
    nothing (next restart retries), and skips cost no provider turn so
-   they do not consume the cap.
+   they do not consume the cap. A resume attempt that fails with
+   "Session not found" — the provider-side session is permanently
+   gone — dead-letters the agent id into `$PASEO_HOME/.auto-resume-dead`
+   (one id per line); dead-lettered agents are skipped on later starts
+   without consuming the cap, and removing an id from the file re-enables
+   resume attempts.
 8. **TF deployer SA** — long-lived ServiceAccount for HCP Terraform
    deployments. Secret RBAC is split: `create` stays namespace-wide
    (`resourceNames` cannot restrict `create` — the object has no name
