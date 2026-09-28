@@ -293,7 +293,11 @@ log() { echo "[auto-resume] $*"; }
 # provider session; 1 for anything else so the caller logs it generically.
 quarantine_if_gone() {
   [[ "$2" == *"Session not found"* ]] || return 1
-  if ! printf '%s\\n' "$1" >> "$DEAD_STATE"; then
+  # tmp+mv: a partial >> append could leave a newline-less tail id that
+  # grep -x would still match next start. Rename keeps the file whole.
+  cat "$DEAD_STATE" >"$DEAD_STATE.tmp.$$" 2>/dev/null || : >"$DEAD_STATE.tmp.$$"
+  if ! printf '%s\\n' "$1" >>"$DEAD_STATE.tmp.$$" || ! mv "$DEAD_STATE.tmp.$$" "$DEAD_STATE"; then
+    rm -f "$DEAD_STATE.tmp.$$"
     log "WARNING: failed to record quarantine for $1"
     return 1
   fi
@@ -328,7 +332,7 @@ fi
 # Orphaned tmp files are snapshot attempts killed mid-write (e.g. by the
 # termination grace period) — always safe to drop; only the committed
 # marker matters.
-rm -f "$MARKER".tmp.* "$NUDGE_STATE".tmp.*
+rm -f "$MARKER".tmp.* "$NUDGE_STATE".tmp.* "$DEAD_STATE".tmp.*
 
 # The daemon is the source of truth for which agents can be resumed —
 # persisted records outlive their workspaces and are not all loadable.
