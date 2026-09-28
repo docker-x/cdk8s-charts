@@ -148,7 +148,9 @@ function buildBackupContainerSpec(
       { name: 'BACKUP_PREFIX', value: `workspace-state-${name}-` },
       {
         name: 'BACKUP_RETENTION_PREFIX',
-        value: backup.retentionPrefix ?? `workspace-state-${name}-`,
+        // `||`, not `??` — an explicit empty string must not widen the
+        // sweep to the whole bucket.
+        value: backup.retentionPrefix || `workspace-state-${name}-`,
       },
     ],
     command: ['/bin/sh', '-ec', buildBackupScript(variant)],
