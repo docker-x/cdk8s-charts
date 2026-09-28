@@ -159,13 +159,21 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     // container's writable layer. Producer failures are flagged via
     // marker files because /bin/sh has no pipefail.
     '  rm -f /tmp/.tar-rc /tmp/.enc-rc',
-    // Unseekable stdin uploads use a fixed part size — 64MB parts keep
+    // Unseekable stdin uploads use a fixed part size — 32MB parts keep
     // the 10,000-part S3 ceiling out of reach for any PVC-sized stream.
-    '  aws configure set s3.multipart_chunksize 64MB || echo "Warning: could not set multipart_chunksize"',
+    // Buffer cost is chunksize x max_concurrent_requests inside the
+    // workspace container — 32MB x 4 ≈ 128MB cap; defaults (64MB x 10)
+    // could balloon ~640MB on top of paseo/devin load and trip the pod
+    // memory limit (observed: OOMKill mid-backup).
+    '  aws configure set s3.multipart_chunksize 32MB || echo "Warning: could not set multipart_chunksize"',
+    '  aws configure set s3.max_concurrent_requests 4 || echo "Warning: could not set max_concurrent_requests"',
     // `|| pipe_rc=$?` is required — under `sh -e` a failing pipeline
     // would exit before the rc assignment and skip partial-object cleanup.
     '  ( tar czf - $EXCLUDES $TAR_EXTRA . || echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD || echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
     '  pipe_rc=${pipe_rc:-0}',
+    // The snapshot's bytes are already in the stream — drop it so a
+    // stale copy doesn't linger on the PVC until the next run's rm.
+    '  rm -f "$DEVIN_SNAP"',
     '  tar_rc=$(cat /tmp/.tar-rc 2>/dev/null || echo 0)',
     '  enc_rc=$(cat /tmp/.enc-rc 2>/dev/null || echo 0)',
     '  if [ "${tar_rc}" -ge 2 ] || [ "${enc_rc}" -ne 0 ] || [ "${pipe_rc}" -ne 0 ]; then',

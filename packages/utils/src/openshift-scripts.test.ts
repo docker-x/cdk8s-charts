@@ -505,6 +505,23 @@ describe('backup script', () => {
     expect(script).not.toContain('--exclude=.local/share/devin/cli"');
     expect(script).not.toContain('--exclude=.local/share/devin/cli ');
   });
+
+  it('caps aws multipart buffering inside the workspace pod', () => {
+    const script = buildBackupScript('devenv');
+    // chunksize x concurrency is memory held in the workspace container —
+    // defaults (64MB x 10) OOMKilled the pod mid-backup.
+    expect(script).toContain('aws configure set s3.multipart_chunksize 32MB');
+    expect(script).toContain('aws configure set s3.max_concurrent_requests 4');
+  });
+
+  it('removes the devin snapshot after the upload pipeline', () => {
+    const script = buildBackupScript('devenv');
+    // rm must come after the tar|openssl|aws pipeline has consumed the
+    // file, and on the failure path too — a leftover must never be tar'd
+    // into a later archive under its own name.
+    const pipelineEnd = script.indexOf('pipe_rc=${pipe_rc:-0}');
+    expect(script.indexOf('rm -f "$DEVIN_SNAP"', pipelineEnd)).toBeGreaterThan(pipelineEnd);
+  });
 });
 
 describe('buildRestoreScript gates', () => {
