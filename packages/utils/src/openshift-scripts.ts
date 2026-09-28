@@ -175,9 +175,11 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '  pipe_rc=${pipe_rc:-0}',
     // The snapshot's bytes are already in the stream — drop it so a
     // stale copy doesn't linger on the PVC until the next run's rm.
-    // Non-fatal: under `sh -e` a failing rm would otherwise exit before
-    // the rc checks and skip partial-object cleanup.
-    '  rm -f "$DEVIN_SNAP" || echo "Warning: failed to remove devin snapshot"',
+    // Deferred-fatal: exiting here would skip the rc checks and partial-
+    // object cleanup, but a lingering snapshot hard-fails the NEXT run
+    // at its pre-snapshot rm — report success only when cleanup worked.
+    '  rm -f "$DEVIN_SNAP" || snap_rc=1',
+    '  snap_rc=${snap_rc:-0}',
     '  tar_rc=$(cat /tmp/.tar-rc 2>/dev/null || echo 0)',
     '  enc_rc=$(cat /tmp/.enc-rc 2>/dev/null || echo 0)',
     '  if [ "${tar_rc}" -ge 2 ] || [ "${enc_rc}" -ne 0 ] || [ "${pipe_rc}" -ne 0 ]; then',
@@ -186,6 +188,9 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '    aws s3api delete-object --bucket "${R2_BUCKET}" --key "${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto 2>/dev/null || echo "WARNING: failed to delete partial object ${OBJECT_KEY} — it may appear as a corrupt newest backup"',
     '    exit 1',
     '  fi',
+    // Upload is intact, so the object is kept — only the job result
+    // flips to failed so the stuck snapshot gets attention.
+    '  if [ "${snap_rc}" -ne 0 ]; then echo "Fatal: devin snapshot cleanup failed"; rm -f /tmp/.tar-rc /tmp/.enc-rc; exit 1; fi',
     '  rm -f /tmp/.tar-rc /tmp/.enc-rc',
     '  if [ "${tar_rc}" -eq 1 ]; then echo "Warning: tar exit code 1 (non-fatal)"; fi',
     '  echo "Uploaded ${OBJECT_KEY}"',
