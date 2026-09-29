@@ -287,8 +287,12 @@ export function buildRestoreScript(): string {
     'for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET BACKUP_PASSWORD; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
     'R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"',
     // --output text emits the key list tab-separated on one line ("None"
-    // when Contents is null), avoiding a jq dependency.
-    'KEY=$(aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "${BACKUP_PREFIX}" --endpoint-url "${R2_ENDPOINT}" --region auto --query "Contents[*].Key" --output text | tr "\t" "\n" | grep -vxF None | sort -r | head -n 1)',
+    // when Contents is null), avoiding a jq dependency. The listing's rc
+    // is checked on its own line — inside the KEY pipeline /bin/sh would
+    // report only head's status, so a failed aws would read as "no
+    // backups" and start the workspace without restoring.
+    'LISTING=$(aws s3api list-objects-v2 --bucket "${R2_BUCKET}" --prefix "${BACKUP_PREFIX}" --endpoint-url "${R2_ENDPOINT}" --region auto --query "Contents[*].Key" --output text) || { echo "Fatal: failed to list backups under s3://${R2_BUCKET}/${BACKUP_PREFIX}"; exit 1; }',
+    'KEY=$(printf "%s\\n" "${LISTING}" | tr "\t" "\n" | grep -vxF None | sort -r | head -n 1)',
     'if [ -z "${KEY}" ]; then echo "No backups found with prefix ${BACKUP_PREFIX} — starting with an empty home."; exit 0; fi',
     'echo "Restoring ${KEY} into ${HOME_MOUNT_PATH}..."',
     // Stage may carry non-writable dirs from a previous run — chmod

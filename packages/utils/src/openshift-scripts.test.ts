@@ -757,6 +757,24 @@ describe('buildRestoreScript gates', () => {
     expect(exitIdx).toBeLessThan(script.indexOf('> "${TOKEN_FILE}"'));
   });
 
+  it('fails closed when the backup listing call fails', () => {
+    // Under /bin/sh a pipeline's exit status is its last command's — an
+    // aws failure inside the KEY pipeline would produce an empty KEY
+    // that reads as "no backups" and start the workspace unrestored.
+    // The listing must run on its own line with an explicit fatal, and
+    // the empty-result exit must come after it.
+    const script = buildRestoreScript();
+    const listIdx = script.indexOf('LISTING=$(aws s3api list-objects-v2');
+    expect(listIdx).toBeGreaterThan(-1);
+    const lineEnd = script.indexOf('\n', listIdx);
+    const listLine = script.slice(listIdx, lineEnd);
+    expect(listLine).toContain('Fatal: failed to list backups');
+    expect(listLine.trimEnd()).toMatch(/exit 1; \}$/);
+    const keyIdx = script.indexOf('KEY=', lineEnd);
+    expect(script.slice(keyIdx, script.indexOf('\n', keyIdx))).toContain('${LISTING}');
+    expect(script.indexOf('No backups found')).toBeGreaterThan(keyIdx);
+  });
+
   it('drops a staged .r2-restore-stage entry before the sweep', () => {
     // A leftover stage dir tarred into a backup (or a planted link) lands
     // at ${STAGE}/.r2-restore-stage — the sweep would mv/cp it onto its
