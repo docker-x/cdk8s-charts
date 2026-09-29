@@ -535,6 +535,20 @@ describe('backup script', () => {
     expect(rmIdx).toBeLessThan(script.indexOf('Fatal: streaming backup failed'));
   });
 
+  it('encrypts with -pass file: — symmetric with restore, and out of the env', () => {
+    // `-pass env:` would feed openssl the full credential bytes (with any
+    // embedded newlines) while restore's `-pass file:` reads only the
+    // first line — a multiline password would write backups that cannot
+    // be restored. Both ends must use `file:`. It also keeps the secret
+    // out of openssl's environment (/proc/*/environ), so the export
+    // loop must skip BACKUP_PASSWORD while still preflighting the file.
+    const script = buildBackupScript('devenv');
+    expect(script).toContain('-pass file:/etc/r2-credentials/BACKUP_PASSWORD');
+    expect(script).not.toContain('env:BACKUP_PASSWORD');
+    expect(script).not.toContain(' BACKUP_PASSWORD; do export');
+    expect(script).toContain('/etc/r2-credentials/BACKUP_PASSWORD; do');
+  });
+
   it('reads pipeline rc markers without tripping -e when a marker is missing', () => {
     // `x=$(cat f 2>/dev/null)` fails the assignment itself under sh -e
     // when f is missing — the fail-closed default and the partial-object

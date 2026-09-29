@@ -1293,6 +1293,10 @@ but using the Devenv chart:
    `-pass file:` straight from the credentials mount, so the secret
    never sits in a process environment (visible to same-uid
    processes via `/proc/*/environ`) the way `-pass env:` would.
+   Backup encrypts with `-pass file:` on the same mount for the
+   same reason — and so both ends apply OpenSSL's first-line
+   semantics identically (an `env:` encrypt would feed the full
+   bytes, making a multiline password unrestorable).
    It runs on `AWS_CLI_IMAGE`
    (`bitnamilegacy/aws-cli`, Debian) — not the workspace image, whose
    `aws` only exists under the PVC's `.devenv/profile/bin` and so is

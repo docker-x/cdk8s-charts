@@ -129,7 +129,14 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '  for f in /etc/r2-credentials/AWS_ACCESS_KEY_ID /etc/r2-credentials/AWS_SECRET_ACCESS_KEY /etc/r2-credentials/R2_ACCOUNT_ID /etc/r2-credentials/R2_BUCKET /etc/r2-credentials/BACKUP_PASSWORD; do',
     '    if [ ! -f "$f" ]; then echo "Fatal: missing R2 credential file $f"; exit 1; fi',
     '  done',
-    '  for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET BACKUP_PASSWORD; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
+    // BACKUP_PASSWORD is checked above but deliberately not exported —
+    // openssl reads it via `-pass file:` below, so the secret never
+    // sits in a process environment (same-uid readable via
+    // /proc/*/environ) for the life of the stream. `file:` also keeps
+    // encrypt symmetric with restore's decrypt: both read only the
+    // first line, so a multiline password can't produce a backup the
+    // init container cannot restore.
+    '  for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
     '  cd -- "$HOME_MOUNT_PATH"',
     ...buildBackupExcludes(extraExcludes),
     // Consistent snapshot of the devin session DB: archiving the live
@@ -176,7 +183,7 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     // Each producer writes its status unconditionally — with `||` a
     // subshell killed before the fallback (or a failed marker write)
     // leaves no marker, which must not read as success below.
-    '  ( tar czf - $EXCLUDES $TAR_EXTRA .; echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD; echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
+    '  ( tar czf - $EXCLUDES $TAR_EXTRA .; echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass file:/etc/r2-credentials/BACKUP_PASSWORD; echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
     '  pipe_rc=${pipe_rc:-0}',
     // The snapshot's bytes are already in the stream — drop it so a
     // stale copy doesn't linger on the PVC until the next run's rm.
