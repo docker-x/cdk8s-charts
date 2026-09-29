@@ -656,4 +656,13 @@ describe('buildRestoreScript gates', () => {
     // Read-only staged dirs (restored modes) need chmod before rm -rf.
     expect(script).toContain('chmod -R u+rwX "${STAGE}"');
   });
+
+  it('stage sweep keeps dangling symlinks (guard is -e OR -L)', () => {
+    // -e follows symlinks, so a dangling link staged from the archive
+    // would be skipped: silently lost by the cp overlay, or left behind
+    // so the mv branch's rmdir fails. Both loops need the -L fallback.
+    const script = buildRestoreScript();
+    const guard = '[ -e "${item}" ] || [ -L "${item}" ] || continue';
+    expect(script.split(guard).length - 1).toBe(2);
+  });
 });

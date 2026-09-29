@@ -273,8 +273,12 @@ export function buildRestoreScript(): string {
     // the destination itself would EPERM on the root-owned mount point.
     'if [ "${FORCE}" = 1 ]; then',
     '  copy_rc=0',
+    // `-e` follows symlinks — a dangling link staged from the archive
+    // would be skipped (silently lost here, and in the mv branch below
+    // it would be left behind so `rmdir` on the stage fails). `-L`
+    // catches the link itself.
     '  for item in "${STAGE}"/.[!.]* "${STAGE}"/..?* "${STAGE}"/*; do',
-    '    [ -e "${item}" ] || continue',
+    '    [ -e "${item}" ] || [ -L "${item}" ] || continue',
     '    cp -a "${item}" "${HOME_MOUNT_PATH}/" || copy_rc=1',
     '  done',
     '  if [ "${copy_rc}" != 0 ]; then echo "Fatal: overlay copy failed — keeping stage for retry"; exit 1; fi',
@@ -284,7 +288,7 @@ export function buildRestoreScript(): string {
     '  rm -rf "${STAGE}"',
     'else',
     '  for item in "${STAGE}"/.[!.]* "${STAGE}"/..?* "${STAGE}"/*; do',
-    '    [ -e "${item}" ] || continue',
+    '    [ -e "${item}" ] || [ -L "${item}" ] || continue',
     '    mv "${item}" "${HOME_MOUNT_PATH}/"',
     '  done',
     '  rmdir "${STAGE}"',
