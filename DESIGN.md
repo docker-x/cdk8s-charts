@@ -1297,12 +1297,13 @@ but using the Devenv chart:
    regardless of the other gates and is then recorded in
    `.r2-restore-token` — a one-shot operator trigger; an existing
    `.r2-restore-complete` marker skips; a tool preflight
-   (`aws`/`openssl`/`tar`/`grep`/`sort`/`head`/`tr`) fails loudly — it
+   (`aws`/`openssl`/`tar`/`grep`/`sort`/`head`/`tr`/`find`) fails loudly — it
    runs before the emptiness check so a broken image can never silently
    classify a populated home as empty; a home mount containing anything
-   besides `lost+found`/`.r2-restore-stage` without a marker means the
-   PVC predates the feature — the marker is written and live data is
-   never touched; no backup objects means first boot — exit clean with
+   besides real `lost+found`/`.r2-restore-stage` directories without a
+   marker means the PVC predates the feature — a file or link under one
+   of those names is user data and counts as content — the marker is
+   written and live data is never touched; no backup objects means first boot — exit clean with
    no marker so a later wipe can still restore. Extraction goes to
    `.r2-restore-stage` and lands only after the pipeline succeeds —
    `/bin/sh` has no `pipefail`, so the download and decrypt stages each

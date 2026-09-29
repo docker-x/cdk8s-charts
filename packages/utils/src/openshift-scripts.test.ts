@@ -626,6 +626,42 @@ describe('buildRestoreScript gates', () => {
     expect(fileExists(join(home, '.r2-restore-complete'))).toBe(false);
   });
 
+  it('a real lost+found directory is filesystem bookkeeping — still empty', () => {
+    const home = makeDir('restore-');
+    sh('mkdir -p "$D"', { D: join(home, 'lost+found') });
+    const { ok, out } = runRestore(home);
+    expect(ok).toBe(false);
+    expect(out).toContain('missing R2 credential file');
+    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(false);
+  });
+
+  it('a regular file named lost+found is user data — marks and skips', () => {
+    const home = makeDir('restore-');
+    writeFile(join(home, 'lost+found'), 'x');
+    const { ok, out } = runRestore(home);
+    expect(ok).toBe(true);
+    expect(out).toContain('not empty');
+    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(true);
+  });
+
+  it('a link named lost+found is user data, not fs bookkeeping — marks and skips', () => {
+    const home = makeDir('restore-');
+    sh('ln -s "$T" "$L"', { T: join(home, 'elsewhere'), L: join(home, 'lost+found') });
+    const { ok, out } = runRestore(home);
+    expect(ok).toBe(true);
+    expect(out).toContain('not empty');
+    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(true);
+  });
+
+  it('a regular file at the stage path is user data — marks and skips', () => {
+    const home = makeDir('restore-');
+    writeFile(join(home, '.r2-restore-stage'), 'x');
+    const { ok, out } = runRestore(home);
+    expect(ok).toBe(true);
+    expect(out).toContain('not empty');
+    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(true);
+  });
+
   it('an empty home proceeds to the creds check (fail-closed, no marker)', () => {
     const home = makeDir('restore-');
     const { ok, out } = runRestore(home);

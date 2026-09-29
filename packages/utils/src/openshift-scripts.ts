@@ -260,10 +260,13 @@ export function buildRestoreScript(): string {
     '  echo "Restore token set — force-restoring newest backup over current home."',
     'fi',
     'if [ "${FORCE}" = 0 ] && [ -f "${MARKER}" ]; then echo "Restore already completed (marker present) — skipping."; exit 0; fi',
-    'for tool in aws openssl tar grep sort head tr; do',
+    'for tool in aws openssl tar grep sort head tr find; do',
     '  if ! command -v "$tool" >/dev/null 2>&1; then echo "Fatal: $tool is required for restore but not found in the image."; exit 1; fi',
     'done',
-    `if [ "\${FORCE}" = 0 ] && [ -n "$(ls -A "\${HOME_MOUNT_PATH}" | grep -vxE 'lost\\+found|\\.r2-restore-stage')" ]; then`,
+    // Reserved names only count as empty when they're real directories —
+    // a file or link named lost+found/.r2-restore-stage is user data, and
+    // name-only filtering would let a populated PVC read as empty.
+    `if [ "\${FORCE}" = 0 ] && [ -n "$(find "\${HOME_MOUNT_PATH}" -mindepth 1 -maxdepth 1 ! \\( -type d \\( -name lost+found -o -name .r2-restore-stage \\) \\) -print -quit)" ]; then`,
     '  echo "Home mount is not empty and no restore marker — skipping restore to protect existing data."',
     '  touch "${MARKER}"',
     '  exit 0',

@@ -70,8 +70,10 @@ describe('OpenShiftDevenv recipe — R2 restore init container', () => {
     expect(script).toContain('openssl enc -d -aes-256-cbc');
     expect(script).toContain('list-objects-v2');
     // Gate order: marker check must precede the non-empty-home guard.
+    // Reserved names only read as empty as real directories — a file or
+    // link of the same name is user data (guards via find -type d).
     expect(script?.indexOf('-f "${MARKER}"')).toBeLessThan(
-      script?.indexOf('ls -A "${HOME_MOUNT_PATH}"') ?? -1,
+      script?.indexOf('find "${HOME_MOUNT_PATH}" -mindepth 1') ?? -1,
     );
   });
 
