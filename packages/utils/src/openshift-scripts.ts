@@ -268,7 +268,24 @@ export function buildRestoreScript(): string {
     // first or rm -rf silently leaves them behind.
     'chmod -R u+rwX "${STAGE}" 2>/dev/null || true',
     'rm -rf "${STAGE}"; mkdir -p "${STAGE}"',
-    'aws s3 cp "s3://${R2_BUCKET}/${KEY}" - --endpoint-url "${R2_ENDPOINT}" --region auto | openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_PASSWORD | tar xzf - -C "${STAGE}"',
+    // Same pipefail workaround as the backup stream — /bin/sh reports
+    // only tar's status, so each producer records its own rc. Without
+    // this a failed download or decrypt can leave a usable-looking
+    // stage that the sweep (or force overlay) promotes over live data.
+    'rm -f /tmp/.dl-rc /tmp/.dec-rc',
+    `( aws s3 cp "s3://\${R2_BUCKET}/\${KEY}" - --endpoint-url "\${R2_ENDPOINT}" --region auto || echo "$?" > /tmp/.dl-rc ) | ( openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_PASSWORD || echo "$?" > /tmp/.dec-rc ) | tar xzf - -C "\${STAGE}" || pipe_rc=$?`,
+    'pipe_rc=${pipe_rc:-0}',
+    'dl_rc=$(cat /tmp/.dl-rc 2>/dev/null || echo 0)',
+    'dec_rc=$(cat /tmp/.dec-rc 2>/dev/null || echo 0)',
+    // Keep the stage on failure — the next init retries from it, and
+    // the emptiness check already ignores it. The token is not
+    // recorded, so a force restore stays armed.
+    'if [ "${dl_rc}" -ne 0 ] || [ "${dec_rc}" -ne 0 ] || [ "${pipe_rc}" -ne 0 ]; then',
+    '  echo "Fatal: restore pipeline failed (download_rc=${dl_rc} decrypt_rc=${dec_rc} extract_rc=${pipe_rc})"',
+    '  rm -f /tmp/.dl-rc /tmp/.dec-rc',
+    '  exit 1',
+    'fi',
+    'rm -f /tmp/.dl-rc /tmp/.dec-rc',
     // A top-level .r2-restore-stage entry (a leftover stage backed up
     // after a failed run, or planted) collides with the live stage dir
     // in the sweep — mv/cp onto its own parent aborts under -e. Reserved

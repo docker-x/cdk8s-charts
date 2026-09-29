@@ -671,6 +671,20 @@ describe('buildRestoreScript gates', () => {
     }
   });
 
+  it('checks every restore pipeline stage before the sweep (no pipefail in sh)', () => {
+    // The pipeline's exit status is tar's alone — a failed download or
+    // decrypt that still leaves a plausible stage must not reach the
+    // sweep, the force overlay, or the token write.
+    const script = buildRestoreScript();
+    expect(script).toContain('|| echo "$?" > /tmp/.dl-rc');
+    expect(script).toContain('|| echo "$?" > /tmp/.dec-rc');
+    expect(script).toContain('|| pipe_rc=$?');
+    const checkIdx = script.indexOf('Fatal: restore pipeline failed');
+    expect(checkIdx).toBeGreaterThan(script.indexOf('aws s3 cp "s3://${R2_BUCKET}/${KEY}"'));
+    expect(checkIdx).toBeLessThan(script.indexOf('for item in "${STAGE}"/'));
+    expect(checkIdx).toBeLessThan(script.indexOf('> "${TOKEN_FILE}"'));
+  });
+
   it('drops a staged .r2-restore-stage entry before the sweep', () => {
     // A leftover stage dir tarred into a backup (or a planted link) lands
     // at ${STAGE}/.r2-restore-stage — the sweep would mv/cp it onto its
