@@ -661,8 +661,29 @@ describe('buildRestoreScript gates', () => {
     // -e follows symlinks, so a dangling link staged from the archive
     // would be skipped: silently lost by the cp overlay, or left behind
     // so the mv branch's rmdir fails. Both loops need the -L fallback.
+    const lines = buildRestoreScript().split('\n');
+    const loops = lines.flatMap((l, i) => (l.includes('for item in "${STAGE}"/') ? [i] : []));
+    expect(loops).toHaveLength(2);
+    for (const i of loops) {
+      expect(lines[i + 1]).toContain('[ -e "${item}" ]');
+      expect(lines[i + 1]).toContain('[ -L "${item}" ]');
+      expect(lines[i + 1].trimEnd()).toMatch(/\|\| continue$/);
+    }
+  });
+
+  it('scrubs archive-planted symlinks at reserved paths before marker writes', () => {
     const script = buildRestoreScript();
-    const guard = '[ -e "${item}" ] || [ -L "${item}" ] || continue';
-    expect(script.split(guard).length - 1).toBe(2);
+    // A staged symlink under a marker/stage name would redirect the
+    // later printf/touch (or next boot's chmod -R) outside the mount.
+    const scrub =
+      'for f in "${TOKEN_FILE}" "${MARKER}" "${STAGE}"; do [ ! -L "$f" ] || rm -f "$f"; done';
+    const scrubIdx = script.indexOf(scrub);
+    expect(scrubIdx).toBeGreaterThan(-1);
+    expect(scrubIdx).toBeGreaterThan(script.indexOf('rmdir "${STAGE}"'));
+    expect(scrubIdx).toBeGreaterThan(script.indexOf('rm -rf "${STAGE}"'));
+    expect(scrubIdx).toBeLessThan(script.indexOf('> "${TOKEN_FILE}"'));
+    // touch appears in the populated-home gate too — the scrub guards
+    // the post-sweep write, which is the last one.
+    expect(scrubIdx).toBeLessThan(script.lastIndexOf('touch "${MARKER}"'));
   });
 });

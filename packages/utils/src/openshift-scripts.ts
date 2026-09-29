@@ -293,6 +293,11 @@ export function buildRestoreScript(): string {
     '  done',
     '  rmdir "${STAGE}"',
     'fi',
+    // An archive-sourced symlink under a reserved name would redirect
+    // the marker writes below (or next boot's `chmod -R` on the stage
+    // path) to a target outside the mount. Drop links only — regular
+    // files from a legitimate backup are kept.
+    'for f in "${TOKEN_FILE}" "${MARKER}" "${STAGE}"; do [ ! -L "$f" ] || rm -f "$f"; done',
     'if [ -n "${RESTORE_TOKEN:-}" ]; then printf %s "${RESTORE_TOKEN}" > "${TOKEN_FILE}"; fi',
     'touch "${MARKER}"',
     'echo "Restore complete."',
