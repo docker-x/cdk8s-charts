@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import {
   buildBackupScript,
   buildRestoreScript,
@@ -537,6 +537,32 @@ describe('backup script', () => {
 });
 
 describe('buildRestoreScript gates', () => {
+  // The tool preflight is spec'd to run before the populated-home gate
+  // (a broken image must fail loudly), so tests can't reorder it away —
+  // stub `aws` in PATH instead. Every gate exits before the first real
+  // aws call, so the stub is never invoked.
+  let stubBin: string | undefined;
+  let stubLog: string | undefined;
+  function testPath(): string {
+    if (!stubBin) {
+      // Not via makeDir — afterEach wipes registered dirs and later
+      // tests in this describe would reuse a deleted stub.
+      stubBin = mkdtempSync(join(tmpdir(), 'stub-bin-'));
+      stubLog = join(stubBin, 'aws-calls.log');
+      writeFile(join(stubBin, 'aws'), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${stubLog}"\nexit 0\n`);
+      sh('chmod +x "$F"', { F: join(stubBin, 'aws') });
+    }
+    return `${stubBin}:${process.env.PATH ?? ''}`;
+  }
+
+  afterAll(() => {
+    if (!stubBin) return;
+    // The stub only satisfies `command -v` — every gate exits before the
+    // first real aws call, so an invocation means ordering regressed.
+    expect(fileExists(stubLog as string)).toBe(false);
+    rmSync(stubBin, { recursive: true, force: true });
+  });
+
   function runRestore(
     home: string,
     extraEnv: Record<string, string> = {},
@@ -545,6 +571,7 @@ describe('buildRestoreScript gates', () => {
       const out = execFileSync('bash', ['-c', buildRestoreScript()], {
         env: {
           ...process.env,
+          PATH: testPath(),
           HOME_MOUNT_PATH: home,
           BACKUP_PREFIX: 'workspace-state-devenv-',
           ...extraEnv,
@@ -553,7 +580,10 @@ describe('buildRestoreScript gates', () => {
       });
       return { ok: true, out };
     } catch (e) {
-      return { ok: false, out: String(e) };
+      // String(e) embeds the command line — which contains the script's
+      // own message strings — so assertions must see real stdout/stderr.
+      const err = e as { stdout?: string; stderr?: string };
+      return { ok: false, out: `${err.stdout ?? ''}${err.stderr ?? ''}` };
     }
   }
 
