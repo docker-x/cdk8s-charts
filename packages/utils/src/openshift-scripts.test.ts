@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import {
   buildBackupScript,
   buildRestoreScript,
@@ -542,17 +542,26 @@ describe('buildRestoreScript gates', () => {
   // stub `aws` in PATH instead. Every gate exits before the first real
   // aws call, so the stub is never invoked.
   let stubBin: string | undefined;
+  let stubLog: string | undefined;
   function testPath(): string {
     if (!stubBin) {
       // Not via makeDir — afterEach wipes registered dirs and later
       // tests in this describe would reuse a deleted stub.
       stubBin = mkdtempSync(join(tmpdir(), 'stub-bin-'));
-      sh('printf "#!/bin/sh\\nexit 0\\n" > "$F"; chmod +x "$F"', {
-        F: join(stubBin, 'aws'),
-      });
+      stubLog = join(stubBin, 'aws-calls.log');
+      writeFile(join(stubBin, 'aws'), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${stubLog}"\nexit 0\n`);
+      sh('chmod +x "$F"', { F: join(stubBin, 'aws') });
     }
-    return `${stubBin}:${process.env.PATH}`;
+    return `${stubBin}:${process.env.PATH ?? ''}`;
   }
+
+  afterAll(() => {
+    if (!stubBin) return;
+    // The stub only satisfies `command -v` — every gate exits before the
+    // first real aws call, so an invocation means ordering regressed.
+    expect(fileExists(stubLog as string)).toBe(false);
+    rmSync(stubBin, { recursive: true, force: true });
+  });
 
   function runRestore(
     home: string,
