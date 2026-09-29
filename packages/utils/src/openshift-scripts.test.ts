@@ -606,32 +606,37 @@ describe('buildRestoreScript gates', () => {
     expect(out).toContain('marker present');
   });
 
+  // Fixture builders — braced bodies because populate helpers return
+  // void, which Codacy forbids in arrow shorthand.
+  const fill = (rel: string) => (home: string) => {
+    writeFile(join(home, rel), 'x');
+  };
+  const mkr = (rel: string) => (home: string) => {
+    sh('mkdir -p "$D"', { D: join(home, rel) });
+  };
+
   // Populated-home variants share one path: mark the PVC and skip —
   // restoring over live data is the failure mode being guarded.
-  it.each<{ fixture: string; populate: (home: string) => void }>([
-    { fixture: 'a regular file', populate: (home) => writeFile(join(home, '.bashrc'), 'x') },
-    {
-      fixture: 'a regular file named lost+found',
-      populate: (home) => writeFile(join(home, 'lost+found'), 'x'),
-    },
-    // Reserved names count as empty only as real directories — a link
-    // (even dangling) at one is user data, not fs bookkeeping.
+  it.each([
+    { fixture: 'a regular file', populate: fill('.bashrc') },
+    // Reserved names count as empty only as real directories — a file
+    // or link at one is user data, not fs bookkeeping.
+    { fixture: 'a regular file named lost+found', populate: fill('lost+found') },
     {
       fixture: 'a dangling link named lost+found',
-      populate: (home) =>
-        sh('ln -s "$T" "$L"', { T: join(home, 'elsewhere'), L: join(home, 'lost+found') }),
+      populate: (home: string) => {
+        sh('ln -s "$T" "$L"', { T: join(home, 'elsewhere'), L: join(home, 'lost+found') });
+      },
     },
     // A link at a reserved name pointing at a real dir outside the
     // mount also guards the -type d predicate, not just the name check.
     {
       fixture: 'a link to a real directory named lost+found',
-      populate: (home) =>
-        sh('ln -s "$T" "$L"', { T: makeDir('restore-link-target-'), L: join(home, 'lost+found') }),
+      populate: (home: string) => {
+        sh('ln -s "$T" "$L"', { T: makeDir('restore-link-target-'), L: join(home, 'lost+found') });
+      },
     },
-    {
-      fixture: 'a regular file at the stage path',
-      populate: (home) => writeFile(join(home, '.r2-restore-stage'), 'x'),
-    },
+    { fixture: 'a regular file at the stage path', populate: fill('.r2-restore-stage') },
   ])('$fixture is user data — marks and skips, never restores over live data', ({ populate }) => {
     const home = makeDir('restore-');
     populate(home);
@@ -641,20 +646,19 @@ describe('buildRestoreScript gates', () => {
     expect(fileExists(join(home, '.r2-restore-complete'))).toBe(true);
   });
 
-  it.each<{ fixture: string; populate?: (home: string) => void }>([
-    {
-      fixture: 'a leftover stage dir',
-      populate: (home) => sh('mkdir -p "$D"', { D: join(home, '.r2-restore-stage') }),
-    },
+  it.each([
+    { fixture: 'a leftover stage dir', populate: mkr('.r2-restore-stage') },
     // Real lost+found is filesystem bookkeeping, not user content.
+    { fixture: 'a real lost+found directory', populate: mkr('lost+found') },
     {
-      fixture: 'a real lost+found directory',
-      populate: (home) => sh('mkdir -p "$D"', { D: join(home, 'lost+found') }),
+      fixture: 'nothing at all',
+      populate: (home: string) => {
+        sh('test -d "$D"', { D: home });
+      },
     },
-    { fixture: 'nothing at all' },
   ])('$fixture is still an empty home — proceeds to the creds check', ({ populate }) => {
     const home = makeDir('restore-');
-    populate?.(home);
+    populate(home);
     const { ok, out } = runRestore(home);
     // No /etc/r2-credentials in the test env — reaching the fatal creds
     // check proves the fixture did not trip the non-empty guard.
