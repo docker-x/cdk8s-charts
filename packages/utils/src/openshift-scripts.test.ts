@@ -758,21 +758,50 @@ describe('buildRestoreScript gates', () => {
   });
 
   it('fails closed when the backup listing call fails', () => {
-    // Under /bin/sh a pipeline's exit status is its last command's — an
-    // aws failure inside the KEY pipeline would produce an empty KEY
-    // that reads as "no backups" and start the workspace unrestored.
-    // The listing must run on its own line with an explicit fatal, and
-    // the empty-result exit must come after it.
-    const script = buildRestoreScript();
-    const listIdx = script.indexOf('LISTING=$(aws s3api list-objects-v2');
+    // String-matching stays green under a guard inversion (`||` → `&&`
+    // still contains "Fatal" and ends in `exit 1; }`), so run the
+    // emitted listing/key-selection lines against a stub aws.
+    const lines = buildRestoreScript().split('\n');
+    const listIdx = lines.findIndex((l) => l.includes('list-objects-v2'));
+    const keyIdx = lines.findIndex((l) => l.startsWith('KEY='));
     expect(listIdx).toBeGreaterThan(-1);
-    const lineEnd = script.indexOf('\n', listIdx);
-    const listLine = script.slice(listIdx, lineEnd);
-    expect(listLine).toContain('Fatal: failed to list backups');
-    expect(listLine.trimEnd()).toMatch(/exit 1; \}$/);
-    const keyIdx = script.indexOf('KEY=', lineEnd);
-    expect(script.slice(keyIdx, script.indexOf('\n', keyIdx))).toContain('${LISTING}');
-    expect(script.indexOf('No backups found')).toBeGreaterThan(keyIdx);
+    expect(keyIdx).toBeGreaterThan(listIdx);
+    // The empty-result exit must come after the key selection.
+    expect(lines.findIndex((l) => l.includes('No backups found'))).toBeGreaterThan(keyIdx);
+    const snippet = lines.slice(listIdx, keyIdx + 1).join('\n');
+
+    const binDir = makeDir('aws-stub-');
+    writeFile(
+      join(binDir, 'aws'),
+      '#!/bin/sh\n[ -z "${STUB_AWS_FAIL:-}" ] || exit 1\nprintf %s "${STUB_AWS_KEYS:-None}"\n',
+    );
+    sh('chmod +x "$F"', { F: join(binDir, 'aws') });
+    const env = {
+      ...process.env,
+      PATH: `${binDir}:${process.env.PATH ?? ''}`,
+      R2_BUCKET: 'b',
+      BACKUP_PREFIX: 'p-',
+      R2_ENDPOINT: 'https://example.invalid',
+    };
+
+    // A failed listing aborts with the fatal message — it must never
+    // fall through to an empty KEY that reads as "no backups".
+    try {
+      execFileSync('bash', ['-c', snippet], {
+        env: { ...env, STUB_AWS_FAIL: '1' },
+        encoding: 'utf8',
+      });
+      expect.unreachable('a failed listing must exit nonzero');
+    } catch (e) {
+      expect((e as { stdout?: string }).stdout ?? '').toContain('Fatal: failed to list backups');
+    }
+
+    // A successful listing selects the newest key.
+    const out = execFileSync('bash', ['-c', `${snippet}\necho "${'${KEY}'}"`], {
+      env: { ...env, STUB_AWS_KEYS: 'p-20240101\tp-20240202' },
+      encoding: 'utf8',
+    });
+    expect(out.trim()).toBe('p-20240202');
   });
 
   it('drops a staged .r2-restore-stage entry before the sweep', () => {
