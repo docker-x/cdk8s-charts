@@ -1307,13 +1307,14 @@ but using the Devenv chart:
    `.r2-restore-stage` and lands only after the pipeline succeeds —
    moved on an empty home, overlaid via `cp -a` in force mode so files
    the archive lacks are kept — so a failed run retries instead of
-   exposing a half-written home. Archives never legitimately carry the
-   reserved names: the backup excludes `.r2-restore-stage`, the restore
+   exposing a half-written home. Only the stage name itself is never
+   archived: the backup excludes `.r2-restore-stage`, and the restore
    deletes a staged entry of that name before the sweep (it would
-   collide with the live stage dir), and symlinks planted at
-   `.r2-restore-token`/`.r2-restore-complete`/`.r2-restore-stage` are
-   removed after the sweep so marker writes can't redirect outside the
-   mount.
+   collide with the live stage dir). Regular files at the token and
+   marker paths are legitimate archive content and are kept; only
+   symlinks planted at `.r2-restore-token`/`.r2-restore-complete`/
+   `.r2-restore-stage` are removed after the sweep so marker writes
+   can't redirect outside the mount.
 7. **Paseo auto-resume** — preStop hook snapshots open (non-closed,
    non-archived) agents as `id<TAB>status` to `$PASEO_HOME/.was-running`
    in a single `node` pass, atomically; postStart waits for daemon health,
