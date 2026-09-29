@@ -606,64 +606,61 @@ describe('buildRestoreScript gates', () => {
     expect(out).toContain('marker present');
   });
 
-  it('marks and skips a populated home without a marker — never restores over live data', () => {
+  // Populated-home variants share one path: mark the PVC and skip —
+  // restoring over live data is the failure mode being guarded.
+  it.each<{ fixture: string; populate: (home: string) => void }>([
+    { fixture: 'a regular file', populate: (home) => writeFile(join(home, '.bashrc'), 'x') },
+    {
+      fixture: 'a regular file named lost+found',
+      populate: (home) => writeFile(join(home, 'lost+found'), 'x'),
+    },
+    // Reserved names count as empty only as real directories — a link
+    // (even dangling) at one is user data, not fs bookkeeping.
+    {
+      fixture: 'a dangling link named lost+found',
+      populate: (home) =>
+        sh('ln -s "$T" "$L"', { T: join(home, 'elsewhere'), L: join(home, 'lost+found') }),
+    },
+    // A link at a reserved name pointing at a real dir outside the
+    // mount also guards the -type d predicate, not just the name check.
+    {
+      fixture: 'a link to a real directory named lost+found',
+      populate: (home) =>
+        sh('ln -s "$T" "$L"', { T: makeDir('restore-link-target-'), L: join(home, 'lost+found') }),
+    },
+    {
+      fixture: 'a regular file at the stage path',
+      populate: (home) => writeFile(join(home, '.r2-restore-stage'), 'x'),
+    },
+  ])('$fixture is user data — marks and skips, never restores over live data', ({ populate }) => {
     const home = makeDir('restore-');
-    writeFile(join(home, '.bashrc'), 'x');
+    populate(home);
     const { ok, out } = runRestore(home);
     expect(ok).toBe(true);
     expect(out).toContain('not empty');
     expect(fileExists(join(home, '.r2-restore-complete'))).toBe(true);
   });
 
-  it('treats a leftover stage dir as still-empty and proceeds to the creds check', () => {
+  it.each<{ fixture: string; populate?: (home: string) => void }>([
+    {
+      fixture: 'a leftover stage dir',
+      populate: (home) => sh('mkdir -p "$D"', { D: join(home, '.r2-restore-stage') }),
+    },
+    // Real lost+found is filesystem bookkeeping, not user content.
+    {
+      fixture: 'a real lost+found directory',
+      populate: (home) => sh('mkdir -p "$D"', { D: join(home, 'lost+found') }),
+    },
+    { fixture: 'nothing at all' },
+  ])('$fixture is still an empty home — proceeds to the creds check', ({ populate }) => {
     const home = makeDir('restore-');
-    sh('mkdir -p "$D"', { D: join(home, '.r2-restore-stage') });
+    populate?.(home);
     const { ok, out } = runRestore(home);
     // No /etc/r2-credentials in the test env — reaching the fatal creds
-    // check proves the stage dir did not trip the non-empty guard.
+    // check proves the fixture did not trip the non-empty guard.
     expect(ok).toBe(false);
     expect(out).toContain('missing R2 credential file');
     expect(fileExists(join(home, '.r2-restore-complete'))).toBe(false);
-  });
-
-  it('a real lost+found directory is filesystem bookkeeping — still empty', () => {
-    const home = makeDir('restore-');
-    sh('mkdir -p "$D"', { D: join(home, 'lost+found') });
-    const { ok, out } = runRestore(home);
-    expect(ok).toBe(false);
-    expect(out).toContain('missing R2 credential file');
-    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(false);
-  });
-
-  it('a regular file named lost+found is user data — marks and skips', () => {
-    const home = makeDir('restore-');
-    writeFile(join(home, 'lost+found'), 'x');
-    const { ok, out } = runRestore(home);
-    expect(ok).toBe(true);
-    expect(out).toContain('not empty');
-    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(true);
-  });
-
-  it('a link named lost+found is user data, not fs bookkeeping — marks and skips', () => {
-    const home = makeDir('restore-');
-    sh('ln -s "$T" "$L"', { T: join(home, 'elsewhere'), L: join(home, 'lost+found') });
-    const { ok, out } = runRestore(home);
-    expect(ok).toBe(true);
-    expect(out).toContain('not empty');
-    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(true);
-  });
-
-  it('a link to a real directory at a reserved name is still user data — marks and skips', () => {
-    // A dangling link can never satisfy -type d even for a find that
-    // follows links — pointing at a real dir outside the mount guards
-    // the -type predicate itself, not just the name check.
-    const home = makeDir('restore-');
-    const target = makeDir('restore-link-target-');
-    sh('ln -s "$T" "$L"', { T: target, L: join(home, 'lost+found') });
-    const { ok, out } = runRestore(home);
-    expect(ok).toBe(true);
-    expect(out).toContain('not empty');
-    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(true);
   });
 
   it('fails closed when the home mount cannot be scanned', () => {
@@ -672,23 +669,6 @@ describe('buildRestoreScript gates', () => {
     const { ok, out } = runRestore(join(makeDir('restore-'), 'unmounted'));
     expect(ok).toBe(false);
     expect(out).toContain('cannot inspect home mount');
-  });
-
-  it('a regular file at the stage path is user data — marks and skips', () => {
-    const home = makeDir('restore-');
-    writeFile(join(home, '.r2-restore-stage'), 'x');
-    const { ok, out } = runRestore(home);
-    expect(ok).toBe(true);
-    expect(out).toContain('not empty');
-    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(true);
-  });
-
-  it('an empty home proceeds to the creds check (fail-closed, no marker)', () => {
-    const home = makeDir('restore-');
-    const { ok, out } = runRestore(home);
-    expect(ok).toBe(false);
-    expect(out).toContain('missing R2 credential file');
-    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(false);
   });
 
   it('a consumed restore token skips even over populated data — no marker write', () => {
