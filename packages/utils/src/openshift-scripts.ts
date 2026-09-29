@@ -186,10 +186,12 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '  rm -f "$DEVIN_SNAP" || snap_rc=1',
     '  snap_rc=${snap_rc:-0}',
     // Missing/empty marker = the status write failed — fail closed.
-    // tar's default is 2 because rc 1 (file changed mid-read) is the
-    // tolerated case; enc's is any nonzero.
-    '  tar_rc=$(cat /tmp/.tar-rc 2>/dev/null); tar_rc=${tar_rc:-2}',
-    '  enc_rc=$(cat /tmp/.enc-rc 2>/dev/null); enc_rc=${enc_rc:-1}',
+    // `|| true` keeps a failed cat from aborting the assignment itself
+    // under -e, which would skip the defaults and the partial-object
+    // cleanup below. tar's default is 2 because rc 1 (file changed
+    // mid-read) is the tolerated case; enc's is any nonzero.
+    '  tar_rc=$(cat /tmp/.tar-rc 2>/dev/null || true); tar_rc=${tar_rc:-2}',
+    '  enc_rc=$(cat /tmp/.enc-rc 2>/dev/null || true); enc_rc=${enc_rc:-1}',
     '  if [ "${tar_rc}" -ge 2 ] || [ "${enc_rc}" -ne 0 ] || [ "${pipe_rc}" -ne 0 ]; then',
     // An early upload death SIGPIPEs the producers — their rcs are
     // noise then, so report them only when the upload finished clean.
@@ -289,9 +291,10 @@ export function buildRestoreScript(): string {
     'pipe_rc=${pipe_rc:-0}',
     // Missing/empty marker = the status write failed (or the subshell
     // was killed before it) — fail closed, don't promote a stage whose
-    // producers can't be verified.
-    'dl_rc=$(cat /tmp/.dl-rc 2>/dev/null); dl_rc=${dl_rc:-1}',
-    'dec_rc=$(cat /tmp/.dec-rc 2>/dev/null); dec_rc=${dec_rc:-1}',
+    // producers can't be verified. `|| true` keeps a failed cat from
+    // aborting the assignment itself under -e before the default applies.
+    'dl_rc=$(cat /tmp/.dl-rc 2>/dev/null || true); dl_rc=${dl_rc:-1}',
+    'dec_rc=$(cat /tmp/.dec-rc 2>/dev/null || true); dec_rc=${dec_rc:-1}',
     // Keep the stage on failure — the next init retries from it, and
     // the emptiness check already ignores it. The token is not
     // recorded, so a force restore stays armed. When tar exits early

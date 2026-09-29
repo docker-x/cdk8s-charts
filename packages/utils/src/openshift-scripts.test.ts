@@ -534,6 +534,17 @@ describe('backup script', () => {
     expect(rmIdx).toBeGreaterThan(pipelineEnd);
     expect(rmIdx).toBeLessThan(script.indexOf('Fatal: streaming backup failed'));
   });
+
+  it('reads pipeline rc markers without tripping -e when a marker is missing', () => {
+    // `x=$(cat f 2>/dev/null)` fails the assignment itself under sh -e
+    // when f is missing — the fail-closed default and the partial-object
+    // cleanup would never run. Each read must be non-failing.
+    const script = buildBackupScript('devenv');
+    expect(script).toContain('tar_rc=$(cat /tmp/.tar-rc 2>/dev/null || true)');
+    expect(script).toContain('enc_rc=$(cat /tmp/.enc-rc 2>/dev/null || true)');
+    expect(script).toContain('tar_rc=${tar_rc:-2}');
+    expect(script).toContain('enc_rc=${enc_rc:-1}');
+  });
 });
 
 describe('buildRestoreScript gates', () => {
@@ -682,6 +693,8 @@ describe('buildRestoreScript gates', () => {
     expect(script).toContain('; echo "$?" > /tmp/.dl-rc');
     expect(script).toContain('; echo "$?" > /tmp/.dec-rc');
     expect(script).toContain('|| pipe_rc=$?');
+    expect(script).toContain('dl_rc=$(cat /tmp/.dl-rc 2>/dev/null || true)');
+    expect(script).toContain('dec_rc=$(cat /tmp/.dec-rc 2>/dev/null || true)');
     expect(script).toContain('dl_rc=${dl_rc:-1}');
     expect(script).toContain('dec_rc=${dec_rc:-1}');
     // The gate must actually test all three rcs — a dropped `-ne 0`
