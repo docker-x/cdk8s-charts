@@ -86,7 +86,9 @@ function buildBackupExcludes(extraExcludes: string): string[] {
     '  EXCLUDES="$EXCLUDES --exclude=.local/share/terminal-browser --exclude=.cache --exclude=.npm"',
     '  EXCLUDES="$EXCLUDES --exclude=.turbo --exclude=.nx --exclude=.astro --exclude=dist --exclude=build --exclude=.next"',
     '  EXCLUDES="$EXCLUDES --exclude=models --exclude=worktrees --exclude=daemon.log --exclude=.paseo/*-daemon.log --exclude=logs"',
-    `  EXCLUDES="$EXCLUDES --exclude=.gc/cache --exclude=.gc/supervisor.log --exclude=lost+found${extraExcludes}"`,
+    // .r2-restore-stage is a leftover half-restore, never payload — and
+    // restoring it would collide with the live stage dir in the sweep.
+    `  EXCLUDES="$EXCLUDES --exclude=.gc/cache --exclude=.gc/supervisor.log --exclude=lost+found --exclude=.r2-restore-stage${extraExcludes}"`,
   ];
 }
 
@@ -267,14 +269,29 @@ export function buildRestoreScript(): string {
     'chmod -R u+rwX "${STAGE}" 2>/dev/null || true',
     'rm -rf "${STAGE}"; mkdir -p "${STAGE}"',
     'aws s3 cp "s3://${R2_BUCKET}/${KEY}" - --endpoint-url "${R2_ENDPOINT}" --region auto | openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_PASSWORD | tar xzf - -C "${STAGE}"',
+    // A top-level .r2-restore-stage entry (a leftover stage backed up
+    // after a failed run, or planted) collides with the live stage dir
+    // in the sweep — mv/cp onto its own parent aborts under -e. Reserved
+    // name, never payload: delete it before the sweep. Links first —
+    // chmod -R follows a symlink argument out of the mount.
+    'if [ -L "${STAGE}/.r2-restore-stage" ]; then',
+    '  rm -f "${STAGE}/.r2-restore-stage"',
+    'else',
+    '  chmod -R u+rwX "${STAGE}/.r2-restore-stage" 2>/dev/null || true',
+    '  rm -rf "${STAGE}/.r2-restore-stage"',
+    'fi',
     // Force mode overlays (cp -a merges dirs); normal mode promotes by
     // move — the home is guaranteed empty, so no path collisions.
     // Copy per top-level item, not "${STAGE}/." — preserving times on
     // the destination itself would EPERM on the root-owned mount point.
     'if [ "${FORCE}" = 1 ]; then',
     '  copy_rc=0',
+    // `-e` follows symlinks — a dangling link staged from the archive
+    // would be skipped (silently lost here, and in the mv branch below
+    // it would be left behind so `rmdir` on the stage fails). `-L`
+    // catches the link itself.
     '  for item in "${STAGE}"/.[!.]* "${STAGE}"/..?* "${STAGE}"/*; do',
-    '    [ -e "${item}" ] || continue',
+    '    [ -e "${item}" ] || [ -L "${item}" ] || continue',
     '    cp -a "${item}" "${HOME_MOUNT_PATH}/" || copy_rc=1',
     '  done',
     '  if [ "${copy_rc}" != 0 ]; then echo "Fatal: overlay copy failed — keeping stage for retry"; exit 1; fi',
@@ -284,11 +301,16 @@ export function buildRestoreScript(): string {
     '  rm -rf "${STAGE}"',
     'else',
     '  for item in "${STAGE}"/.[!.]* "${STAGE}"/..?* "${STAGE}"/*; do',
-    '    [ -e "${item}" ] || continue',
+    '    [ -e "${item}" ] || [ -L "${item}" ] || continue',
     '    mv "${item}" "${HOME_MOUNT_PATH}/"',
     '  done',
     '  rmdir "${STAGE}"',
     'fi',
+    // An archive-sourced symlink under a reserved name would redirect
+    // the marker writes below (or next boot's `chmod -R` on the stage
+    // path) to a target outside the mount. Drop links only — regular
+    // files from a legitimate backup are kept.
+    'for f in "${TOKEN_FILE}" "${MARKER}" "${STAGE}"; do [ ! -L "$f" ] || rm -f "$f"; done',
     'if [ -n "${RESTORE_TOKEN:-}" ]; then printf %s "${RESTORE_TOKEN}" > "${TOKEN_FILE}"; fi',
     'touch "${MARKER}"',
     'echo "Restore complete."',
