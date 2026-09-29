@@ -173,7 +173,10 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '  aws configure set s3.max_concurrent_requests 4 || { echo "Fatal: could not set max_concurrent_requests"; exit 1; }',
     // `|| pipe_rc=$?` is required — under `sh -e` a failing pipeline
     // would exit before the rc assignment and skip partial-object cleanup.
-    '  ( tar czf - $EXCLUDES $TAR_EXTRA . || echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD || echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
+    // Each producer writes its status unconditionally — with `||` a
+    // subshell killed before the fallback (or a failed marker write)
+    // leaves no marker, which must not read as success below.
+    '  ( tar czf - $EXCLUDES $TAR_EXTRA .; echo "$?" > /tmp/.tar-rc ) | ( openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSWORD; echo "$?" > /tmp/.enc-rc ) | aws s3 cp - "s3://${R2_BUCKET}/${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto || pipe_rc=$?',
     '  pipe_rc=${pipe_rc:-0}',
     // The snapshot's bytes are already in the stream — drop it so a
     // stale copy doesn't linger on the PVC until the next run's rm.
@@ -182,10 +185,19 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     // at its pre-snapshot rm — report success only when cleanup worked.
     '  rm -f "$DEVIN_SNAP" || snap_rc=1',
     '  snap_rc=${snap_rc:-0}',
-    '  tar_rc=$(cat /tmp/.tar-rc 2>/dev/null || echo 0)',
-    '  enc_rc=$(cat /tmp/.enc-rc 2>/dev/null || echo 0)',
+    // Missing/empty marker = the status write failed — fail closed.
+    // tar's default is 2 because rc 1 (file changed mid-read) is the
+    // tolerated case; enc's is any nonzero.
+    '  tar_rc=$(cat /tmp/.tar-rc 2>/dev/null); tar_rc=${tar_rc:-2}',
+    '  enc_rc=$(cat /tmp/.enc-rc 2>/dev/null); enc_rc=${enc_rc:-1}',
     '  if [ "${tar_rc}" -ge 2 ] || [ "${enc_rc}" -ne 0 ] || [ "${pipe_rc}" -ne 0 ]; then',
-    '    echo "Fatal: streaming backup failed (tar_rc=${tar_rc} enc_rc=${enc_rc} upload_rc=${pipe_rc})"',
+    // An early upload death SIGPIPEs the producers — their rcs are
+    // noise then, so report them only when the upload finished clean.
+    '    if [ "${pipe_rc}" -ne 0 ]; then',
+    '      echo "Fatal: streaming backup failed (upload_rc=${pipe_rc})"',
+    '    else',
+    '      echo "Fatal: streaming backup failed (tar_rc=${tar_rc} enc_rc=${enc_rc})"',
+    '    fi',
     '    rm -f /tmp/.tar-rc /tmp/.enc-rc',
     '    aws s3api delete-object --bucket "${R2_BUCKET}" --key "${OBJECT_KEY}" --endpoint-url "${R2_ENDPOINT}" --region auto 2>/dev/null || echo "WARNING: failed to delete partial object ${OBJECT_KEY} — it may appear as a corrupt newest backup"',
     '    exit 1',
@@ -273,15 +285,24 @@ export function buildRestoreScript(): string {
     // this a failed download or decrypt can leave a usable-looking
     // stage that the sweep (or force overlay) promotes over live data.
     'rm -f /tmp/.dl-rc /tmp/.dec-rc',
-    `( aws s3 cp "s3://\${R2_BUCKET}/\${KEY}" - --endpoint-url "\${R2_ENDPOINT}" --region auto || echo "$?" > /tmp/.dl-rc ) | ( openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_PASSWORD || echo "$?" > /tmp/.dec-rc ) | tar xzf - -C "\${STAGE}" || pipe_rc=$?`,
+    `( aws s3 cp "s3://\${R2_BUCKET}/\${KEY}" - --endpoint-url "\${R2_ENDPOINT}" --region auto; echo "$?" > /tmp/.dl-rc ) | ( openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_PASSWORD; echo "$?" > /tmp/.dec-rc ) | tar xzf - -C "\${STAGE}" || pipe_rc=$?`,
     'pipe_rc=${pipe_rc:-0}',
-    'dl_rc=$(cat /tmp/.dl-rc 2>/dev/null || echo 0)',
-    'dec_rc=$(cat /tmp/.dec-rc 2>/dev/null || echo 0)',
+    // Missing/empty marker = the status write failed (or the subshell
+    // was killed before it) — fail closed, don't promote a stage whose
+    // producers can't be verified.
+    'dl_rc=$(cat /tmp/.dl-rc 2>/dev/null); dl_rc=${dl_rc:-1}',
+    'dec_rc=$(cat /tmp/.dec-rc 2>/dev/null); dec_rc=${dec_rc:-1}',
     // Keep the stage on failure — the next init retries from it, and
     // the emptiness check already ignores it. The token is not
-    // recorded, so a force restore stays armed.
+    // recorded, so a force restore stays armed. When tar exits early
+    // the producers are SIGPIPE-killed — their rcs are noise then, so
+    // only report them when tar itself finished clean.
     'if [ "${dl_rc}" -ne 0 ] || [ "${dec_rc}" -ne 0 ] || [ "${pipe_rc}" -ne 0 ]; then',
-    '  echo "Fatal: restore pipeline failed (download_rc=${dl_rc} decrypt_rc=${dec_rc} extract_rc=${pipe_rc})"',
+    '  if [ "${pipe_rc}" -ne 0 ]; then',
+    '    echo "Fatal: restore pipeline failed (extract_rc=${pipe_rc})"',
+    '  else',
+    '    echo "Fatal: restore pipeline failed (download_rc=${dl_rc} decrypt_rc=${dec_rc})"',
+    '  fi',
     '  rm -f /tmp/.dl-rc /tmp/.dec-rc',
     '  exit 1',
     'fi',

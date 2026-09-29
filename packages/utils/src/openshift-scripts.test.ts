@@ -676,13 +676,31 @@ describe('buildRestoreScript gates', () => {
     // decrypt that still leaves a plausible stage must not reach the
     // sweep, the force overlay, or the token write.
     const script = buildRestoreScript();
-    expect(script).toContain('|| echo "$?" > /tmp/.dl-rc');
-    expect(script).toContain('|| echo "$?" > /tmp/.dec-rc');
+    // Producers record their status unconditionally — a missing/empty
+    // marker means the status write itself failed and must read as
+    // failure, never default to 0.
+    expect(script).toContain('; echo "$?" > /tmp/.dl-rc');
+    expect(script).toContain('; echo "$?" > /tmp/.dec-rc');
     expect(script).toContain('|| pipe_rc=$?');
-    const checkIdx = script.indexOf('Fatal: restore pipeline failed');
-    expect(checkIdx).toBeGreaterThan(script.indexOf('aws s3 cp "s3://${R2_BUCKET}/${KEY}"'));
-    expect(checkIdx).toBeLessThan(script.indexOf('for item in "${STAGE}"/'));
-    expect(checkIdx).toBeLessThan(script.indexOf('> "${TOKEN_FILE}"'));
+    expect(script).toContain('dl_rc=${dl_rc:-1}');
+    expect(script).toContain('dec_rc=${dec_rc:-1}');
+    // The gate must actually test all three rcs — a dropped `-ne 0`
+    // would make the ordering assertions below vacuous.
+    const guard =
+      'if [ "${dl_rc}" -ne 0 ] || [ "${dec_rc}" -ne 0 ] || [ "${pipe_rc}" -ne 0 ]; then';
+    const guardIdx = script.indexOf(guard);
+    expect(guardIdx).toBeGreaterThan(script.indexOf('aws s3 cp "s3://${R2_BUCKET}/${KEY}"'));
+    // When tar exits early the producers die on SIGPIPE — their rcs
+    // are noise, so the extract failure reports tar's rc alone.
+    const fatalIdx = script.indexOf('Fatal: restore pipeline failed');
+    expect(fatalIdx).toBeGreaterThan(guardIdx);
+    expect(script).toContain('extract_rc=${pipe_rc}');
+    expect(script).toContain('download_rc=${dl_rc} decrypt_rc=${dec_rc}');
+    // The failure branch must exit before the sweep and token write.
+    const exitIdx = script.indexOf('exit 1', guardIdx);
+    expect(exitIdx).toBeGreaterThan(fatalIdx);
+    expect(exitIdx).toBeLessThan(script.indexOf('for item in "${STAGE}"/'));
+    expect(exitIdx).toBeLessThan(script.indexOf('> "${TOKEN_FILE}"'));
   });
 
   it('drops a staged .r2-restore-stage entry before the sweep', () => {

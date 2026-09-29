@@ -1306,9 +1306,10 @@ but using the Devenv chart:
    no marker so a later wipe can still restore. Extraction goes to
    `.r2-restore-stage` and lands only after the pipeline succeeds —
    `/bin/sh` has no `pipefail`, so the download and decrypt stages each
-   record their exit status in marker files and any producer failure
-   fails the run before the sweep (the token is not recorded, so a
-   force restore stays armed) — moved on an empty home, overlaid via
+   record their exit status in marker files (a missing marker counts
+   as failure) and any producer failure fails the run before the sweep
+   (the token is not recorded, so a force restore stays armed) — moved
+   on an empty home, overlaid via
    `cp -a` in force mode so files
    the archive lacks are kept — so a failed run retries instead of
    exposing a half-written home. Only the stage name itself is never
