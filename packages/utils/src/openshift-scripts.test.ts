@@ -750,11 +750,34 @@ describe('buildRestoreScript gates', () => {
     expect(fatalIdx).toBeGreaterThan(guardIdx);
     expect(script).toContain('extract_rc=${pipe_rc}');
     expect(script).toContain('download_rc=${dl_rc} decrypt_rc=${dec_rc}');
+    // The corrupted partial stage must be dropped — a leftover is dead
+    // weight on the PVC and nothing in a failed stream is trustworthy.
+    // The earlier `rm -rf "${STAGE}"; mkdir -p` line is a substring
+    // match too, so anchor on the line that precedes `exit 1`.
+    const stageRmIdx = script.indexOf('rm -rf "${STAGE}"\n  exit 1', guardIdx);
+    expect(stageRmIdx).toBeGreaterThan(fatalIdx);
+    // Restored modes can leave non-writable dirs — chmod before rm -rf.
+    const chmodIdx = script.indexOf('chmod -R u+rwX "${STAGE}"', guardIdx);
+    expect(chmodIdx).toBeGreaterThan(fatalIdx);
+    expect(chmodIdx).toBeLessThan(stageRmIdx);
     // The failure branch must exit before the sweep and token write.
     const exitIdx = script.indexOf('exit 1', guardIdx);
     expect(exitIdx).toBeGreaterThan(fatalIdx);
     expect(exitIdx).toBeLessThan(script.indexOf('for item in "${STAGE}"/'));
     expect(exitIdx).toBeLessThan(script.indexOf('> "${TOKEN_FILE}"'));
+  });
+
+  it('keeps the decrypt password out of the process environment', () => {
+    // `-pass env:` parks the secret in openssl's environment — readable
+    // via /proc/*/environ by any same-uid process for the whole run.
+    // `-pass file:` reads the credentials mount directly, and the export
+    // loop must not put it in the environment either.
+    const script = buildRestoreScript();
+    expect(script).toContain('-pass file:/etc/r2-credentials/BACKUP_PASSWORD');
+    expect(script).not.toContain('env:BACKUP_PASSWORD');
+    expect(script).not.toContain(' BACKUP_PASSWORD; do export');
+    // The credential file is still required by the preflight check.
+    expect(script).toContain('/etc/r2-credentials/BACKUP_PASSWORD; do');
   });
 
   it('fails closed when the backup listing call fails', () => {

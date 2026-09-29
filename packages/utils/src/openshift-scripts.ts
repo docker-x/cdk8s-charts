@@ -243,9 +243,9 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
  *    workspace start empty (no marker, so a later wipe can restore).
  *
  * Extraction goes to `.r2-restore-stage` on the same PVC and is moved
- * into place only after the full pipeline succeeds: a failed run leaves
- * the stage (which the empty-check ignores), so the next pod init
- * retries instead of exposing a half-written home.
+ * into place only after the full pipeline succeeds: a failed run drops
+ * the partial stage and exits nonzero, so the next pod init retries
+ * instead of exposing a half-written home.
  */
 export function buildRestoreScript(): string {
   return [
@@ -284,7 +284,11 @@ export function buildRestoreScript(): string {
     'for f in /etc/r2-credentials/AWS_ACCESS_KEY_ID /etc/r2-credentials/AWS_SECRET_ACCESS_KEY /etc/r2-credentials/R2_ACCOUNT_ID /etc/r2-credentials/R2_BUCKET /etc/r2-credentials/BACKUP_PASSWORD; do',
     '  if [ ! -f "$f" ]; then echo "Fatal: missing R2 credential file $f"; exit 1; fi',
     'done',
-    'for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET BACKUP_PASSWORD; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
+    // BACKUP_PASSWORD is checked above but deliberately not exported —
+    // openssl reads it via `-pass file:` below, so the secret never
+    // sits in a process environment (same-uid readable via
+    // /proc/*/environ) for the life of the stream.
+    'for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
     'R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"',
     // --output text emits the key list tab-separated on one line ("None"
     // when Contents is null), avoiding a jq dependency. The listing
@@ -306,7 +310,7 @@ export function buildRestoreScript(): string {
     // this a failed download or decrypt can leave a usable-looking
     // stage that the sweep (or force overlay) promotes over live data.
     'rm -f /tmp/.dl-rc /tmp/.dec-rc',
-    `( aws s3 cp "s3://\${R2_BUCKET}/\${KEY}" - --endpoint-url "\${R2_ENDPOINT}" --region auto; echo "$?" > /tmp/.dl-rc ) | ( openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_PASSWORD; echo "$?" > /tmp/.dec-rc ) | tar xzf - -C "\${STAGE}" || pipe_rc=$?`,
+    `( aws s3 cp "s3://\${R2_BUCKET}/\${KEY}" - --endpoint-url "\${R2_ENDPOINT}" --region auto; echo "$?" > /tmp/.dl-rc ) | ( openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/etc/r2-credentials/BACKUP_PASSWORD; echo "$?" > /tmp/.dec-rc ) | tar xzf - -C "\${STAGE}" || pipe_rc=$?`,
     'pipe_rc=${pipe_rc:-0}',
     // Missing/empty marker = the status write failed (or the subshell
     // was killed before it) — fail closed, don't promote a stage whose
@@ -314,11 +318,13 @@ export function buildRestoreScript(): string {
     // aborting the assignment itself under -e before the default applies.
     'dl_rc=$(cat /tmp/.dl-rc 2>/dev/null || true); dl_rc=${dl_rc:-1}',
     'dec_rc=$(cat /tmp/.dec-rc 2>/dev/null || true); dec_rc=${dec_rc:-1}',
-    // Keep the stage on failure — the next init retries from it, and
-    // the emptiness check already ignores it. The token is not
-    // recorded, so a force restore stays armed. When tar exits early
-    // the producers are SIGPIPE-killed — their rcs are noise then, so
-    // only report them when tar itself finished clean.
+    // A failed stream can leave partial data in the stage — drop it so
+    // a corrupted leftover doesn't linger on the PVC between retries
+    // (the next init re-creates it anyway, and the emptiness check
+    // ignores it). The token is not recorded, so a force restore stays
+    // armed. When tar exits early the producers are SIGPIPE-killed —
+    // their rcs are noise then, so only report them when tar itself
+    // finished clean.
     'if [ "${dl_rc}" -ne 0 ] || [ "${dec_rc}" -ne 0 ] || [ "${pipe_rc}" -ne 0 ]; then',
     '  if [ "${pipe_rc}" -ne 0 ]; then',
     '    echo "Fatal: restore pipeline failed (extract_rc=${pipe_rc})"',
@@ -326,6 +332,9 @@ export function buildRestoreScript(): string {
     '    echo "Fatal: restore pipeline failed (download_rc=${dl_rc} decrypt_rc=${dec_rc})"',
     '  fi',
     '  rm -f /tmp/.dl-rc /tmp/.dec-rc',
+    // Restored modes can leave non-writable dirs — chmod before rm -rf.
+    '  chmod -R u+rwX "${STAGE}" 2>/dev/null || true',
+    '  rm -rf "${STAGE}"',
     '  exit 1',
     'fi',
     'rm -f /tmp/.dl-rc /tmp/.dec-rc',

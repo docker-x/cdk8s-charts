@@ -1289,7 +1289,11 @@ but using the Devenv chart:
    needs no multi-attach). It mounts `workspace-state` at the home path
    and the `r2-credentials` secret, then streams the newest
    `workspace-state-{name}-*.tar.gz.enc` object back through
-   `openssl enc -d | tar xz`. It runs on `AWS_CLI_IMAGE`
+   `openssl enc -d | tar xz` — decrypt reads the password via
+   `-pass file:` straight from the credentials mount, so the secret
+   never sits in a process environment (visible to same-uid
+   processes via `/proc/*/environ`) the way `-pass env:` would.
+   It runs on `AWS_CLI_IMAGE`
    (`bitnamilegacy/aws-cli`, Debian) — not the workspace image, whose
    `aws` only exists under the PVC's `.devenv/profile/bin` and so is
    absent on a wiped PVC. Gates, in order: an unconsumed `RESTORE_TOKEN`
@@ -1317,7 +1321,8 @@ but using the Devenv chart:
    `.r2-restore-stage` and lands only after the pipeline succeeds —
    `/bin/sh` has no `pipefail`, so the download and decrypt stages each
    record their exit status in marker files (a missing or empty marker
-   counts as failure) and any producer failure fails the run before the
+   counts as failure) and any producer failure drops the partial stage
+   and fails the run before the
    sweep (the token is not recorded, so a force restore stays armed) —
    moved
    on an empty home, overlaid via
