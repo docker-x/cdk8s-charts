@@ -1305,7 +1305,13 @@ but using the Devenv chart:
    never touched; no backup objects means first boot — exit clean with
    no marker so a later wipe can still restore. Extraction goes to
    `.r2-restore-stage` and lands only after the pipeline succeeds —
-   moved on an empty home, overlaid via `cp -a` in force mode so files
+   `/bin/sh` has no `pipefail`, so the download and decrypt stages each
+   record their exit status in marker files (a missing or empty marker
+   counts as failure) and any producer failure fails the run before the
+   sweep (the token is not recorded, so a force restore stays armed) —
+   moved
+   on an empty home, overlaid via
+   `cp -a` in force mode so files
    the archive lacks are kept — so a failed run retries instead of
    exposing a half-written home. Only the stage name itself is never
    archived: the backup excludes `.r2-restore-stage`, and the restore

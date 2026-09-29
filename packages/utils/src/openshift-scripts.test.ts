@@ -534,6 +534,17 @@ describe('backup script', () => {
     expect(rmIdx).toBeGreaterThan(pipelineEnd);
     expect(rmIdx).toBeLessThan(script.indexOf('Fatal: streaming backup failed'));
   });
+
+  it('reads pipeline rc markers without tripping -e when a marker is missing', () => {
+    // `x=$(cat f 2>/dev/null)` fails the assignment itself under sh -e
+    // when f is missing — the fail-closed default and the partial-object
+    // cleanup would never run. Each read must be non-failing.
+    const script = buildBackupScript('devenv');
+    expect(script).toContain('tar_rc=$(cat /tmp/.tar-rc 2>/dev/null || true)');
+    expect(script).toContain('enc_rc=$(cat /tmp/.enc-rc 2>/dev/null || true)');
+    expect(script).toContain('tar_rc=${tar_rc:-2}');
+    expect(script).toContain('enc_rc=${enc_rc:-1}');
+  });
 });
 
 describe('buildRestoreScript gates', () => {
@@ -669,6 +680,40 @@ describe('buildRestoreScript gates', () => {
       expect(lines[i + 1]).toContain('[ -L "${item}" ]');
       expect(lines[i + 1].trimEnd()).toMatch(/\|\| continue$/);
     }
+  });
+
+  it('checks every restore pipeline stage before the sweep (no pipefail in sh)', () => {
+    // The pipeline's exit status is tar's alone — a failed download or
+    // decrypt that still leaves a plausible stage must not reach the
+    // sweep, the force overlay, or the token write.
+    const script = buildRestoreScript();
+    // Producers record their status unconditionally — a missing/empty
+    // marker means the status write itself failed and must read as
+    // failure, never default to 0.
+    expect(script).toContain('; echo "$?" > /tmp/.dl-rc');
+    expect(script).toContain('; echo "$?" > /tmp/.dec-rc');
+    expect(script).toContain('|| pipe_rc=$?');
+    expect(script).toContain('dl_rc=$(cat /tmp/.dl-rc 2>/dev/null || true)');
+    expect(script).toContain('dec_rc=$(cat /tmp/.dec-rc 2>/dev/null || true)');
+    expect(script).toContain('dl_rc=${dl_rc:-1}');
+    expect(script).toContain('dec_rc=${dec_rc:-1}');
+    // The gate must actually test all three rcs — a dropped `-ne 0`
+    // would make the ordering assertions below vacuous.
+    const guard =
+      'if [ "${dl_rc}" -ne 0 ] || [ "${dec_rc}" -ne 0 ] || [ "${pipe_rc}" -ne 0 ]; then';
+    const guardIdx = script.indexOf(guard);
+    expect(guardIdx).toBeGreaterThan(script.indexOf('aws s3 cp "s3://${R2_BUCKET}/${KEY}"'));
+    // When tar exits early the producers die on SIGPIPE — their rcs
+    // are noise, so the extract failure reports tar's rc alone.
+    const fatalIdx = script.indexOf('Fatal: restore pipeline failed');
+    expect(fatalIdx).toBeGreaterThan(guardIdx);
+    expect(script).toContain('extract_rc=${pipe_rc}');
+    expect(script).toContain('download_rc=${dl_rc} decrypt_rc=${dec_rc}');
+    // The failure branch must exit before the sweep and token write.
+    const exitIdx = script.indexOf('exit 1', guardIdx);
+    expect(exitIdx).toBeGreaterThan(fatalIdx);
+    expect(exitIdx).toBeLessThan(script.indexOf('for item in "${STAGE}"/'));
+    expect(exitIdx).toBeLessThan(script.indexOf('> "${TOKEN_FILE}"'));
   });
 
   it('drops a staged .r2-restore-stage entry before the sweep', () => {
