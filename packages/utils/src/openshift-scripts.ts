@@ -236,7 +236,9 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
  *    empty.
  * 4. Non-empty home without a marker — this PVC predates the restore
  *    feature; restoring would clobber live data, so mark it done and
- *    leave it alone forever.
+ *    leave it alone forever. The scan itself fails closed — a find
+ *    error on the mount is fatal rather than a pass, since empty output
+ *    would otherwise masquerade as an empty home.
  * 5. No backup objects yet — first-ever boot; exit clean and let the
  *    workspace start empty (no marker, so a later wipe can restore).
  *
@@ -265,11 +267,19 @@ export function buildRestoreScript(): string {
     'done',
     // Reserved names only count as empty when they're real directories —
     // a file or link named lost+found/.r2-restore-stage is user data, and
-    // name-only filtering would let a populated PVC read as empty.
-    `if [ "\${FORCE}" = 0 ] && [ -n "$(find "\${HOME_MOUNT_PATH}" -mindepth 1 -maxdepth 1 ! \\( -type d \\( -name lost+found -o -name .r2-restore-stage \\) \\) -print -quit)" ]; then`,
-    '  echo "Home mount is not empty and no restore marker — skipping restore to protect existing data."',
-    '  touch "${MARKER}"',
-    '  exit 0',
+    // name-only filtering would let a populated PVC read as empty. The
+    // scan must also succeed: a failed find prints nothing, and empty
+    // output would read as an empty mount — fail closed instead.
+    'if [ "${FORCE}" = 0 ]; then',
+    `  if ! HOME_ENTRIES="$(find "\${HOME_MOUNT_PATH}" -mindepth 1 -maxdepth 1 ! \\( -type d \\( -name lost+found -o -name .r2-restore-stage \\) \\) -print -quit)"; then`,
+    '    echo "Fatal: cannot inspect home mount — refusing to restore over possibly-live data."',
+    '    exit 1',
+    '  fi',
+    '  if [ -n "${HOME_ENTRIES}" ]; then',
+    '    echo "Home mount is not empty and no restore marker — skipping restore to protect existing data."',
+    '    touch "${MARKER}"',
+    '    exit 0',
+    '  fi',
     'fi',
     'for f in /etc/r2-credentials/AWS_ACCESS_KEY_ID /etc/r2-credentials/AWS_SECRET_ACCESS_KEY /etc/r2-credentials/R2_ACCOUNT_ID /etc/r2-credentials/R2_BUCKET /etc/r2-credentials/BACKUP_PASSWORD; do',
     '  if [ ! -f "$f" ]; then echo "Fatal: missing R2 credential file $f"; exit 1; fi',

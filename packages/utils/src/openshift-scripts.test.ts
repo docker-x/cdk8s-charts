@@ -653,6 +653,27 @@ describe('buildRestoreScript gates', () => {
     expect(fileExists(join(home, '.r2-restore-complete'))).toBe(true);
   });
 
+  it('a link to a real directory at a reserved name is still user data — marks and skips', () => {
+    // A dangling link can never satisfy -type d even for a find that
+    // follows links — pointing at a real dir outside the mount guards
+    // the -type predicate itself, not just the name check.
+    const home = makeDir('restore-');
+    const target = makeDir('restore-link-target-');
+    sh('ln -s "$T" "$L"', { T: target, L: join(home, 'lost+found') });
+    const { ok, out } = runRestore(home);
+    expect(ok).toBe(true);
+    expect(out).toContain('not empty');
+    expect(fileExists(join(home, '.r2-restore-complete'))).toBe(true);
+  });
+
+  it('fails closed when the home mount cannot be scanned', () => {
+    // A failed find prints nothing — empty output must not read as an
+    // empty home, or the populated-home guard becomes a pass-through.
+    const { ok, out } = runRestore(join(makeDir('restore-'), 'unmounted'));
+    expect(ok).toBe(false);
+    expect(out).toContain('cannot inspect home mount');
+  });
+
   it('a regular file at the stage path is user data — marks and skips', () => {
     const home = makeDir('restore-');
     writeFile(join(home, '.r2-restore-stage'), 'x');
