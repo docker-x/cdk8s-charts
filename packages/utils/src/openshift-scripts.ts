@@ -86,7 +86,9 @@ function buildBackupExcludes(extraExcludes: string): string[] {
     '  EXCLUDES="$EXCLUDES --exclude=.local/share/terminal-browser --exclude=.cache --exclude=.npm"',
     '  EXCLUDES="$EXCLUDES --exclude=.turbo --exclude=.nx --exclude=.astro --exclude=dist --exclude=build --exclude=.next"',
     '  EXCLUDES="$EXCLUDES --exclude=models --exclude=worktrees --exclude=daemon.log --exclude=.paseo/*-daemon.log --exclude=logs"',
-    `  EXCLUDES="$EXCLUDES --exclude=.gc/cache --exclude=.gc/supervisor.log --exclude=lost+found${extraExcludes}"`,
+    // .r2-restore-stage is a leftover half-restore, never payload — and
+    // restoring it would collide with the live stage dir in the sweep.
+    `  EXCLUDES="$EXCLUDES --exclude=.gc/cache --exclude=.gc/supervisor.log --exclude=lost+found --exclude=.r2-restore-stage${extraExcludes}"`,
   ];
 }
 
@@ -267,6 +269,17 @@ export function buildRestoreScript(): string {
     'chmod -R u+rwX "${STAGE}" 2>/dev/null || true',
     'rm -rf "${STAGE}"; mkdir -p "${STAGE}"',
     'aws s3 cp "s3://${R2_BUCKET}/${KEY}" - --endpoint-url "${R2_ENDPOINT}" --region auto | openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_PASSWORD | tar xzf - -C "${STAGE}"',
+    // A top-level .r2-restore-stage entry (a leftover stage backed up
+    // after a failed run, or planted) collides with the live stage dir
+    // in the sweep — mv/cp onto its own parent aborts under -e. Reserved
+    // name, never payload: delete it before the sweep. Links first —
+    // chmod -R follows a symlink argument out of the mount.
+    'if [ -L "${STAGE}/.r2-restore-stage" ]; then',
+    '  rm -f "${STAGE}/.r2-restore-stage"',
+    'else',
+    '  chmod -R u+rwX "${STAGE}/.r2-restore-stage" 2>/dev/null || true',
+    '  rm -rf "${STAGE}/.r2-restore-stage"',
+    'fi',
     // Force mode overlays (cp -a merges dirs); normal mode promotes by
     // move — the home is guaranteed empty, so no path collisions.
     // Copy per top-level item, not "${STAGE}/." — preserving times on

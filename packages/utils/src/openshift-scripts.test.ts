@@ -671,6 +671,22 @@ describe('buildRestoreScript gates', () => {
     }
   });
 
+  it('drops a staged .r2-restore-stage entry before the sweep', () => {
+    // A leftover stage dir tarred into a backup (or a planted link) lands
+    // at ${STAGE}/.r2-restore-stage — the sweep would mv/cp it onto its
+    // own parent and abort under -e. It must be deleted post-extraction.
+    const script = buildRestoreScript();
+    const dropIdx = script.indexOf('rm -rf "${STAGE}/.r2-restore-stage"');
+    expect(dropIdx).toBeGreaterThan(script.indexOf('tar xzf -'));
+    expect(dropIdx).toBeLessThan(script.indexOf('for item in "${STAGE}"/'));
+    // Symlink first — chmod -R follows a symlink arg out of the mount.
+    const linkIdx = script.indexOf('if [ -L "${STAGE}/.r2-restore-stage" ]');
+    expect(linkIdx).toBeGreaterThan(-1);
+    expect(linkIdx).toBeLessThan(script.indexOf('chmod -R u+rwX "${STAGE}/.r2-restore-stage"'));
+    // And the backup must not ship a leftover stage in future archives.
+    expect(buildBackupScript('devenv')).toContain('--exclude=.r2-restore-stage');
+  });
+
   it('scrubs archive-planted symlinks at reserved paths before marker writes', () => {
     const script = buildRestoreScript();
     // A staged symlink under a marker/stage name would redirect the
