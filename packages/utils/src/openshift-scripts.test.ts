@@ -757,6 +757,53 @@ describe('buildRestoreScript gates', () => {
     expect(exitIdx).toBeLessThan(script.indexOf('> "${TOKEN_FILE}"'));
   });
 
+  it('fails closed when the backup listing call fails', () => {
+    // String-matching stays green under a guard inversion (`||` → `&&`
+    // still contains "Fatal" and ends in `exit 1; }`), so run the
+    // emitted listing/key-selection lines against a stub aws.
+    const lines = buildRestoreScript().split('\n');
+    const listIdx = lines.findIndex((l) => l.includes('list-objects-v2'));
+    const keyIdx = lines.findIndex((l) => l.startsWith('KEY='));
+    expect(listIdx).toBeGreaterThan(-1);
+    expect(keyIdx).toBeGreaterThan(listIdx);
+    // The empty-result exit must come after the key selection.
+    expect(lines.findIndex((l) => l.includes('No backups found'))).toBeGreaterThan(keyIdx);
+    const snippet = lines.slice(listIdx, keyIdx + 1).join('\n');
+
+    const binDir = makeDir('aws-stub-');
+    writeFile(
+      join(binDir, 'aws'),
+      '#!/bin/sh\n[ -z "${STUB_AWS_FAIL:-}" ] || exit 1\nprintf %s "${STUB_AWS_KEYS:-None}"\n',
+    );
+    sh('chmod +x "$F"', { F: join(binDir, 'aws') });
+    const env = {
+      ...process.env,
+      PATH: `${binDir}:${process.env.PATH ?? ''}`,
+      R2_BUCKET: 'b',
+      BACKUP_PREFIX: 'p-',
+      R2_ENDPOINT: 'https://example.invalid',
+    };
+
+    // A failed listing aborts with the fatal message — it must never
+    // fall through to an empty KEY that reads as "no backups".
+    try {
+      execFileSync('bash', ['-c', snippet], {
+        env: { ...env, STUB_AWS_FAIL: '1' },
+        encoding: 'utf8',
+      });
+      expect.unreachable('a failed listing must exit nonzero');
+    } catch (e) {
+      expect((e as { stdout?: string }).stdout ?? '').toContain('Fatal: failed to list backups');
+    }
+
+    // A successful listing selects the newest key.
+    const out = execFileSync('bash', ['-c', `${snippet}\necho "${'${KEY}'}"`], {
+      env: { ...env, STUB_AWS_KEYS: 'p-20240101\tp-20240202' },
+      encoding: 'utf8',
+    });
+    expect(out.trim()).toBe('p-20240202');
+  });
+
   it('drops a staged .r2-restore-stage entry before the sweep', () => {
     // A leftover stage dir tarred into a backup (or a planted link) lands
     // at ${STAGE}/.r2-restore-stage — the sweep would mv/cp it onto its

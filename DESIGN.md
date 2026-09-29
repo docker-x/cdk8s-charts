@@ -1306,7 +1306,12 @@ but using the Devenv chart:
    `.r2-restore-stage` directories without a marker means the PVC
    predates the feature — a file or link named `lost+found` or
    `.r2-restore-stage` counts as content — the marker is written and
-   live data is never touched; no backup objects means first boot —
+   live data is never touched; the backup-object listing itself fails
+   closed — a failed `list-objects-v2` is fatal, since an empty result
+   from a failed listing would masquerade as first boot — and streams
+   to a temp file rather than a shell variable, so a large prefix
+   can't exhaust the init container's memory; no backup
+   objects means first boot —
    exit clean with
    no marker so a later wipe can still restore. Extraction goes to
    `.r2-restore-stage` and lands only after the pipeline succeeds —
