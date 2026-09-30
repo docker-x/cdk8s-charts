@@ -382,7 +382,7 @@ function assertUniqueContainerNames(
   list: ReadonlyArray<Record<string, unknown> | null | undefined>,
   seen: Set<string>,
   invalidError: string,
-  duplicateError: (name: string) => string,
+  duplicateErrorTemplate: string,
 ): void {
   for (const c of list) {
     const name: unknown = c?.name;
@@ -390,7 +390,7 @@ function assertUniqueContainerNames(
       throw new Error(invalidError);
     }
     if (seen.has(name)) {
-      throw new Error(duplicateError(name));
+      throw new Error(duplicateErrorTemplate.replace('%s', name));
     }
     seen.add(name);
   }
@@ -438,8 +438,7 @@ function buildWorkspacePodSpec(
     containers,
     seenContainers,
     'Invalid sidecar: every container requires a non-empty name',
-    (n) =>
-      `Duplicate container name "${n}": sidecars must not collide with the workspace container or each other`,
+    'Duplicate container name "%s": sidecars must not collide with the workspace container or each other',
   );
   const init = [
     ...(initContainers?.initContainers ?? []),
@@ -452,8 +451,7 @@ function buildWorkspacePodSpec(
     init,
     seenContainers,
     'Invalid init container: every init container requires a non-empty name',
-    (n) =>
-      `Duplicate container name "${n}": init containers must not collide with the workspace container, sidecars, or each other`,
+    'Duplicate container name "%s": init containers must not collide with the workspace container, sidecars, or each other',
   );
   return {
     serviceAccountName: d.saName,
