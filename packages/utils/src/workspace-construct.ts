@@ -412,7 +412,7 @@ function buildWorkspacePodSpec(
   // fail at synth time with a clearer error (same rule as volumes).
   const seenContainers = new Set<string>();
   for (const c of containers) {
-    const cname: unknown = c?.name;
+    const cname: unknown = (c as { name?: unknown } | null)?.name;
     if (typeof cname !== 'string' || cname.trim().length === 0) {
       throw new Error('Invalid sidecar: every container requires a non-empty name');
     }
@@ -431,7 +431,7 @@ function buildWorkspacePodSpec(
   // rejects a pod whose initContainers share a name with each other or
   // with any regular container. Reuse seenContainers so both rules hold.
   for (const c of init) {
-    const cname: unknown = c?.name;
+    const cname: unknown = (c as { name?: unknown } | null)?.name;
     if (typeof cname !== 'string' || cname.trim().length === 0) {
       throw new Error('Invalid init container: every init container requires a non-empty name');
     }
