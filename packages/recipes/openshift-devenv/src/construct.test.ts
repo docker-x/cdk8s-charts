@@ -112,6 +112,25 @@ describe('OpenShiftDevenv recipe — R2 restore init container', () => {
         ...backupProps,
         values: { initContainers: [{ name: 'r2-restore', image: 'busybox' }] },
       }),
-    ).toThrow('Duplicate init container name "r2-restore"');
+    ).toThrow('Duplicate container name "r2-restore"');
+  });
+
+  it('throws when a values init container collides with a pod container name', () => {
+    expect(() =>
+      synth({
+        ...baseProps,
+        values: { initContainers: [{ name: 'devenv', image: 'busybox' }] },
+      }),
+    ).toThrow('Duplicate container name "devenv"');
+  });
+
+  it('throws when a values init container has no usable name', () => {
+    // Untyped Helm values can carry non-string or whitespace-only names —
+    // the cast keeps the compiler out of what is runtime validation.
+    for (const bad of [{ image: 'busybox' }, { name: 42 }, { name: '  ' }]) {
+      expect(() => synth({ ...baseProps, values: { initContainers: [bad as never] } })).toThrow(
+        'every init container requires a non-empty name',
+      );
+    }
   });
 });

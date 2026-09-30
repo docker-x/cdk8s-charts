@@ -412,8 +412,8 @@ function buildWorkspacePodSpec(
   // fail at synth time with a clearer error (same rule as volumes).
   const seenContainers = new Set<string>();
   for (const c of containers) {
-    const cname = c.name as string | undefined;
-    if (!cname) {
+    const cname: unknown = c.name;
+    if (typeof cname !== 'string' || cname.trim().length === 0) {
       throw new Error('Invalid sidecar: every container requires a non-empty name');
     }
     if (seenContainers.has(cname)) {
@@ -427,20 +427,20 @@ function buildWorkspacePodSpec(
     ...(initContainers?.initContainers ?? []),
     ...(initContainers?.valuesInitContainers ?? []),
   ];
-  // Same duplicate-name rule as containers and volumes — the API server
-  // rejects a pod whose initContainers share a name.
-  const seenInit = new Set<string>();
+  // Container names must be unique across the whole pod — the API server
+  // rejects a pod whose initContainers share a name with each other or
+  // with any regular container. Reuse seenContainers so both rules hold.
   for (const c of init) {
-    const cname = c.name as string | undefined;
-    if (!cname) {
+    const cname: unknown = c.name;
+    if (typeof cname !== 'string' || cname.trim().length === 0) {
       throw new Error('Invalid init container: every init container requires a non-empty name');
     }
-    if (seenInit.has(cname)) {
+    if (seenContainers.has(cname)) {
       throw new Error(
-        `Duplicate init container name "${cname}": init containers must not collide with each other`,
+        `Duplicate container name "${cname}": init containers must not collide with the workspace container, sidecars, or each other`,
       );
     }
-    seenInit.add(cname);
+    seenContainers.add(cname);
   }
   return {
     serviceAccountName: d.saName,
