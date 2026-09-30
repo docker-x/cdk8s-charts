@@ -545,7 +545,11 @@ describe('backup script', () => {
     const script = buildBackupScript('devenv');
     expect(script).toContain('-pass file:/etc/r2-credentials/BACKUP_PASSWORD');
     expect(script).not.toContain('env:BACKUP_PASSWORD');
-    expect(script).not.toContain(' BACKUP_PASSWORD; do export');
+    // Pin the exact export list — a substring guard would miss
+    // BACKUP_PASSWORD inserted anywhere but the last position.
+    expect(script).toContain(
+      'for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
+    );
     expect(script).toContain('/etc/r2-credentials/BACKUP_PASSWORD; do');
   });
 
@@ -789,7 +793,11 @@ describe('buildRestoreScript gates', () => {
     const script = buildRestoreScript();
     expect(script).toContain('-pass file:/etc/r2-credentials/BACKUP_PASSWORD');
     expect(script).not.toContain('env:BACKUP_PASSWORD');
-    expect(script).not.toContain(' BACKUP_PASSWORD; do export');
+    // Pin the exact export list — a substring guard would miss
+    // BACKUP_PASSWORD inserted anywhere but the last position.
+    expect(script).toContain(
+      'for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
+    );
     // The credential file is still required by the preflight check.
     expect(script).toContain('/etc/r2-credentials/BACKUP_PASSWORD; do');
   });
