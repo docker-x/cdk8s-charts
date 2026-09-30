@@ -127,7 +127,7 @@ describe('OpenShiftDevenv recipe — R2 restore init container', () => {
   it('throws when a values init container has no usable name', () => {
     // Untyped Helm values can carry non-string or whitespace-only names —
     // the cast keeps the compiler out of what is runtime validation.
-    for (const bad of [{ image: 'busybox' }, { name: 42 }, { name: '  ' }]) {
+    for (const bad of [{ image: 'busybox' }, { name: 42 }, { name: '  ' }, null]) {
       expect(() => synth({ ...baseProps, values: { initContainers: [bad as never] } })).toThrow(
         'every init container requires a non-empty name',
       );
