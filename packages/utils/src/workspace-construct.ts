@@ -390,7 +390,9 @@ function assertUniqueContainerNames(
       throw new Error(invalidError);
     }
     if (seen.has(name)) {
-      throw new Error(duplicateErrorTemplate.replace('%s', name));
+      // Function replacer: the name is emitted literally — a `$` in an
+      // untyped value must not be read as a replace() substitution.
+      throw new Error(duplicateErrorTemplate.replace('%s', () => name));
     }
     seen.add(name);
   }
