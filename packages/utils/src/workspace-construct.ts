@@ -373,6 +373,31 @@ export function createWorkspaceDeployment(
   });
 }
 
+/**
+ * Validate that every entry in a pod container list carries a usable name
+ * and that names stay unique across `seen`. Entries arrive as untyped Helm
+ * values, so the element itself and `name` are checked at runtime.
+ */
+function assertUniqueContainerNames(
+  list: ReadonlyArray<Record<string, unknown> | null | undefined>,
+  seen: Set<string>,
+  invalidError: string,
+  duplicateErrorTemplate: string,
+): void {
+  for (const c of list) {
+    const name: unknown = c?.name;
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      throw new Error(invalidError);
+    }
+    if (seen.has(name)) {
+      // Function replacer: the name is emitted literally — a `$` in an
+      // untyped value must not be read as a replace() substitution.
+      throw new Error(duplicateErrorTemplate.replace('%s', () => name));
+    }
+    seen.add(name);
+  }
+}
+
 function buildWorkspacePodSpec(
   values: WorkspaceValues,
   d: DerivedWorkspaceState,
@@ -411,22 +436,25 @@ function buildWorkspacePodSpec(
   // Duplicate container names produce a pod spec the API server rejects —
   // fail at synth time with a clearer error (same rule as volumes).
   const seenContainers = new Set<string>();
-  for (const c of containers) {
-    const cname = c.name as string | undefined;
-    if (!cname) {
-      throw new Error('Invalid sidecar: every container requires a non-empty name');
-    }
-    if (seenContainers.has(cname)) {
-      throw new Error(
-        `Duplicate container name "${cname}": sidecars must not collide with the workspace container or each other`,
-      );
-    }
-    seenContainers.add(cname);
-  }
+  assertUniqueContainerNames(
+    containers,
+    seenContainers,
+    'Invalid sidecar: every container requires a non-empty name',
+    'Duplicate container name "%s": sidecars must not collide with the workspace container or each other',
+  );
   const init = [
     ...(initContainers?.initContainers ?? []),
     ...(initContainers?.valuesInitContainers ?? []),
   ];
+  // Container names must be unique across the whole pod — the API server
+  // rejects a pod whose initContainers share a name with each other or
+  // with any regular container, so both lists share seenContainers.
+  assertUniqueContainerNames(
+    init,
+    seenContainers,
+    'Invalid init container: every init container requires a non-empty name',
+    'Duplicate container name "%s": init containers must not collide with the workspace container, sidecars, or each other',
+  );
   return {
     serviceAccountName: d.saName,
     automountServiceAccountToken: values.automountServiceAccountToken,

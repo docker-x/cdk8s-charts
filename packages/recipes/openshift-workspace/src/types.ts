@@ -1,5 +1,5 @@
 import type { Values as DevcontainerValues } from '@cdk8s-charts/devcontainer';
-import type { DeepPartial, ResourceValues } from '@cdk8s-charts/utils';
+import type { DeepPartial, ResourceValues, TfDeployerConfig } from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
 // Sub-configs

@@ -46,7 +46,7 @@ describe('OpenShiftWorkspace recipe', () => {
   });
 
   it('throws on non-numeric replicas', () => {
-    expect(() => synth({ ...baseProps, values: { replicas: 'abc' } })).toThrow(
+    expect(() => synth({ ...baseProps, values: { replicas: 'abc' as unknown as number } })).toThrow(
       /non-negative integer/,
     );
   });
@@ -259,7 +259,11 @@ describe('OpenShiftWorkspace recipe', () => {
       cj.spec as {
         jobTemplate: {
           spec: {
-            template: { spec: { containers: { env: { name: string; value: string }[] }[] } };
+            template: {
+              spec: {
+                containers: { env: { name: string; value: string }[]; command: string[] }[];
+              };
+            };
           };
         };
       }
