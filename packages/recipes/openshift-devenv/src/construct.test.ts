@@ -104,4 +104,14 @@ describe('OpenShiftDevenv recipe — R2 restore init container', () => {
     );
     expect(spec.initContainers ?? []).toHaveLength(0);
   });
+
+  it('throws when a values init container collides with r2-restore', () => {
+    expect(() =>
+      synth({
+        ...baseProps,
+        ...backupProps,
+        values: { initContainers: [{ name: 'r2-restore', image: 'busybox' }] },
+      }),
+    ).toThrow('Duplicate init container name "r2-restore"');
+  });
 });

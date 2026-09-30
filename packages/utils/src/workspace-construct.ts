@@ -427,6 +427,21 @@ function buildWorkspacePodSpec(
     ...(initContainers?.initContainers ?? []),
     ...(initContainers?.valuesInitContainers ?? []),
   ];
+  // Same duplicate-name rule as containers and volumes — the API server
+  // rejects a pod whose initContainers share a name.
+  const seenInit = new Set<string>();
+  for (const c of init) {
+    const cname = c.name as string | undefined;
+    if (!cname) {
+      throw new Error('Invalid init container: every init container requires a non-empty name');
+    }
+    if (seenInit.has(cname)) {
+      throw new Error(
+        `Duplicate init container name "${cname}": init containers must not collide with each other`,
+      );
+    }
+    seenInit.add(cname);
+  }
   return {
     serviceAccountName: d.saName,
     automountServiceAccountToken: values.automountServiceAccountToken,
