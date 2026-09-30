@@ -1,0 +1,122 @@
+{"thread_id":"PRRT_kwDOR-17m856Expi","status":"done","fix_pr":140,"fixed_at":"2026-09-18T19:17:14.799Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86h0EvL","status":"done","fix_pr":141,"fixed_at":"2026-09-18T19:21:33.187Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86h0N99","status":"done","fix_pr":141,"fixed_at":"2026-09-18T19:21:21.419Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86h1E4J","status":"done","fix_pr":130,"fixed_at":"2026-09-18T13:37:47.600Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86h1F0J","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-19T02:16:47.770Z","notes":"stale: PATH exported inside remote script already"}
+{"thread_id":"PRRT_kwDOR-17m86h1OLY","status":"done","fix_pr":129,"fixed_at":"2026-09-18T13:13:24.407Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86h1QBq","status":"done","fix_pr":128,"fixed_at":"2026-09-18T12:51:57.302Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86h1QHd","status":"done","fix_pr":128,"fixed_at":"2026-09-18T12:52:15.036Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hH-zc","status":"done","fix_pr":null,"fixed_at":"2026-09-19T01:03:04.944Z","notes":"fixed: keep <= 0 rejected at synth time"}
+{"thread_id":"PRRT_kwDOR-17m86hH-zC","status":"done","fix_pr":152,"fixed_at":"2026-09-19T00:53:38.340Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hH-ze","status":"done","fix_pr":null,"fixed_at":"2026-09-19T01:03:15.861Z","notes":"fixed: buildLifecycle parameterized on homeMountPath"}
+{"thread_id":"PRRT_kwDOR-17m86hH-zl","status":"done","fix_pr":null,"fixed_at":"2026-09-19T01:03:35.058Z","notes":"fixed: enabled check at caller, no param"}
+{"thread_id":"PRRT_kwDOR-17m86hH-zL","status":"done","fix_pr":null,"fixed_at":"2026-09-19T00:54:41.353Z","notes":"fixed: fsGroup !== undefined"}
+{"thread_id":"PRRT_kwDOR-17m86hH-zY","status":"done","fix_pr":153,"fixed_at":"2026-09-19T01:02:06.903Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hH05b","status":"done","fix_pr":null,"fixed_at":"2026-09-19T00:41:34.549Z","notes":"fixed: saName honors serviceAccountName override everywhere"}
+{"thread_id":"PRRT_kwDOR-17m86hH05j","status":"done","fix_pr":137,"fixed_at":"2026-09-19T00:41:46.676Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hH05q","status":"done","fix_pr":null,"fixed_at":"2026-09-19T00:41:57.628Z","notes":"fixed: buildLifecycle parameterized on homeMountPath"}
+{"thread_id":"PRRT_kwDOR-17m86hH05T","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-19T00:21:11.357Z","notes":"stale: env is now a Record, override not duplicate"}
+{"thread_id":"PRRT_kwDOR-17m86hH05v","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-19T00:42:19.518Z","notes":"stale: keepalive only deletes terminal-phase pods"}
+{"thread_id":"PRRT_kwDOR-17m86hH05Z","status":"done","fix_pr":151,"fixed_at":"2026-09-19T00:40:15.629Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hHx-D","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T23:28:53.914Z","notes":"false positive: DNS-1123 charset is the escaping boundary"}
+{"thread_id":"PRRT_kwDOR-17m86hHx-g","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T23:30:19.229Z","notes":"false positive: r2Fields.length is total count, 0!==5"}
+{"thread_id":"PRRT_kwDOR-17m86hHx-H","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T23:29:22.912Z","notes":"stale: script moved to utils/openshift-scripts.ts"}
+{"thread_id":"PRRT_kwDOR-17m86hHx-O","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T23:29:46.212Z","notes":"stale: secrets verbs now resourceNames-scoped via managedSecrets"}
+{"thread_id":"PRRT_kwDOR-17m86hHx-T","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T23:29:59.781Z","notes":"stale+false positive: no TDZ risk, script moved to utils"}
+{"thread_id":"PRRT_kwDOR-17m86hHz61","status":"done","fix_pr":148,"fixed_at":"2026-09-18T23:49:17.896Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hHz67","status":"done","fix_pr":null,"fixed_at":"2026-09-18T23:50:27.068Z","notes":"fixed: constructor delegates to utils helpers"}
+{"thread_id":"PRRT_kwDOR-17m86hHz6m","status":"done","fix_pr":null,"fixed_at":"2026-09-18T23:30:35.563Z","notes":"fixed: construct.ts now 152 lines, logic in packages/utils"}
+{"thread_id":"PRRT_kwDOR-17m86hHz7E","status":"done","fix_pr":null,"fixed_at":"2026-09-18T23:50:40.514Z","notes":"fixed: jq guard + .[]? empty-bucket handling"}
+{"thread_id":"PRRT_kwDOR-17m86hHz7Q","status":"done","fix_pr":149,"fixed_at":"2026-09-19T00:08:55.692Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hHz7Z","status":"done","fix_pr":150,"fixed_at":"2026-09-19T00:20:10.021Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hINnt","status":"done","fix_pr":null,"fixed_at":"2026-09-19T01:04:05.193Z","notes":"fixed: charset validation + env-var passing"}
+{"thread_id":"PRRT_kwDOR-17m86hINo8","status":"done","fix_pr":154,"fixed_at":"2026-09-19T01:09:54.211Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hINob","status":"done","fix_pr":151,"fixed_at":"2026-09-19T01:05:24.661Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hINoE","status":"done","fix_pr":null,"fixed_at":"2026-09-19T01:04:17.692Z","notes":"fixed: saName honors serviceAccountName override"}
+{"thread_id":"PRRT_kwDOR-17m86hINoj","status":"done","fix_pr":152,"fixed_at":"2026-09-19T01:05:48.610Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hINoJ","status":"done","fix_pr":136,"fixed_at":"2026-09-19T01:04:31.465Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hINoO","status":"done","fix_pr":137,"fixed_at":"2026-09-19T01:04:44.797Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hINoq","status":"done","fix_pr":153,"fixed_at":"2026-09-19T01:06:02.958Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hINox","status":"done","fix_pr":132,"fixed_at":"2026-09-19T01:06:15.691Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hINoY","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-19T01:05:06.791Z","notes":"by design: SCC injects fsGroup on OpenShift"}
+{"thread_id":"PRRT_kwDOR-17m86hINp_","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-19T02:10:11.077Z","notes":"stale: fsGroup!==undefined guard already in place"}
+{"thread_id":"PRRT_kwDOR-17m86hINp4","status":"done","fix_pr":156,"fixed_at":"2026-09-19T02:09:07.804Z","notes":"chart-managed env names rejected on both paths"}
+{"thread_id":"PRRT_kwDOR-17m86hINpb","status":"done","fix_pr":155,"fixed_at":"2026-09-19T01:39:41.283Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hINpC","status":"done","fix_pr":null,"fixed_at":"2026-09-19T01:11:00.613Z","notes":"fixed: keep validation at synth time"}
+{"thread_id":"PRRT_kwDOR-17m86hINpp","status":"done","fix_pr":null,"fixed_at":"2026-09-19T01:40:47.434Z","notes":"fixed: buildLifecycle parameterized on homeMountPath"}
+{"thread_id":"PRRT_kwDOR-17m86hINpz","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-19T01:41:01.015Z","notes":"stale: no pod deletion at all post-#155"}
+{"thread_id":"PRRT_kwDOR-17m86hINqB","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-19T02:10:22.514Z","notes":"stale: DEVCONTAINER=true now injected by buildWorkspaceEnv"}
+{"thread_id":"PRRT_kwDOR-17m86hINqK","status":"done","fix_pr":157,"fixed_at":"2026-09-19T02:14:18.763Z","notes":"doc fix: preview port added to intro"}
+{"thread_id":"PRRT_kwDOR-17m86hINqV","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-19T02:14:30.910Z","notes":"stale: caller already gates on tfDeployer.enabled"}
+{"thread_id":"PRRT_kwDOR-17m86hO3k4","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T13:39:54.796Z","notes":"stale: command now conditional via optionalCommand"}
+{"thread_id":"PRRT_kwDOR-17m86hO3kq","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T13:39:41.468Z","notes":"stale: optionalCommand flag now guards command assignment"}
+{"thread_id":"PRRT_kwDOR-17m86hO3lC","status":"done","fix_pr":131,"fixed_at":"2026-09-18T13:50:03.820Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hO3lK","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T14:18:42.130Z","notes":"stale: constant removed in refactor"}
+{"thread_id":"PRRT_kwDOR-17m86hO4jh","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T15:39:19.401Z","notes":"stale: optionalCommand guard"}
+{"thread_id":"PRRT_kwDOR-17m86hO4jn","status":"done","fix_pr":135,"fixed_at":"2026-09-18T15:49:52.644Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hO4js","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T15:50:13.580Z","notes":"stale: strict undefined check"}
+{"thread_id":"PRRT_kwDOR-17m86hO4R4","status":"done","fix_pr":132,"fixed_at":"2026-09-18T14:44:33.335Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hO4SD","status":"done","fix_pr":null,"fixed_at":"2026-09-18T15:02:31.967Z","notes":"already fixed by refactor: helpers moved to utils, file now 140 lines"}
+{"thread_id":"PRRT_kwDOR-17m86hO4SF","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T15:02:46.726Z","notes":"stale: optionalCommand guard"}
+{"thread_id":"PRRT_kwDOR-17m86hO4SK","status":"done","fix_pr":133,"fixed_at":"2026-09-18T15:32:04.956Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hO4SO","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T15:32:20.325Z","notes":"stale: optionalCommand guard"}
+{"thread_id":"PRRT_kwDOR-17m86hO4SS","status":"done","fix_pr":131,"fixed_at":"2026-09-18T15:33:35.060Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hO4SV","status":"done","fix_pr":134,"fixed_at":"2026-09-18T15:39:05.949Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hO5Fi","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T17:22:55.986Z","notes":"stale: homeMountPath threaded through buildLifecycle"}
+{"thread_id":"PRRT_kwDOR-17m86hO5FJ","status":"done","fix_pr":136,"fixed_at":"2026-09-18T16:58:21.699Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hO5Fn","status":"done","fix_pr":138,"fixed_at":"2026-09-18T17:45:45.024Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hO5FS","status":"done","fix_pr":137,"fixed_at":"2026-09-18T17:21:21.219Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hO5Fu","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T17:46:12.361Z","notes":"keep validated positive at synth (openshift-rbac.ts:156)"}
+{"thread_id":"PRRT_kwDOR-17m86hO5FY","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T17:21:40.730Z","notes":"stale: saName honors serviceAccountName"}
+{"thread_id":"PRRT_kwDOR-17m86hO5Fz","status":"done","fix_pr":139,"fixed_at":"2026-09-18T18:16:20.583Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hPaEd","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T23:27:59.319Z","notes":"stale: mount logic moved to utils, no redundant fallback"}
+{"thread_id":"PRRT_kwDOR-17m86hPaES","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T23:27:21.400Z","notes":"stale: lifecycle parameterized on resolved homeMountPath"}
+{"thread_id":"PRRT_kwDOR-17m86hPaEY","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T23:27:34.556Z","notes":"duplicate of resolved #66 thread: image ENTRYPOINT is deployed behavior"}
+{"thread_id":"PRRT_kwDOR-17m86hPIxM","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T13:39:01.645Z","notes":"stale: construct.ts refactored, no command field at line 305"}
+{"thread_id":"PRRT_kwDOR-17m86hPPjI","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T23:28:14.870Z","notes":"doc fixed in #131; behavior intentional per #65/#66 adjudication"}
+{"thread_id":"PRRT_kwDOR-17m86hPQjs","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T23:28:28.476Z","notes":"stale: mount logic moved to utils"}
+{"thread_id":"PRRT_kwDOR-17m86hPvr0","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T20:10:51.184Z","notes":"false positive: stringData == data in etcd"}
+{"thread_id":"PRRT_kwDOR-17m86hPvr3","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T20:11:49.284Z","notes":"stale: --fail-with-body added later"}
+{"thread_id":"PRRT_kwDOR-17m86hPvrq","status":"done","fix_pr":142,"fixed_at":"2026-09-18T20:10:26.804Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hPvsD","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T20:12:00.399Z","notes":"stale: --fail-with-body"}
+{"thread_id":"PRRT_kwDOR-17m86hPvsQ","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T20:12:11.400Z","notes":"stale: env validation exists at script top"}
+{"thread_id":"PRRT_kwDOR-17m86hPWwR","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T23:27:08.695Z","notes":"stale: lifecycle parameterized on resolved homeMountPath"}
+{"thread_id":"PRRT_kwDOR-17m86hPx04","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T21:54:42.813Z","notes":"breaking-change window passed; /env is the deployed default"}
+{"thread_id":"PRRT_kwDOR-17m86hPx08","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T21:55:31.312Z","notes":"stale: POD_NAME downward API + per-pod name suffix for replicas>1"}
+{"thread_id":"PRRT_kwDOR-17m86hPx1A","status":"done","fix_pr":145,"fixed_at":"2026-09-18T22:16:49.505Z","notes":"runnerSha256 checksum pin; JWT covered by set -eu"}
+{"thread_id":"PRRT_kwDOR-17m86hPx1F","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T22:18:22.467Z","notes":"breaking-change window passed; image ENTRYPOINT is the deployed behavior"}
+{"thread_id":"PRRT_kwDOR-17m86hPx1H","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T22:18:58.722Z","notes":"stale: Recreate strategy already set"}
+{"thread_id":"PRRT_kwDOR-17m86hPx1J","status":"done","fix_pr":146,"fixed_at":"2026-09-18T22:41:05.075Z","notes":"constructor split into per-resource private methods"}
+{"thread_id":"PRRT_kwDOR-17m86hPx1Q","status":"done","fix_pr":147,"fixed_at":"2026-09-18T23:26:15.237Z","notes":"githubRepo prop: repo-scoped registration + url"}
+{"thread_id":"PRRT_kwDOR-17m86hPxaC","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T21:52:37.798Z","notes":"stale: SA created by default since refactor"}
+{"thread_id":"PRRT_kwDOR-17m86hPxaK","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T21:53:49.135Z","notes":"stale: lifecycle parameterized on resolved homeMountPath"}
+{"thread_id":"PRRT_kwDOR-17m86hPxZg","status":"done","fix_pr":143,"fixed_at":"2026-09-18T20:39:48.599Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86hPxZl","status":"done","fix_pr":144,"fixed_at":"2026-09-18T21:48:07.922Z","notes":"values.labels now merges onto resource+pod labels; selector keys filtered"}
+{"thread_id":"PRRT_kwDOR-17m86hPxZs","status":"done","fix_pr":142,"fixed_at":"2026-09-18T21:49:26.731Z","notes":"secretEnv emits Secret + envFrom, validated, tested"}
+{"thread_id":"PRRT_kwDOR-17m86hPxZw","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T21:51:31.246Z","notes":"stale: replicas>1 handled — per-pod runner name/workdir+flock+ephemeral+Recreate+affinity"}
+{"thread_id":"PRRT_kwDOR-17m86i-Bpj","status":"done","fix_pr":null,"fixed_at":"2026-09-18T12:21:10.496Z","notes":"stale — chmod-or-wipe fallback handles foreign-uid trees; g+rwX suggestion wrong (chmod needs ownership)"}
+{"thread_id":"PRRT_kwDOR-17m86jA5bb","status":"done","fix_pr":127,"fixed_at":"2026-09-18T12:20:37.052Z","notes":"pipefail removed; marker-flag pattern on all seed pipelines"}
+{"thread_id":"PRRT_kwDOR-17m86jaBh0","status":"done","fix_pr":117,"fixed_at":"2026-09-17T20:57:37.452Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86jaIKO","status":"done","fix_pr":122,"fixed_at":"2026-09-18T10:32:19.178Z","notes":"sed dependency removed entirely — pure-shell filter + mktemp/noclobber atomic rewrite"}
+{"thread_id":"PRRT_kwDOR-17m86jAt1h","status":"done","fix_pr":null,"fixed_at":"2026-09-18T11:57:42.098Z","notes":"already fixed — independent -d checks for store and var"}
+{"thread_id":"PRRT_kwDOR-17m86jB2Kl","status":"done","fix_pr":126,"fixed_at":"2026-09-18T11:57:21.922Z","notes":"same fix — bounded flock -n polling on seed lock"}
+{"thread_id":"PRRT_kwDOR-17m86jBp_E","status":"done","fix_pr":126,"fixed_at":"2026-09-18T11:55:48.437Z","notes":"bounded flock -n polling at both lock sites; 900s bound + final attempt"}
+{"thread_id":"PRRT_kwDOR-17m86jCK2W","status":"done","fix_pr":null,"fixed_at":"2026-09-18T11:32:28.121Z","notes":"stale — parens removed; find uses ! -type l now"}
+{"thread_id":"PRRT_kwDOR-17m86jCMnZ","status":"done","fix_pr":null,"fixed_at":"2026-09-18T11:32:39.796Z","notes":"stale — parens removed; find uses ! -type l now"}
+{"thread_id":"PRRT_kwDOR-17m86jCPwm","status":"done","fix_pr":null,"fixed_at":"2026-09-18T11:32:50.972Z","notes":"stale — parens removed; find uses ! -type l now"}
+{"thread_id":"PRRT_kwDOR-17m86jLJGk","status":"done","fix_pr":125,"fixed_at":"2026-09-18T11:31:09.324Z","notes":"env check added; sed/bash half was already guarded"}
+{"thread_id":"PRRT_kwDOR-17m86jLMiK","status":"done","fix_pr":null,"fixed_at":"2026-09-18T11:31:34.031Z","notes":"already covered — test asserts rendered entrypoint.sh rewrite + script globs"}
+{"thread_id":"PRRT_kwDOR-17m86jLRK3","status":"done","fix_pr":125,"fixed_at":"2026-09-18T11:31:56.998Z","notes":"stale — full sed/bash/env guard now wraps the rewrite loop"}
+{"thread_id":"PRRT_kwDOR-17m86jLRK7","status":"done","fix_pr":null,"fixed_at":"2026-09-18T11:32:07.249Z","notes":"stale — entrypoint.sh content test exists (construct.test.ts:45)"}
+{"thread_id":"PRRT_kwDOR-17m86jR8T4","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T11:24:38.119Z","notes":"false positive — nix auto-creates ~/.nix-profile symlink to modern profile dir; verified empirically"}
+{"thread_id":"PRRT_kwDOR-17m86jRrpZ","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-18T11:25:30.261Z","notes":"deferred — needs entrypoint execution harness; tracked in bd (P3)"}
+{"thread_id":"PRRT_kwDOR-17m86jS-tb","status":"done","fix_pr":123,"fixed_at":"2026-09-18T10:55:38.925Z","notes":"fixed — ldd grep replaced by nixpkgs#glibc out-path resolution (also fixed lib/ vs lib64/ and host-ldd poisoning)"}
+{"thread_id":"PRRT_kwDOR-17m86jS-tk","status":"done","fix_pr":null,"fixed_at":"2026-09-18T10:56:49.973Z","notes":"already fixed — flock 9 on /runner serializes shared-PVC init (added after #107 merged)"}
+{"thread_id":"PRRT_kwDOR-17m86jS-to","status":"done","fix_pr":124,"fixed_at":"2026-09-18T11:22:17.639Z","notes":"install failures now fatal with real error; repair warns with captured stderr; jq bootstrap via nix build"}
+{"thread_id":"PRRT_kwDOR-17m86jS2Sa","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-19T02:15:54.047Z","notes":"stale: :+ expansion already guards empty MUSL_OUT"}
+{"thread_id":"PRRT_kwDOR-17m86jS2SI","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-19T02:15:32.494Z","notes":"stale: grep pattern removed in refactor"}
+{"thread_id":"PRRT_kwDOR-17m86jS2SU","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-19T02:15:45.032Z","notes":"stale: guards already present"}
+{"thread_id":"PRRT_kwDOR-17m86jS4jn","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-19T02:16:13.256Z","notes":"stale: missing tools now fatal with explicit errors"}
+{"thread_id":"PRRT_kwDOR-17m86jS4jt","status":"wontfix","fix_pr":null,"fixed_at":"2026-09-19T02:16:23.158Z","notes":"stale: setup serialized under flock"}
+{"thread_id":"PRRT_kwDOR-17m86jUsMN","status":"done","fix_pr":118,"fixed_at":"2026-09-17T22:04:11.284Z","notes":null}
+{"thread_id":"PRRT_kwDOR-17m86jUsMW","status":"done","fix_pr":118,"fixed_at":"2026-09-17T22:04:11.368Z","notes":null}

@@ -1,0 +1,15 @@
+{
+  "generated_at": "2026-09-29T09:19:44.444Z",
+  "open_count": 9,
+  "by_area": {
+    "packages/utils": 7,
+    "packages/charts": 1,
+    "packages/recipes": 1
+  },
+  "by_author": {
+    "codeant-ai": 8,
+    "amazon-q-developer": 1
+  },
+  "duplicate_fingerprints": [],
+  "oldest_open": "2026-09-29T09:18:53.421Z"
+}
