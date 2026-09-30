@@ -535,6 +535,24 @@ describe('backup script', () => {
     expect(rmIdx).toBeLessThan(script.indexOf('Fatal: streaming backup failed'));
   });
 
+  it('encrypts with -pass file: — symmetric with restore, and out of the env', () => {
+    // `-pass env:` would feed openssl the full credential bytes (with any
+    // embedded newlines) while restore's `-pass file:` reads only the
+    // first line — a multiline password would write backups that cannot
+    // be restored. Both ends must use `file:`. It also keeps the secret
+    // out of openssl's environment (/proc/*/environ), so the export
+    // loop must skip BACKUP_PASSWORD while still preflighting the file.
+    const script = buildBackupScript('devenv');
+    expect(script).toContain('-pass file:/etc/r2-credentials/BACKUP_PASSWORD');
+    expect(script).not.toContain('env:BACKUP_PASSWORD');
+    // Pin the exact export list — a substring guard would miss
+    // BACKUP_PASSWORD inserted anywhere but the last position.
+    expect(script).toContain(
+      'for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
+    );
+    expect(script).toContain('/etc/r2-credentials/BACKUP_PASSWORD; do');
+  });
+
   it('reads pipeline rc markers without tripping -e when a marker is missing', () => {
     // `x=$(cat f 2>/dev/null)` fails the assignment itself under sh -e
     // when f is missing — the fail-closed default and the partial-object
@@ -750,11 +768,38 @@ describe('buildRestoreScript gates', () => {
     expect(fatalIdx).toBeGreaterThan(guardIdx);
     expect(script).toContain('extract_rc=${pipe_rc}');
     expect(script).toContain('download_rc=${dl_rc} decrypt_rc=${dec_rc}');
+    // The corrupted partial stage must be dropped — a leftover is dead
+    // weight on the PVC and nothing in a failed stream is trustworthy.
+    // The earlier `rm -rf "${STAGE}"; mkdir -p` line is a substring
+    // match too, so anchor on the line that precedes `exit 1`.
+    const stageRmIdx = script.indexOf('rm -rf "${STAGE}"\n  exit 1', guardIdx);
+    expect(stageRmIdx).toBeGreaterThan(fatalIdx);
+    // Restored modes can leave non-writable dirs — chmod before rm -rf.
+    const chmodIdx = script.indexOf('chmod -R u+rwX "${STAGE}"', guardIdx);
+    expect(chmodIdx).toBeGreaterThan(fatalIdx);
+    expect(chmodIdx).toBeLessThan(stageRmIdx);
     // The failure branch must exit before the sweep and token write.
     const exitIdx = script.indexOf('exit 1', guardIdx);
     expect(exitIdx).toBeGreaterThan(fatalIdx);
     expect(exitIdx).toBeLessThan(script.indexOf('for item in "${STAGE}"/'));
     expect(exitIdx).toBeLessThan(script.indexOf('> "${TOKEN_FILE}"'));
+  });
+
+  it('keeps the decrypt password out of the process environment', () => {
+    // `-pass env:` parks the secret in openssl's environment — readable
+    // via /proc/*/environ by any same-uid process for the whole run.
+    // `-pass file:` reads the credentials mount directly, and the export
+    // loop must not put it in the environment either.
+    const script = buildRestoreScript();
+    expect(script).toContain('-pass file:/etc/r2-credentials/BACKUP_PASSWORD');
+    expect(script).not.toContain('env:BACKUP_PASSWORD');
+    // Pin the exact export list — a substring guard would miss
+    // BACKUP_PASSWORD inserted anywhere but the last position.
+    expect(script).toContain(
+      'for f in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET; do export "$f=$(cat /etc/r2-credentials/$f)"; done',
+    );
+    // The credential file is still required by the preflight check.
+    expect(script).toContain('/etc/r2-credentials/BACKUP_PASSWORD; do');
   });
 
   it('fails closed when the backup listing call fails', () => {
