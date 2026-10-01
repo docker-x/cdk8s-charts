@@ -92,7 +92,9 @@ export class Langfuse extends HelmConstruct<LangfuseValues> {
       props.values,
       {
         repo: props.repo ?? CHART_REPO,
-        version: props.version ?? DEFAULT_VERSION,
+        // Pin the version only for the built-in chart — a caller-supplied
+        // chart may not publish this tag.
+        version: props.version ?? (props.chart ? undefined : DEFAULT_VERSION),
       },
     );
 
