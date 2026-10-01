@@ -205,9 +205,9 @@ describe('OpenShiftWorkspace recipe', () => {
       };
     };
     const c = spec.template.spec.containers[0];
-    expect(c.livenessProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
-    expect(c.readinessProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
-    expect(c.startupProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
+    expect(c.livenessProbe?.httpGet).toEqual({ path: '/healthz', port: 4180 });
+    expect(c.readinessProbe?.httpGet).toEqual({ path: '/healthz', port: 4180 });
+    expect(c.startupProbe?.httpGet).toEqual({ path: '/healthz', port: 4180 });
   });
 
   it('omits probes when paseoHealthCheck is disabled', () => {

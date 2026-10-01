@@ -13,6 +13,7 @@ import {
 // ---------------------------------------------------------------------------
 
 export const OAUTH_PROXY_IMAGE = 'quay.io/openshift/origin-oauth-proxy:4.18';
+export const OAUTH_PROXY_PORT = 4180;
 export const OC_CLI_IMAGE = 'quay.io/openshift/origin-cli:4.18';
 // Debian-based aws-cli: carries aws + openssl + tar + gzip in one image.
 // The workspace image's `aws` lives under the PVC's .devenv/profile/bin,
@@ -398,7 +399,7 @@ export function buildOauthProxySidecar(
       capabilities: { drop: ['ALL'] },
     },
     args: [
-      '--http-address=0.0.0.0:4180',
+      `--http-address=0.0.0.0:${OAUTH_PROXY_PORT}`,
       '--https-address=',
       `--upstream=http://127.0.0.1:${paseoPort}`,
       `--openshift-sar={"namespace":"${namespace}","resource":"pods","verb":"get"}`,
@@ -412,7 +413,7 @@ export function buildOauthProxySidecar(
       `--client-id=system:serviceaccount:${namespace}:${saName}`,
       '--client-secret-file=/var/run/secrets/openshift/serviceaccount/token',
     ],
-    ports: [{ containerPort: 4180, name: 'oauth-proxy' }],
+    ports: [{ containerPort: OAUTH_PROXY_PORT, name: 'oauth-proxy' }],
     volumeMounts: [
       {
         name: 'sa-token',
@@ -430,17 +431,20 @@ export function buildOauthProxySidecar(
 
 /**
  * Default kubelet probes on the Paseo daemon's /healthz endpoint. The
- * oauth-proxy sidecar skips auth on that path and proxies it straight to
- * the daemon, so a hung daemon turns the Route into a persistent 502 —
- * without a liveness probe nothing ever restarts it. httpGet (not
- * tcpSocket) is required: a wedged daemon still accepts TCP connections.
+ * daemon binds 127.0.0.1 (Route → oauth-proxy → loopback), so kubelet
+ * probes — which always dial the pod IP — can never reach it directly.
+ * They go through the oauth-proxy sidecar instead: it listens on the pod
+ * IP and skips auth on /healthz, proxying the request straight to the
+ * daemon. This also matches what clients hit, so a wedged daemon (or a
+ * broken proxy hop) fails the probe, while httpGet (not tcpSocket) still
+ * detects a daemon that accepts TCP but never answers.
  */
-export function buildPaseoHealthProbes(paseoPort = 6767): {
+export function buildPaseoHealthProbes(proxyPort = OAUTH_PROXY_PORT): {
   startupProbe: Probe;
   livenessProbe: Probe;
   readinessProbe: Probe;
 } {
-  const httpGet = { path: '/healthz', port: paseoPort };
+  const httpGet = { path: '/healthz', port: proxyPort };
   return {
     // devenv up + daemon start can take minutes on a cold pod — the
     // startup budget must cover that without a liveness kill.
@@ -699,7 +703,7 @@ export function buildWorkspaceRecipeProps(
     initContainers,
     lifecycle,
     ...opts.probes,
-    extraServicePorts: [{ name: 'oauth-proxy', port: 4180, targetPort: 'oauth-proxy' }],
+    extraServicePorts: [{ name: 'oauth-proxy', port: OAUTH_PROXY_PORT, targetPort: 'oauth-proxy' }],
     values: buildWorkspaceRecipeValues(name, namespace, appsDomain, props),
   };
 }
