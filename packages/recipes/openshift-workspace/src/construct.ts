@@ -4,6 +4,7 @@ import type {
   ResolvedBackup,
   ResolvedKeepalive,
   ResolvedPaseoAutoResume,
+  ResolvedPaseoHealthCheck,
   ResolvedTfDeployer,
 } from '@cdk8s-charts/utils';
 import {
@@ -11,6 +12,7 @@ import {
   buildExtraVolumes,
   buildLifecycle,
   buildOauthProxySidecar,
+  buildPaseoHealthProbes,
   buildPodAnnotations,
   buildWorkspaceEnv,
   buildWorkspaceRecipeProps,
@@ -51,6 +53,10 @@ export class OpenShiftWorkspace extends Chart {
       ...props.keepalive,
     };
     const paseoAutoResume: ResolvedPaseoAutoResume = { enabled: true, ...props.paseoAutoResume };
+    const paseoHealthCheck: ResolvedPaseoHealthCheck = {
+      enabled: true,
+      ...props.paseoHealthCheck,
+    };
     const tfDeployer: ResolvedTfDeployer = { enabled: true, ...props.tfDeployer };
     const backup: ResolvedBackup = { schedule: '0 2 * * *', keep: 3, ...props.backup };
 
@@ -97,6 +103,7 @@ export class OpenShiftWorkspace extends Chart {
         extraVolumeMounts,
         oauthProxySidecar,
         lifecycle,
+        probes: paseoHealthCheck.enabled ? buildPaseoHealthProbes() : undefined,
       }) as unknown as ConstructorParameters<typeof Devcontainer>[2],
     );
     const routes = createRoutes(

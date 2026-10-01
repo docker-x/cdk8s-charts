@@ -1,6 +1,7 @@
 import { ApiObject } from 'cdk8s';
 import type { Construct } from 'constructs';
 import { deepMerge } from './helm-construct';
+import type { Probe } from './k8s-types';
 import type { PodLifecycle } from './openshift-recipe';
 import { validateHomeMountPath } from './openshift-recipe';
 
@@ -41,6 +42,9 @@ export interface WorkspaceValues {
   command?: string[];
   initContainers?: Array<Record<string, unknown>>;
   lifecycle?: PodLifecycle;
+  livenessProbe?: Probe;
+  readinessProbe?: Probe;
+  startupProbe?: Probe;
   resources?: Record<string, unknown>;
   sshPort?: number;
   previewPort?: number;
@@ -373,6 +377,92 @@ export function createWorkspaceDeployment(
   });
 }
 
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Validate a merged probe object before it lands in the pod spec. Probes
+ * reach the pod spec as untyped Helm values (typed props deep-merged with
+ * raw `values` overrides), so the Kubernetes constraints — exactly one of
+ * exec/httpGet/tcpSocket/grpc, a port on httpGet/tcpSocket/grpc handlers, a
+ * non-empty exec command, and successThreshold = 1 on liveness and startup
+ * probes — are enforced here at synth time rather than by the `Probe` type.
+ * `undefined`/`null` is legal and simply omits the probe (a `null` values
+ * override is the way to drop a recipe-provided default).
+ */
+export function assertValidProbe(probe: unknown, field: string): void {
+  if (!isPlainObject(probe)) {
+    throw new Error(`Invalid ${field}: must be a probe object`);
+  }
+  const handlers = [probe.exec, probe.httpGet, probe.tcpSocket, probe.grpc].filter(
+    (h) => h !== undefined && h !== null,
+  );
+  if (handlers.length !== 1) {
+    throw new Error(
+      `Invalid ${field}: exactly one of exec/httpGet/tcpSocket/grpc must be set, got ${handlers.length}`,
+    );
+  }
+  if (
+    probe.exec != null &&
+    (!isPlainObject(probe.exec) ||
+      !Array.isArray(probe.exec.command) ||
+      probe.exec.command.length === 0)
+  ) {
+    throw new Error(`Invalid ${field}: exec.command must be a non-empty array`);
+  }
+  if (
+    probe.httpGet != null &&
+    (!isPlainObject(probe.httpGet) || probe.httpGet.port === undefined)
+  ) {
+    throw new Error(`Invalid ${field}: httpGet.port is required`);
+  }
+  if (
+    probe.tcpSocket != null &&
+    (!isPlainObject(probe.tcpSocket) || probe.tcpSocket.port === undefined)
+  ) {
+    throw new Error(`Invalid ${field}: tcpSocket.port is required`);
+  }
+  if (probe.grpc != null && (!isPlainObject(probe.grpc) || probe.grpc.port === undefined)) {
+    throw new Error(`Invalid ${field}: grpc.port is required`);
+  }
+  if (
+    (field === 'livenessProbe' || field === 'startupProbe') &&
+    probe.successThreshold !== undefined &&
+    probe.successThreshold !== 1
+  ) {
+    throw new Error(`Invalid ${field}: successThreshold must be 1 for liveness and startup probes`);
+  }
+}
+
+/**
+ * Drop computed probe handlers a `values` override doesn't itself set. A
+ * probe override that switches handlers (e.g. `{ exec: {...} }` over a
+ * computed `httpGet` probe) must not keep the computed handler — Kubernetes
+ * permits exactly one of exec/httpGet/tcpSocket/grpc per probe. Handlers the
+ * override defines stay (merged recursively); an override carrying two
+ * handlers keeps both so assertValidProbe still rejects it.
+ */
+function reconcileProbeHandlers(merged: unknown, override: unknown): unknown {
+  if (!isPlainObject(merged) || !isPlainObject(override)) return merged;
+  if (
+    override.exec == null &&
+    override.httpGet == null &&
+    override.tcpSocket == null &&
+    override.grpc == null
+  ) {
+    return merged;
+  }
+  const { exec, httpGet, tcpSocket, grpc, ...rest } = merged;
+  return {
+    ...rest,
+    ...(override.exec != null ? { exec } : {}),
+    ...(override.httpGet != null ? { httpGet } : {}),
+    ...(override.tcpSocket != null ? { tcpSocket } : {}),
+    ...(override.grpc != null ? { grpc } : {}),
+  };
+}
+
 /**
  * Validate that every entry in a pod container list carries a usable name
  * and that names stay unique across `seen`. Entries arrive as untyped Helm
@@ -428,6 +518,21 @@ function buildWorkspacePodSpec(
     containerObj.command = container.command ?? values.command;
   }
   if (values.lifecycle) containerObj.lifecycle = values.lifecycle;
+  // A malformed probe (no handler, two handlers, missing port) passes a
+  // truthiness check but is rejected by the API server — validate at synth.
+  // `null` (a values override) is the explicit "drop this probe" signal.
+  if (values.livenessProbe != null) {
+    assertValidProbe(values.livenessProbe, 'livenessProbe');
+    containerObj.livenessProbe = values.livenessProbe;
+  }
+  if (values.readinessProbe != null) {
+    assertValidProbe(values.readinessProbe, 'readinessProbe');
+    containerObj.readinessProbe = values.readinessProbe;
+  }
+  if (values.startupProbe != null) {
+    assertValidProbe(values.startupProbe, 'startupProbe');
+    containerObj.startupProbe = values.startupProbe;
+  }
   const containers = [
     containerObj,
     ...(sidecars.sidecars ?? []),
@@ -524,6 +629,9 @@ export interface WorkspaceValuesProps {
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
   lifecycle?: PodLifecycle;
+  livenessProbe?: Probe;
+  readinessProbe?: Probe;
+  startupProbe?: Probe;
   extraServicePorts?: Array<{ port: number; targetPort: string | number; name: string }>;
   serviceAccountName?: string;
   serviceAccountAnnotations?: Record<string, string>;
@@ -563,6 +671,9 @@ export function buildWorkspaceComputedValues(
     labels: props.labels,
     annotations: props.annotations,
     lifecycle: props.lifecycle,
+    livenessProbe: props.livenessProbe,
+    readinessProbe: props.readinessProbe,
+    startupProbe: props.startupProbe,
     extraServicePorts: props.extraServicePorts,
     serviceAccountName: props.serviceAccountName ?? `${name}-sa`,
     serviceAccountAnnotations: props.serviceAccountAnnotations,
@@ -577,7 +688,20 @@ export function buildWorkspaceComputedValues(
       Object.assign(computed, { [key]: propValue ?? value });
     }
   }
-  return props.values ? deepMerge(computed, props.values) : computed;
+  const merged = props.values ? deepMerge(computed, props.values) : computed;
+  // A values override that switches probe handlers must drop the computed
+  // handler — deepMerge would otherwise keep both and Kubernetes permits
+  // exactly one of exec/httpGet/tcpSocket/grpc per probe. Overrides that
+  // keep (or omit) the handler still merge recursively.
+  if (props.values) {
+    merged.livenessProbe = reconcileProbeHandlers(merged.livenessProbe, props.values.livenessProbe);
+    merged.readinessProbe = reconcileProbeHandlers(
+      merged.readinessProbe,
+      props.values.readinessProbe,
+    );
+    merged.startupProbe = reconcileProbeHandlers(merged.startupProbe, props.values.startupProbe);
+  }
+  return merged;
 }
 
 // ---------------------------------------------------------------------------

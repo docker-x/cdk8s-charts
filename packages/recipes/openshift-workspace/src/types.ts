@@ -1,5 +1,10 @@
 import type { Values as DevcontainerValues } from '@cdk8s-charts/devcontainer';
-import type { DeepPartial, ResourceValues, TfDeployerConfig } from '@cdk8s-charts/utils';
+import type {
+  DeepPartial,
+  PaseoHealthCheckConfig,
+  ResourceValues,
+  TfDeployerConfig,
+} from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
 // Sub-configs
@@ -39,7 +44,7 @@ export interface PaseoAutoResumeConfig {
   enabled?: boolean;
 }
 
-export type { TfDeployerConfig } from '@cdk8s-charts/utils';
+export type { PaseoHealthCheckConfig, TfDeployerConfig } from '@cdk8s-charts/utils';
 
 // ---------------------------------------------------------------------------
 // Construct props & exports
@@ -79,6 +84,17 @@ export interface OpenShiftWorkspaceProps {
   keepalive?: KeepaliveConfig;
   /** Paseo auto-resume hook. */
   paseoAutoResume?: PaseoAutoResumeConfig;
+  /**
+   * Kubelet health probes on the Paseo daemon's /healthz endpoint
+   * (default: enabled). A hung daemon otherwise 502s the route forever —
+   * nothing restarts it.
+   *
+   * `enabled: false` suppresses only these recipe-provided probe defaults.
+   * Explicit `values.livenessProbe` / `readinessProbe` / `startupProbe`
+   * overrides are user pod config and still apply — to drop a single probe
+   * while keeping the rest, override it with `null` in values.
+   */
+  paseoHealthCheck?: PaseoHealthCheckConfig;
   /** TF deployer SA + RBAC. */
   tfDeployer?: TfDeployerConfig;
   /**
