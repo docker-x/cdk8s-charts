@@ -14,7 +14,7 @@ const PROVISION_KEYS_SCRIPT = readFileSync(
   'utf8',
 );
 
-const DEFAULT_VERSION = '1.100.1';
+const DEFAULT_VERSION = '1.103.0';
 
 export class Litellm extends HelmConstruct<LitellmValues> {
   public readonly exports: LitellmExports;

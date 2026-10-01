@@ -432,6 +432,12 @@ export interface LitellmDbSecret {
   readReplicaEndpointKey?: string;
 }
 
+export interface LitellmDbConnectionPool {
+  enabled?: boolean;
+  maxDbConnections?: number;
+  maxClientConn?: number;
+}
+
 export interface LitellmDbConfig {
   useExisting?: boolean;
   endpoint?: string;
@@ -439,6 +445,8 @@ export interface LitellmDbConfig {
   url?: string;
   /** Read-replica URL for routing read-only queries. */
   readReplicaUrl?: string;
+  /** In-container PgBouncer transaction pool shared by all proxy workers (added in chart 1.103.0). */
+  connectionPool?: LitellmDbConnectionPool;
   secret?: LitellmDbSecret;
   useStackgresOperator?: boolean;
   deployStandalone?: boolean;
@@ -478,6 +486,19 @@ export interface LitellmKedaTrigger {
   metadata: Record<string, string>;
 }
 
+/**
+ * First-class Prometheus triggers on the proxy's own request/token counters,
+ * appended to `triggers` (added in chart 1.103.0).
+ * `serverAddress` is required once either target is set.
+ */
+export interface LitellmKedaPrometheus {
+  serverAddress?: string;
+  /** Per-second request load one replica should carry (plain float, no SI suffixes). */
+  requestsPerSecond?: number | string;
+  /** Per-second token load one replica should carry (plain float, no SI suffixes). */
+  tokensPerSecond?: number | string;
+}
+
 export interface LitellmKedaConfig {
   enabled?: boolean;
   minReplicas?: number;
@@ -488,6 +509,7 @@ export interface LitellmKedaConfig {
   restoreToOriginalReplicaCount?: boolean;
   scaledObject?: { annotations?: Record<string, string> };
   triggers?: LitellmKedaTrigger[];
+  prometheus?: LitellmKedaPrometheus;
   behavior?: Record<string, unknown>;
 }
 
@@ -523,6 +545,61 @@ export interface LitellmServiceConfig {
   type?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
   port?: number;
   loadBalancerClass?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Metrics server & collector sidecar (added in chart 1.103.0)
+// ---------------------------------------------------------------------------
+
+/**
+ * Separate process serving Prometheus /metrics (PROMETHEUS_METRICS_PORT) so a
+ * scrape never runs on an inference worker. Adds a `metrics` container port and
+ * a dedicated ClusterIP `<release>-metrics` Service. The port has no
+ * virtual-key auth: keep it off public ingress. Needs proxy image v1.101.0+.
+ */
+export interface LitellmMetricsServer {
+  enabled?: boolean;
+  port?: number;
+}
+
+/**
+ * Opt-in sidecar running the post-response spend pipeline so the proxy's
+ * uvicorn workers only serialise a compact typed event. Same image and tag as
+ * the proxy, fed over loopback (unix socket on a shared emptyDir or
+ * 127.0.0.1 TCP). Delivery is at-most-once inside the pod.
+ */
+export interface LitellmCollector {
+  enabled?: boolean;
+  /** unix:///<dir>/<file>.sock or tcp://127.0.0.1:<port> */
+  address?: string;
+  /** Events each uvicorn worker buffers while the sidecar is slow or restarting. */
+  bufferSize?: number;
+  /** fallback: run the pipeline in the worker; drop: discard the event. */
+  onUnavailable?: 'fallback' | 'drop';
+  drainTimeoutSeconds?: number;
+  command?: string[];
+  resources?: ResourceRequirements;
+  /**
+   * When autoscaling.enabled, swap the pod-wide cpu Resource metric for an
+   * autoscaling/v2 ContainerResource metric on the proxy container only.
+   * Needs Kubernetes 1.30+ (or the HPAContainerMetrics gate on 1.27-1.29).
+   */
+  scaleOnProxyContainerCpu?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Autoscaling (extends the shared shape with per-pod workload metrics)
+// ---------------------------------------------------------------------------
+
+/**
+ * Chart 1.103.0 adds opt-in per-pod workload targets rendered as
+ * autoscaling/v2 `Pods` metrics (`litellm_requests_per_second`,
+ * `litellm_tokens_per_second`) with an AverageValue target. A Prometheus
+ * Adapter must serve those names on custom.metrics.k8s.io.
+ */
+export interface LitellmAutoscalingConfig extends AutoscalingConfig {
+  targetRequestsPerSecond?: number | string;
+  targetTokensPerSecond?: number | string;
 }
 
 // ---------------------------------------------------------------------------
@@ -588,8 +665,11 @@ export interface LitellmValues {
 
   resources?: ResourceRequirements;
 
-  autoscaling?: AutoscalingConfig;
+  autoscaling?: LitellmAutoscalingConfig;
   keda?: LitellmKedaConfig;
+
+  metricsServer?: LitellmMetricsServer;
+  collector?: LitellmCollector;
 
   volumes?: Volume[];
   volumeMounts?: VolumeMount[];

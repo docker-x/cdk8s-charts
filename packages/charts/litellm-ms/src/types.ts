@@ -1,4 +1,8 @@
-import type { LitellmProxyConfig } from '@cdk8s-charts/litellm';
+import type {
+  LitellmDbConnectionPool,
+  LitellmDeploymentStrategy,
+  LitellmProxyConfig,
+} from '@cdk8s-charts/litellm';
 import type {
   AutoscalingConfig,
   DeepPartial,
@@ -123,9 +127,23 @@ export interface LitellmMsDatabaseEndpoint {
   };
 }
 
+/** Writer endpoint — chart 1.103.0 adds libpq TLS controls applied to writer and reader URLs. */
+export interface LitellmMsDatabaseWriter extends LitellmMsDatabaseEndpoint {
+  /** libpq sslmode, e.g. verify-full for AWS RDS. `sslRootCert` alone implies verify-full. */
+  sslMode?: string;
+  /** Path to the CA bundle, e.g. /etc/ssl/certs/ca-certificates.crt. */
+  sslRootCert?: string;
+}
+
 export interface LitellmMsDatabaseValues {
-  writer?: LitellmMsDatabaseEndpoint;
+  writer?: LitellmMsDatabaseWriter;
   reader?: LitellmMsDatabaseEndpoint;
+  /**
+   * In-container PgBouncer transaction pool shared by every gateway worker
+   * (added in chart 1.103.0). Caps the pod's upstream connections at
+   * maxDbConnections regardless of `gateway.numWorkers`.
+   */
+  connectionPool?: LitellmDbConnectionPool;
 }
 
 export interface LitellmMsRedisValues {
@@ -140,6 +158,12 @@ export interface LitellmMsRedisValues {
 
 export interface LitellmMsIngressConfig {
   enabled?: boolean;
+  /**
+   * Which ingress controller serves this Ingress (added in chart 1.103.0).
+   * `alb` (default) renders Exact/Prefix pathTypes plus the /*.txt wildcard;
+   * `nginx` renders dotted paths as ImplementationSpecific and drops /*.txt.
+   */
+  controller?: 'alb' | 'nginx';
   className?: string;
   annotations?: Record<string, string>;
   host?: string;
@@ -178,10 +202,68 @@ export interface LitellmMsComponentConfig {
   hpa?: AutoscalingConfig;
   pdb?: PodDisruptionBudgetConfig;
   podAnnotations?: Record<string, string>;
+  /** Rolling update tuning for the component Deployment (added in chart 1.103.0). */
+  strategy?: LitellmDeploymentStrategy;
   nodeSelector?: Record<string, string>;
   tolerations?: unknown[];
   affinity?: unknown;
   topologySpreadConstraints?: TopologySpreadConstraint[];
+}
+
+/**
+ * Gateway HPA (chart 1.103.0) adds opt-in per-pod workload targets rendered as
+ * autoscaling/v2 `Pods` metrics (`litellm_requests_per_second`,
+ * `litellm_tokens_per_second`). A Prometheus Adapter must serve those names on
+ * custom.metrics.k8s.io; enable `serviceMonitor` so each pod is scraped.
+ */
+export interface LitellmMsHpaConfig extends AutoscalingConfig {
+  targetRequestsPerSecond?: number | string;
+  targetTokensPerSecond?: number | string;
+}
+
+/**
+ * Metrics sidecar serving Prometheus /metrics from a `metrics` container
+ * (`python -m litellm.proxy.prometheus_metrics_server`), aggregating worker
+ * samples over a shared emptyDir (added in chart 1.103.0). Adds a `metrics`
+ * pod port and a dedicated ClusterIP `<gateway>-metrics` Service. The port has
+ * no virtual-key auth: keep it off public ingress. Needs gateway image
+ * v1.101.0+.
+ */
+export interface LitellmMsMetricsServer {
+  enabled?: boolean;
+  port?: number;
+  resources?: ResourceRequirements;
+}
+
+/** Prometheus Operator ServiceMonitor scraping the `<gateway>-metrics` Service (added in chart 1.103.0). */
+export interface LitellmMsServiceMonitor {
+  enabled?: boolean;
+  labels?: Record<string, string>;
+  interval?: string;
+  scrapeTimeout?: string;
+}
+
+/**
+ * Opt-in `collector` sidecar (same image, `python -m litellm.proxy.collector`)
+ * running the post-response spend pipeline over loopback so uvicorn workers
+ * return to serving requests (added in chart 1.103.0). Delivery is
+ * at-most-once inside the pod.
+ */
+export interface LitellmMsCollector {
+  enabled?: boolean;
+  /** unix:///<dir>/<file>.sock or tcp://127.0.0.1:<port> */
+  address?: string;
+  /** Events each uvicorn worker buffers while the sidecar is slow or restarting. */
+  bufferSize?: number;
+  /** fallback: run the pipeline in the worker; drop: discard the event. */
+  onUnavailable?: 'fallback' | 'drop';
+  drainTimeoutSeconds?: number;
+  resources?: ResourceRequirements;
+  /**
+   * With hpa.targetCPUUtilizationPercentage set, scale on an autoscaling/v2
+   * ContainerResource metric of the `gateway` container only (K8s 1.30+).
+   */
+  scaleOnGatewayContainerCpu?: boolean;
 }
 
 export interface LitellmMsGatewayConfig extends LitellmMsComponentConfig {
@@ -190,6 +272,10 @@ export interface LitellmMsGatewayConfig extends LitellmMsComponentConfig {
     create?: boolean;
     proxy_config?: LitellmMsProxyConfig;
   };
+  hpa?: LitellmMsHpaConfig;
+  metricsServer?: LitellmMsMetricsServer;
+  serviceMonitor?: LitellmMsServiceMonitor;
+  collector?: LitellmMsCollector;
 }
 
 export interface LitellmMsBackendConfig extends LitellmMsComponentConfig {}
@@ -207,6 +293,19 @@ export interface LitellmMsMigrationJobConfig {
   resources?: ResourceRequirements;
   image?: ImageConfig;
   extraEnv?: LitellmMsEnvVar[];
+  /**
+   * Which controller runs the Job (added in chart 1.103.0). `helm` renders a
+   * Helm pre-install/pre-upgrade hook; `argocd` renders an Argo CD PreSync
+   * hook so migrations re-run on every sync.
+   */
+  hooks?: {
+    helm?: { enabled?: boolean; weight?: string };
+    argocd?: { enabled?: boolean };
+  };
+  /** Scheduling for the Job pod — does not inherit the other components' values. */
+  nodeSelector?: Record<string, string>;
+  tolerations?: unknown[];
+  affinity?: unknown;
 }
 
 export interface LitellmMsBillingMetricsConfig {

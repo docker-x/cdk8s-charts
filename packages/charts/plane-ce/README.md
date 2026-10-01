@@ -8,7 +8,7 @@ Plane is an open-source project management tool — a self-hosted alternative to
 
 - **Repository:** `https://helm.plane.so/`
 - **Chart:** `plane-ce`
-- **Chart version:** `1.8.1`
+- **Chart version:** `1.8.2`
 - **App version:** `1.4.1`
 
 ## Features

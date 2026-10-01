@@ -315,7 +315,7 @@ export interface LangfuseProps {
   chart?: string;
   /** Helm chart repository URL (default: https://langfuse.github.io/langfuse-k8s). */
   repo?: string;
-  /** Helm chart version pin (default: 2.1.0). */
+  /** Helm chart version pin (default: 2.1.2). */
   version?: string;
   /** Raw Helm value overrides (deep-merged into computed values). */
   values?: DeepPartial<LangfuseValues>;
