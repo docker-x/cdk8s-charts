@@ -414,6 +414,21 @@ export function buildOauthProxySidecar(
       '--client-secret-file=/var/run/secrets/openshift/serviceaccount/token',
     ],
     ports: [{ containerPort: OAUTH_PROXY_PORT, name: 'oauth-proxy' }],
+    // The workspace container's probes reach Paseo through this sidecar,
+    // so a hung proxy must be restarted independently — otherwise a dead
+    // proxy would restart the healthy workspace instead.
+    livenessProbe: {
+      tcpSocket: { port: OAUTH_PROXY_PORT },
+      periodSeconds: 15,
+      timeoutSeconds: 5,
+      failureThreshold: 4,
+    },
+    readinessProbe: {
+      tcpSocket: { port: OAUTH_PROXY_PORT },
+      periodSeconds: 10,
+      timeoutSeconds: 5,
+      failureThreshold: 3,
+    },
     volumeMounts: [
       {
         name: 'sa-token',
