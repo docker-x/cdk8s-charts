@@ -120,7 +120,10 @@ export class OpenShiftDevenv extends Chart {
         oauthProxySidecar,
         lifecycle,
         initContainers,
-        probes: paseoHealthCheck.enabled ? buildPaseoHealthProbes(paseoPort) : undefined,
+        // Probes dial the pod IP, but the Paseo daemon binds 127.0.0.1 —
+        // buildPaseoHealthProbes targets the oauth-proxy port, which
+        // proxies /healthz to the daemon unauthenticated.
+        probes: paseoHealthCheck.enabled ? buildPaseoHealthProbes() : undefined,
       }) as unknown as ConstructorParameters<typeof Devenv>[2],
     );
     const routes = createRoutes(

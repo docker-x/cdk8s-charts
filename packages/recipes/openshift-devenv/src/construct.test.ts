@@ -156,9 +156,9 @@ describe('OpenShiftDevenv recipe — R2 restore init container', () => {
 describe('OpenShiftDevenv recipe — Paseo health probes', () => {
   it('adds default health probes on the Paseo /healthz endpoint', () => {
     const c = workspaceContainer(synth(baseProps));
-    expect(c.livenessProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
-    expect(c.readinessProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
-    expect(c.startupProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
+    expect(c.livenessProbe?.httpGet).toEqual({ path: '/healthz', port: 4180 });
+    expect(c.readinessProbe?.httpGet).toEqual({ path: '/healthz', port: 4180 });
+    expect(c.startupProbe?.httpGet).toEqual({ path: '/healthz', port: 4180 });
     // Startup budget must cover a cold `devenv up` without a liveness kill.
     const budget = (c.startupProbe?.periodSeconds ?? 0) * (c.startupProbe?.failureThreshold ?? 0);
     expect(budget).toBeGreaterThanOrEqual(300);
@@ -228,6 +228,6 @@ describe('OpenShiftDevenv recipe — Paseo health probes', () => {
   it('drops a single probe when its values override is null', () => {
     const c = workspaceContainer(synth({ ...baseProps, values: { livenessProbe: null as never } }));
     expect(c.livenessProbe).toBeUndefined();
-    expect(c.readinessProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
+    expect(c.readinessProbe?.httpGet).toEqual({ path: '/healthz', port: 4180 });
   });
 });
