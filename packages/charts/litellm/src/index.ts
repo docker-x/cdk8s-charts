@@ -1,9 +1,18 @@
 export { Litellm } from './construct';
 export type {
+  LitellmAutoscalingConfig,
+  LitellmCollector,
   LitellmDbConfig,
+  LitellmDbConnectionPool,
+  LitellmDeploymentStrategy,
   LitellmExports,
   LitellmGeneralSettings,
+  LitellmKedaConfig,
+  LitellmKedaPrometheus,
   LitellmMcpServerConfig,
+  LitellmMetricsServer,
+  LitellmMigrationJob,
+  LitellmMigrationJobHooks,
   LitellmModelEntry,
   LitellmModelInfo,
   LitellmModelParams,

@@ -3,7 +3,7 @@ import type { Construct } from 'constructs';
 import type { GitlabRunnerExports, GitlabRunnerProps, GitlabRunnerValues } from './types';
 
 const DEFAULT_JOB_IMAGE = 'node:22';
-const DEFAULT_VERSION = '0.92.1';
+const DEFAULT_VERSION = '0.93.0';
 const DEFAULT_RUNNER_CONFIG = (namespace: string, image: string, gitlabUrl: string) => `[[runners]]
   clone_url = "${gitlabUrl}"
   [runners.kubernetes]
@@ -58,7 +58,9 @@ export class GitlabRunner extends HelmConstruct<GitlabRunnerValues> {
 
     this.renderChart(props.chart ?? 'gitlab-runner', id, props.namespace, computed, props.values, {
       repo: props.repo ?? 'https://charts.gitlab.io',
-      version: props.version ?? DEFAULT_VERSION,
+      // Pin the version only for the built-in chart — a caller-supplied
+      // chart may not publish this tag.
+      version: props.version ?? (props.chart ? undefined : DEFAULT_VERSION),
     });
 
     this.exports = {
