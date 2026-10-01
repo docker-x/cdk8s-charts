@@ -1,4 +1,10 @@
-import { AWS_CLI_IMAGE, findManifest, type Manifest, synthChart } from '@cdk8s-charts/utils';
+import {
+  AWS_CLI_IMAGE,
+  findManifest,
+  type Manifest,
+  type Probe,
+  synthChart,
+} from '@cdk8s-charts/utils';
 import { Testing } from 'cdk8s';
 import { describe, expect, it } from 'vitest';
 import { OpenShiftDevenv } from './construct';
@@ -41,6 +47,18 @@ type PodSpec = {
 function podSpec(m: Manifest[]): PodSpec {
   const dep = findManifest(m, 'Deployment', 'devenv');
   return (dep.spec as { template: { spec: PodSpec } }).template.spec;
+}
+
+interface ContainerSpec {
+  livenessProbe?: Probe;
+  readinessProbe?: Probe;
+  startupProbe?: Probe;
+}
+
+function workspaceContainer(m: Manifest[]): ContainerSpec {
+  const dep = findManifest(m, 'Deployment', 'devenv');
+  const spec = dep.spec as { template: { spec: { containers: ContainerSpec[] } } };
+  return spec.template.spec.containers[0];
 }
 
 describe('OpenShiftDevenv recipe — R2 restore init container', () => {
@@ -132,5 +150,84 @@ describe('OpenShiftDevenv recipe — R2 restore init container', () => {
         'every init container requires a non-empty name',
       );
     }
+  });
+});
+
+describe('OpenShiftDevenv recipe — Paseo health probes', () => {
+  it('adds default health probes on the Paseo /healthz endpoint', () => {
+    const c = workspaceContainer(synth(baseProps));
+    expect(c.livenessProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
+    expect(c.readinessProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
+    expect(c.startupProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
+    // Startup budget must cover a cold `devenv up` without a liveness kill.
+    const budget = (c.startupProbe?.periodSeconds ?? 0) * (c.startupProbe?.failureThreshold ?? 0);
+    expect(budget).toBeGreaterThanOrEqual(300);
+  });
+
+  it('omits probes when paseoHealthCheck is disabled', () => {
+    const c = workspaceContainer(synth({ ...baseProps, paseoHealthCheck: { enabled: false } }));
+    expect(c.livenessProbe).toBeUndefined();
+    expect(c.readinessProbe).toBeUndefined();
+    expect(c.startupProbe).toBeUndefined();
+  });
+
+  it('lets values.livenessProbe override recipe defaults', () => {
+    const c = workspaceContainer(
+      synth({
+        ...baseProps,
+        values: { livenessProbe: { httpGet: { path: '/ready', port: 6767 } } },
+      }),
+    );
+    expect(c.livenessProbe?.httpGet?.path).toBe('/ready');
+    // Other recipe probes remain.
+    expect(c.startupProbe?.httpGet?.path).toBe('/healthz');
+  });
+
+  it('drops the computed handler when a values override switches probe handlers', () => {
+    const c = workspaceContainer(
+      synth({
+        ...baseProps,
+        values: { livenessProbe: { exec: { command: ['true'] } } },
+      }),
+    );
+    expect(c.livenessProbe?.exec).toEqual({ command: ['true'] });
+    // The recipe's httpGet must not survive the merge — K8s allows exactly
+    // one handler per probe.
+    expect(c.livenessProbe?.httpGet).toBeUndefined();
+    // Timing fields still merge over the recipe defaults.
+    expect(c.livenessProbe?.periodSeconds).toBe(15);
+  });
+
+  it('rejects probes that violate Kubernetes constraints at synth time', () => {
+    const disabled = { ...baseProps, paseoHealthCheck: { enabled: false } };
+    // No handler at all — a truthy empty object the API server would reject.
+    expect(() => synth({ ...disabled, values: { livenessProbe: {} } })).toThrow(
+      'exactly one of exec/httpGet/tcpSocket/grpc',
+    );
+    // Two handlers in one probe.
+    expect(() =>
+      synth({
+        ...disabled,
+        values: { livenessProbe: { httpGet: { port: 1 }, tcpSocket: { port: 2 } } },
+      }),
+    ).toThrow('exactly one of exec/httpGet/tcpSocket/grpc');
+    // Handler without its required port.
+    expect(() =>
+      synth({ ...disabled, values: { readinessProbe: { httpGet: { path: '/x' } } } }),
+    ).toThrow('httpGet.port is required');
+    // successThreshold > 1 is only legal on readiness probes.
+    expect(() =>
+      synth({ ...baseProps, values: { livenessProbe: { successThreshold: 3 } } }),
+    ).toThrow('successThreshold must be 1');
+    const c = workspaceContainer(
+      synth({ ...baseProps, values: { readinessProbe: { successThreshold: 3 } } }),
+    );
+    expect(c.readinessProbe?.successThreshold).toBe(3);
+  });
+
+  it('drops a single probe when its values override is null', () => {
+    const c = workspaceContainer(synth({ ...baseProps, values: { livenessProbe: null as never } }));
+    expect(c.livenessProbe).toBeUndefined();
+    expect(c.readinessProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
   });
 });

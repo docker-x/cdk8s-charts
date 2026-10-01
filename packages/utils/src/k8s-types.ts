@@ -75,6 +75,33 @@ export interface TcpProbeConfig {
   failureThreshold?: number;
 }
 
+/**
+ * Full container probe (liveness/readiness/startup). Ports accept a number
+ * or a named containerPort. Kubernetes requires exactly one handler
+ * (httpGet/tcpSocket/exec/grpc) per probe and successThreshold = 1 on
+ * liveness and startup probes — both are enforced at synth time by
+ * `assertValidProbe`, not by this type, so that partial `values` overrides
+ * (e.g. `{ periodSeconds: 5 }` over a computed handler) stay expressible.
+ */
+export interface Probe {
+  httpGet?: {
+    path?: string;
+    host?: string;
+    port?: number | string;
+    scheme?: 'HTTP' | 'HTTPS';
+    httpHeaders?: Array<{ name: string; value: string }>;
+  };
+  tcpSocket?: { port?: number | string };
+  exec?: { command?: string[] };
+  grpc?: { port?: number; service?: string };
+  initialDelaySeconds?: number;
+  periodSeconds?: number;
+  timeoutSeconds?: number;
+  successThreshold?: number;
+  failureThreshold?: number;
+  terminationGracePeriodSeconds?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Scheduling & topology
 // ---------------------------------------------------------------------------

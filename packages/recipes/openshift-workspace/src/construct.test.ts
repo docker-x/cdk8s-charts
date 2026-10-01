@@ -190,6 +190,46 @@ describe('OpenShiftWorkspace recipe', () => {
     expect(cmd).not.toContain('/home/vscode');
   });
 
+  it('adds default health probes on the Paseo /healthz endpoint', () => {
+    const m = synth(baseProps);
+    const dep = findManifest(m, 'Deployment', 'workspace');
+    const spec = dep.spec as {
+      template: {
+        spec: {
+          containers: {
+            livenessProbe?: { httpGet: { path: string; port: number } };
+            readinessProbe?: { httpGet: { path: string; port: number } };
+            startupProbe?: { httpGet: { path: string; port: number } };
+          }[];
+        };
+      };
+    };
+    const c = spec.template.spec.containers[0];
+    expect(c.livenessProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
+    expect(c.readinessProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
+    expect(c.startupProbe?.httpGet).toEqual({ path: '/healthz', port: 6767 });
+  });
+
+  it('omits probes when paseoHealthCheck is disabled', () => {
+    const m = synth({ ...baseProps, paseoHealthCheck: { enabled: false } });
+    const dep = findManifest(m, 'Deployment', 'workspace');
+    const spec = dep.spec as {
+      template: {
+        spec: {
+          containers: {
+            livenessProbe?: unknown;
+            readinessProbe?: unknown;
+            startupProbe?: unknown;
+          }[];
+        };
+      };
+    };
+    const c = spec.template.spec.containers[0];
+    expect(c.livenessProbe).toBeUndefined();
+    expect(c.readinessProbe).toBeUndefined();
+    expect(c.startupProbe).toBeUndefined();
+  });
+
   it('keepalive CronJob uses env vars instead of string interpolation', () => {
     const m = synth(baseProps);
     const cj = findManifest(m, 'CronJob', 'workspace-keepalive');
