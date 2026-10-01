@@ -489,10 +489,12 @@ export interface LitellmKedaTrigger {
 /**
  * First-class Prometheus triggers on the proxy's own request/token counters,
  * appended to `triggers` (added in chart 1.103.0).
- * `serverAddress` is required once either target is set.
+ * `serverAddress` is required once either target is set — it is a required
+ * field here because providing the `prometheus` block at all only makes sense
+ * when configuring a trigger.
  */
 export interface LitellmKedaPrometheus {
-  serverAddress?: string;
+  serverAddress: string;
   /** Per-second request load one replica should carry (plain float, no SI suffixes). */
   requestsPerSecond?: number | string;
   /** Per-second token load one replica should carry (plain float, no SI suffixes). */
