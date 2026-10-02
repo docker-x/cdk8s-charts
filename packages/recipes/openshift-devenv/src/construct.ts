@@ -133,6 +133,7 @@ export class OpenShiftDevenv extends Chart {
       appsDomain,
       devenv.exports.serviceName,
       props.previewRoute,
+      props.terminalRoute,
     );
     if (keepalive.enabled) createKeepaliveRbac(this, name, namespace);
     if (keepalive.enabled) createKeepaliveCronJob(this, name, namespace, keepalive);
@@ -170,6 +171,8 @@ export class OpenShiftDevenv extends Chart {
       paseoRouteUrl: routes.paseoRouteUrl,
       previewRouteName: routes.previewRouteName,
       previewRouteUrl: routes.previewRouteUrl,
+      terminalRouteName: routes.terminalRouteName,
+      terminalRouteUrl: routes.terminalRouteUrl,
       backupCronJobName: hasBackupSecrets ? `${name}-backup` : '',
       keepaliveCronJobName: keepalive.enabled ? `${name}-keepalive` : '',
       tfDeployerSaName: tfDeployer.enabled ? tfDeployerSaName : '',

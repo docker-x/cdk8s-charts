@@ -1,5 +1,6 @@
 import {
   AWS_CLI_IMAGE,
+  filterByKind,
   findManifest,
   type Manifest,
   type Probe,
@@ -150,6 +151,37 @@ describe('OpenShiftDevenv recipe — R2 restore init container', () => {
         'every init container requires a non-empty name',
       );
     }
+  });
+});
+
+describe('OpenShiftDevenv recipe — terminal Route', () => {
+  it('creates no terminal Route by default', () => {
+    const m = synth(baseProps);
+    const routeNames = filterByKind(m, 'Route').map((r) => (r.metadata as { name: string }).name);
+    expect(routeNames).not.toContain('devenv-terminal');
+  });
+
+  it('creates the terminal Route when terminalRoute is enabled', () => {
+    const m = synth({ ...baseProps, terminalRoute: true });
+    const route = findManifest(m, 'Route', 'devenv-terminal');
+    expect(route).toBeDefined();
+    const spec = route.spec as {
+      port: { targetPort: string };
+      tls: { termination: string };
+    };
+    expect(spec.port.targetPort).toBe('terminal');
+    expect(spec.tls.termination).toBe('edge');
+  });
+
+  it('exports the terminal Route name and URL only when enabled', () => {
+    const app = Testing.app();
+    const ws = new OpenShiftDevenv(app, 'a', baseProps);
+    expect(ws.exports.terminalRouteName).toBe('');
+    expect(ws.exports.terminalRouteUrl).toBe('');
+    const app2 = Testing.app();
+    const ws2 = new OpenShiftDevenv(app2, 'b', { ...baseProps, terminalRoute: true });
+    expect(ws2.exports.terminalRouteName).toBe('devenv-terminal');
+    expect(ws2.exports.terminalRouteUrl).toBe('https://devenv-terminal-test-ns.apps.example.com');
   });
 });
 

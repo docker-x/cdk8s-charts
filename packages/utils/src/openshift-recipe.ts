@@ -576,11 +576,14 @@ export function createRoutes(
   appsDomain: string,
   serviceName: string,
   previewRoute = false,
+  terminalRoute = false,
 ) {
   const paseoRouteName = `${name}-paseo`;
   const previewRouteName = `${name}-preview`;
+  const terminalRouteName = `${name}-terminal`;
   const paseoRouteUrl = `https://${paseoRouteName}-${namespace}.${appsDomain}`;
   const previewRouteUrl = `https://${previewRouteName}-${namespace}.${appsDomain}`;
+  const terminalRouteUrl = `https://${terminalRouteName}-${namespace}.${appsDomain}`;
   new ApiObject(scope, 'paseo-route', {
     apiVersion: 'route.openshift.io/v1',
     kind: 'Route',
@@ -603,11 +606,26 @@ export function createRoutes(
         tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' },
       },
     });
+  // The terminal Route bypasses oauth-proxy like the preview Route — the
+  // app on the terminal port is expected to enforce its own auth.
+  if (terminalRoute)
+    new ApiObject(scope, 'terminal-route', {
+      apiVersion: 'route.openshift.io/v1',
+      kind: 'Route',
+      metadata: { name: terminalRouteName, namespace, labels: buildLabels(name) },
+      spec: {
+        to: { kind: 'Service', name: serviceName, weight: 100 },
+        port: { targetPort: 'terminal' },
+        tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' },
+      },
+    });
   return {
     paseoRouteName,
     paseoRouteUrl,
     previewRouteName: previewRoute ? previewRouteName : '',
     previewRouteUrl: previewRoute ? previewRouteUrl : '',
+    terminalRouteName: terminalRoute ? terminalRouteName : '',
+    terminalRouteUrl: terminalRoute ? terminalRouteUrl : '',
   };
 }
 

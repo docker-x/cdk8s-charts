@@ -1184,7 +1184,8 @@ production remote workspace:
 Deploys a devenv.sh workspace as raw K8s ApiObjects. The container image is
 built by `devenv container build processes` (Nix/nix2container) and pushed to
 a registry. This construct deploys that image as a Kubernetes Deployment with
-a durable PVC, SSH access, and devenv process ports (sshd, paseo, caddy, preview).
+a durable PVC, SSH access, and devenv process ports (sshd, paseo, caddy,
+preview, terminal).
 
 The container runs the image's ENTRYPOINT (`devenv up`) unless `command`
 is set, which starts all configured processes via devenv's native
@@ -1209,6 +1210,7 @@ following the same pattern as `@cdk8s-charts/devcontainer`.
 | `paseoPort` | `number` | no | Paseo port — devenv paseo process (default: `6767`) |
 | `caddyPort` | `number` | no | Caddy proxy port — devenv caddy process (default: `8080`) |
 | `previewPort` | `number` | no | Preview port for web UIs (default: `3000`) |
+| `terminalPort` | `number` | no | Terminal port — dedicated app port for secondary workloads that ship their own HTTP server and auth; not a devenv-managed process (default: `8081`, 8080 is the caddy process) |
 | `sshAuthorizedKeys` | `string` | no | SSH authorized_keys content (creates a Secret) |
 | `sshSecretName` | `string` | no | Existing Secret name with `authorized_keys` key |
 | `imagePullSecret` | `string` | no | Base64 docker config JSON for private registry auth |
@@ -1227,7 +1229,7 @@ following the same pattern as `@cdk8s-charts/devcontainer`.
 | `livenessProbe` | `Probe` | no | Container liveness probe (verbatim; synth-validated — see note below) |
 | `readinessProbe` | `Probe` | no | Container readiness probe (verbatim; synth-validated — see note below) |
 | `startupProbe` | `Probe` | no | Container startup probe (verbatim; synth-validated — see note below) |
-| `extraServicePorts` | `ServicePort[]` | no | Extra service ports (in addition to ssh, paseo, caddy, preview) |
+| `extraServicePorts` | `ServicePort[]` | no | Extra service ports (in addition to ssh, paseo, caddy, preview, terminal) |
 | `serviceAccountName` | `string` | no | SA name (default: `{id}-sa`) |
 | `serviceAccountAnnotations` | `Record<string, string>` | no | SA annotations (e.g. OpenShift OAuth redirect URIs) |
 | `automountServiceAccountToken` | `boolean` | no | Automount SA token (default: `true`) |
@@ -1254,6 +1256,7 @@ the probe entirely.
 | `paseoPort` | `paseoPort` | Paseo port |
 | `caddyPort` | `caddyPort` | Caddy proxy port |
 | `previewPort` | `previewPort` | Preview port |
+| `terminalPort` | `terminalPort` | Terminal port |
 | `pvcName` | `{name}-state` | PVC name |
 | `serviceName` | `{name}` | Service name |
 | `deploymentName` | `{name}` | Deployment name |
@@ -1268,7 +1271,7 @@ the probe entirely.
 4. `ServiceAccount` (`{name}-sa`) — when `serviceAccountName` is not supplied
 5. `PersistentVolumeClaim` (`{name}-state`) — durable home directory
 6. `Deployment` (`{name}`) — devenv with PVC, SSH, env, process ports, extra volumes
-7. `Service` (`{name}`) — exposes sshPort, paseoPort, caddyPort, previewPort
+7. `Service` (`{name}`) — exposes sshPort, paseoPort, caddyPort, previewPort, terminalPort
 
 **Differences from Devcontainer:**
 
@@ -1277,7 +1280,7 @@ the probe entirely.
 | Default command | `/usr/local/bin/entrypoint.sh` | image ENTRYPOINT (`devenv up`) |
 | Home mount | `/home/vscode` | `/home/devenv` |
 | Process management | lifecycle hooks / entrypoint | devenv native process manager |
-| Ports | ssh, preview | ssh, paseo, caddy, preview |
+| Ports | ssh, preview | ssh, paseo, caddy, preview, terminal |
 | Env | `DEVCONTAINER=true` | `DEVENV=true` |
 | Container build | `devcontainer build` | `devenv container build processes` |
 
@@ -1296,7 +1299,9 @@ but using the Devenv chart:
 2. **OAuth proxy sidecar** — OpenShift OAuth proxy for SSO-protected web access
 3. **OpenShift Routes** — edge-terminated TLS route for the Paseo web UI;
    the preview Route is opt-in (`previewRoute: true`) because it bypasses
-   oauth-proxy
+   oauth-proxy; the terminal Route is likewise opt-in
+   (`terminalRoute: true`) and also bypasses oauth-proxy — the app on the
+   terminal port must enforce its own auth
 4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
 5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2; retention keeps the newest `backup.keep` objects under `backup.retentionPrefix` (default: the upload prefix `workspace-state-<name>-`). Widening `retentionPrefix` reaps backups orphaned by a workload rename — and any other keys sharing the stem in the bucket
    The archive excludes secrets and regenerable paths; the Devin
@@ -1453,6 +1458,7 @@ but using the Devenv chart:
 | `tfDeployer` | `{ enabled, extraManagedSecrets }` | no | TF deployer SA + RBAC; `extraManagedSecrets` adds names to the scoped secrets set |
 | `podSandbox` | `{ enabled }` | no | Workspace SA pod-spawn RBAC (default: enabled) |
 | `previewRoute` | `boolean` | no | Public Route for the preview port, unauthenticated (default: `false`) |
+| `terminalRoute` | `boolean` | no | Public Route for the terminal port — bypasses oauth-proxy, the app on the port must enforce its own auth (default: `false`) |
 | `values` | `DeepPartial<DevenvValues>` | no | Raw devenv value overrides |
 
 **Exports (`OpenShiftDevenvExports`):**
@@ -1464,6 +1470,8 @@ but using the Devenv chart:
 | `paseoRouteUrl` | `string` | Full Paseo Route URL |
 | `previewRouteName` | `string` | OpenShift Route name for preview (empty unless `previewRoute`) |
 | `previewRouteUrl` | `string` | Full preview Route URL (empty unless `previewRoute`) |
+| `terminalRouteName` | `string` | OpenShift Route name for terminal (empty unless `terminalRoute`) |
+| `terminalRouteUrl` | `string` | Full terminal Route URL (empty unless `terminalRoute`) |
 | `backupCronJobName` | `string` | Backup CronJob name |
 | `keepaliveCronJobName` | `string` | Keepalive CronJob name |
 | `tfDeployerSaName` | `string` | TF deployer ServiceAccount name |
