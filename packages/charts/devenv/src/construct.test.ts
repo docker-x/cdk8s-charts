@@ -13,7 +13,10 @@ function synth(props: ConstructorParameters<typeof Devenv>[2]): Manifest[] {
 
 const baseProps = { namespace: 'test-ns', image: 'ghcr.io/org/devenv:latest' };
 
-type PodSpec = { initContainers?: { name: string; image: string }[] };
+type PodSpec = {
+  initContainers?: { name: string; image: string }[];
+  containers?: { name: string; ports?: { containerPort: number; name: string }[] }[];
+};
 
 function podSpec(m: Manifest[]): PodSpec {
   const dep = findManifest(m, 'Deployment', 'dev');
@@ -50,5 +53,27 @@ describe('Devenv construct — init containers', () => {
         initContainers: [{ name: 'devenv', image: 'busybox' }],
       }),
     ).toThrow('Duplicate container name "devenv"');
+  });
+});
+
+describe('Devenv construct — terminal port', () => {
+  it('exposes the terminal port on the container and the Service (default 8081)', () => {
+    const m = synth(baseProps);
+    const ports = podSpec(m).containers?.[0]?.ports ?? [];
+    expect(ports).toContainEqual({ containerPort: 8081, name: 'terminal' });
+    const svc = findManifest(m, 'Service', 'dev');
+    const svcPorts = (svc.spec as { ports: { port: number; name: string; targetPort: string }[] })
+      .ports;
+    expect(svcPorts).toContainEqual({ port: 8081, name: 'terminal', targetPort: 'terminal' });
+  });
+
+  it('honours a terminalPort override', () => {
+    const m = synth({ ...baseProps, terminalPort: 8090 });
+    const ports = podSpec(m).containers?.[0]?.ports ?? [];
+    expect(ports).toContainEqual({ containerPort: 8090, name: 'terminal' });
+    const svc = findManifest(m, 'Service', 'dev');
+    const svcPorts = (svc.spec as { ports: { port: number; name: string; targetPort: string }[] })
+      .ports;
+    expect(svcPorts).toContainEqual({ port: 8090, name: 'terminal', targetPort: 'terminal' });
   });
 });

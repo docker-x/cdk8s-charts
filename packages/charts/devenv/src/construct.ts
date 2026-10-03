@@ -19,7 +19,10 @@ export class Devenv extends HelmConstruct<Values> {
       this,
       id,
       props as unknown as Record<string, unknown>,
-      { homeMountPath: '/env', extraPorts: { paseoPort: 6767, caddyPort: 8080 } },
+      {
+        homeMountPath: '/env',
+        extraPorts: { paseoPort: 6767, caddyPort: 8080, terminalPort: 8081 },
+      },
     );
     createWorkspaceDeployment(this, {
       name: values.name as string,
@@ -37,6 +40,7 @@ export class Devenv extends HelmConstruct<Values> {
           { containerPort: values.paseoPort as number, name: 'paseo' },
           { containerPort: values.caddyPort as number, name: 'caddy' },
           { containerPort: values.previewPort as number, name: 'preview' },
+          { containerPort: values.terminalPort as number, name: 'terminal' },
         ],
       },
       sidecars: {
@@ -56,6 +60,7 @@ export class Devenv extends HelmConstruct<Values> {
         { port: values.paseoPort as number, targetPort: 'paseo', name: 'paseo' },
         { port: values.caddyPort as number, targetPort: 'caddy', name: 'caddy' },
         { port: values.previewPort as number, targetPort: 'preview', name: 'preview' },
+        { port: values.terminalPort as number, targetPort: 'terminal', name: 'terminal' },
       ],
     });
 
@@ -65,6 +70,7 @@ export class Devenv extends HelmConstruct<Values> {
       paseoPort: values.paseoPort as number,
       caddyPort: values.caddyPort as number,
       previewPort: values.previewPort as number,
+      terminalPort: values.terminalPort as number,
       pvcName,
       serviceName: values.name as string,
       deploymentName: values.name as string,

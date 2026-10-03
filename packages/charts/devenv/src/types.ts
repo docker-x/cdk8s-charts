@@ -48,6 +48,13 @@ export interface Values {
   caddyPort?: number;
   /** Preview port for web UIs (default: 3000). */
   previewPort?: number;
+  /**
+   * Terminal port — a dedicated app port for secondary workloads that ship
+   * their own HTTP server and auth (e.g. a JSON API). Not a devenv-managed
+   * process — whatever runs in the pod binds it. Default: 8081 (8080 is
+   * the caddy process).
+   */
+  terminalPort?: number;
   /** SSH authorized_keys content (creates a Secret). */
   sshAuthorizedKeys?: string;
   /** Existing Secret name with an "authorized_keys" key. */
@@ -84,7 +91,8 @@ export interface Values {
   livenessProbe?: Probe;
   readinessProbe?: Probe;
   startupProbe?: Probe;
-  /** Extra service ports to expose (in addition to ssh, paseo, caddy, preview). */
+  /** Extra service ports to expose (in addition to ssh, paseo, caddy, preview,
+   *  and terminal — the last is app-bound, not a devenv-managed process). */
   extraServicePorts?: ServicePort[];
   /** SA name (default: {id}-sa). */
   serviceAccountName?: string;
@@ -125,6 +133,8 @@ export interface Exports {
   caddyPort: number;
   /** Preview port. */
   previewPort: number;
+  /** Terminal port. */
+  terminalPort: number;
   /** PVC name. */
   pvcName: string;
   /** Service name. */

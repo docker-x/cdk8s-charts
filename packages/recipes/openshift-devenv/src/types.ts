@@ -122,6 +122,13 @@ export interface OpenShiftDevenvProps {
    * Default: false (use `oc port-forward` for previews instead).
    */
   previewRoute?: boolean;
+  /**
+   * Create a public Route for the terminal port (`values.terminalPort`,
+   * default 8081). Like the preview Route this bypasses oauth-proxy — the
+   * app on the port must enforce its own auth (e.g. a bearer token);
+   * without it anything the port serves is reachable. Default: false.
+   */
+  terminalRoute?: boolean;
   /** Raw devenv value overrides. */
   values?: DeepPartial<DevenvValues>;
 }
@@ -132,6 +139,8 @@ export interface OpenShiftDevenvExports {
   paseoRouteUrl: string;
   previewRouteName: string;
   previewRouteUrl: string;
+  terminalRouteName: string;
+  terminalRouteUrl: string;
   backupCronJobName: string;
   keepaliveCronJobName: string;
   tfDeployerSaName: string;
