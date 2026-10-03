@@ -1087,8 +1087,11 @@ production remote workspace:
    The archive excludes secrets and regenerable paths; the Devin
    CLI session store (`.local/share/devin/cli/sessions.db` +
    transcripts) IS included — it is what lets provider sessions
-   survive a PVC rebuild — while `credentials.toml`, MCP OAuth
-   data, logs, locks, plugin cache, and CLI downloads stay out.
+   survive a PVC rebuild. `credentials.toml` is included too:
+   the archive is already encrypted, and a restore without it
+   strands the agent unauthenticated — the failure this backup
+   exists to prevent. MCP OAuth data, logs, locks, plugin
+   cache, and CLI downloads stay out.
    When sessions.db exists and a `VACUUM INTO` (node:sqlite)
    snapshot succeeds, the live sqlite trio (db/shm/wal) is excluded
    and the snapshot is tar-`--transform`ed back to the canonical
@@ -1307,8 +1310,11 @@ but using the Devenv chart:
    The archive excludes secrets and regenerable paths; the Devin
    CLI session store (`.local/share/devin/cli/sessions.db` +
    transcripts) IS included — it is what lets provider sessions
-   survive a PVC rebuild — while `credentials.toml`, MCP OAuth
-   data, logs, locks, plugin cache, and CLI downloads stay out.
+   survive a PVC rebuild. `credentials.toml` is included too:
+   the archive is already encrypted, and a restore without it
+   strands the agent unauthenticated — the failure this backup
+   exists to prevent. MCP OAuth data, logs, locks, plugin
+   cache, and CLI downloads stay out.
    When sessions.db exists and a `VACUUM INTO` (node:sqlite)
    snapshot succeeds, the live sqlite trio (db/shm/wal) is excluded
    and the snapshot is tar-`--transform`ed back to the canonical

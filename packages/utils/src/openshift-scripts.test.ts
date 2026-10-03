@@ -508,6 +508,27 @@ describe('backup script', () => {
     expect(script).not.toContain('--exclude=.local/share/devin/cli ');
   });
 
+  it('has no exclusion pattern that could match the credential path', () => {
+    const script = buildBackupScript('devenv');
+    const pats = [...script.matchAll(/--exclude=([^\s"']+)/g)].map((m) => m[1]);
+    const target = '.local/share/devin/credentials.toml';
+    // A file is dropped when a pattern glob-matches it or any ancestor dir.
+    const candidates = [target, '.local/share/devin', '.local/share', '.local'];
+    const glob = (p: string) =>
+      new RegExp(
+        `^${p
+          .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+          .replace(/\*/g, '.*')
+          .replace(/\?/g, '.')}$`,
+      );
+    for (const p of pats) {
+      const re = glob(p);
+      for (const c of candidates) {
+        expect(re.test(c), `pattern "${p}" must not match "${c}"`).toBe(false);
+      }
+    }
+  });
+
   it('caps aws multipart buffering inside the workspace pod', () => {
     const script = buildBackupScript('devenv');
     // chunksize x concurrency is memory held in the workspace container —
