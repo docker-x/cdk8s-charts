@@ -29,6 +29,7 @@ import {
   createSaTokenSecret,
   createTfDeployer,
   createWorkspacePodRbac,
+  OAUTH_PROXY_TERMINAL_PORT,
   validateDnsLabels,
   validateHomeMountPath,
 } from '@cdk8s-charts/utils';
@@ -96,6 +97,16 @@ export class OpenShiftDevenv extends Chart {
       autoResumeConfigMapName,
     });
     const oauthProxySidecar = buildOauthProxySidecar(namespace, saName, paseoPort);
+    // terminalRoute → second oauth-proxy sidecar fronts the terminal port:
+    // same OpenShift SSO as paseo, so the app on 127.0.0.1:terminalPort
+    // needs no auth of its own.
+    const terminalPort = (props.values?.terminalPort as number | undefined) ?? 8081;
+    const terminalProxySidecar = props.terminalRoute
+      ? buildOauthProxySidecar(namespace, saName, terminalPort, {
+          name: 'oauth-proxy-terminal',
+          listenPort: OAUTH_PROXY_TERMINAL_PORT,
+        })
+      : undefined;
     const initContainers =
       hasBackupSecrets && (backup.restore ?? true)
         ? [buildRestoreInitContainer(name, homeMountPath, backup.restoreToken)]
@@ -118,6 +129,7 @@ export class OpenShiftDevenv extends Chart {
         extraVolumes,
         extraVolumeMounts,
         oauthProxySidecar,
+        terminalProxySidecar,
         lifecycle,
         initContainers,
         // Probes dial the pod IP, but the Paseo daemon binds 127.0.0.1 —

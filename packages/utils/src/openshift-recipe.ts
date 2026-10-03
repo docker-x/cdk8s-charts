@@ -14,6 +14,7 @@ import {
 
 export const OAUTH_PROXY_IMAGE = 'quay.io/openshift/origin-oauth-proxy:4.18';
 export const OAUTH_PROXY_PORT = 4180;
+export const OAUTH_PROXY_TERMINAL_PORT = 4181;
 export const OC_CLI_IMAGE = 'quay.io/openshift/origin-cli:4.18';
 // Debian-based aws-cli: carries aws + openssl + tar + gzip in one image.
 // The workspace image's `aws` lives under the PVC's .devenv/profile/bin,
@@ -385,13 +386,18 @@ export function buildRestoreInitContainer(
 export function buildOauthProxySidecar(
   namespace: string,
   saName: string,
-  paseoPort = 6767,
+  upstreamPort = 6767,
+  opts: { name?: string; listenPort?: number } = {},
 ): SidecarContainer {
-  if (!Number.isInteger(paseoPort) || paseoPort < 1 || paseoPort > 65535) {
-    throw new Error(`Invalid paseoPort "${paseoPort}": must be an integer between 1 and 65535`);
+  if (!Number.isInteger(upstreamPort) || upstreamPort < 1 || upstreamPort > 65535) {
+    throw new Error(
+      `Invalid upstreamPort "${upstreamPort}": must be an integer between 1 and 65535`,
+    );
   }
+  const name = opts.name ?? 'oauth-proxy';
+  const listenPort = opts.listenPort ?? OAUTH_PROXY_PORT;
   return {
-    name: 'oauth-proxy',
+    name,
     image: OAUTH_PROXY_IMAGE,
     securityContext: {
       runAsNonRoot: true,
@@ -399,9 +405,9 @@ export function buildOauthProxySidecar(
       capabilities: { drop: ['ALL'] },
     },
     args: [
-      `--http-address=0.0.0.0:${OAUTH_PROXY_PORT}`,
+      `--http-address=0.0.0.0:${listenPort}`,
       '--https-address=',
-      `--upstream=http://127.0.0.1:${paseoPort}`,
+      `--upstream=http://127.0.0.1:${upstreamPort}`,
       `--openshift-sar={"namespace":"${namespace}","resource":"pods","verb":"get"}`,
       '--cookie-secret-file=/etc/oauth/cookie-secret',
       '--cookie-secure=true',
@@ -413,18 +419,18 @@ export function buildOauthProxySidecar(
       `--client-id=system:serviceaccount:${namespace}:${saName}`,
       '--client-secret-file=/var/run/secrets/openshift/serviceaccount/token',
     ],
-    ports: [{ containerPort: OAUTH_PROXY_PORT, name: 'oauth-proxy' }],
+    ports: [{ containerPort: listenPort, name }],
     // The workspace container's probes reach Paseo through this sidecar,
     // so a hung proxy must be restarted independently — otherwise a dead
     // proxy would restart the healthy workspace instead.
     livenessProbe: {
-      tcpSocket: { port: OAUTH_PROXY_PORT },
+      tcpSocket: { port: listenPort },
       periodSeconds: 15,
       timeoutSeconds: 5,
       failureThreshold: 4,
     },
     readinessProbe: {
-      tcpSocket: { port: OAUTH_PROXY_PORT },
+      tcpSocket: { port: listenPort },
       periodSeconds: 10,
       timeoutSeconds: 5,
       failureThreshold: 3,
@@ -606,8 +612,10 @@ export function createRoutes(
         tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' },
       },
     });
-  // The terminal Route bypasses oauth-proxy like the preview Route — the
-  // app on the terminal port is expected to enforce its own auth.
+  // The terminal Route fronts the workspace's terminal port with a second
+  // oauth-proxy sidecar (oauth-proxy-terminal) — OpenShift SSO, same as
+  // paseo. The upstream app should bind 127.0.0.1: only the sidecar can
+  // reach it, so no app-level token is needed.
   if (terminalRoute)
     new ApiObject(scope, 'terminal-route', {
       apiVersion: 'route.openshift.io/v1',
@@ -615,7 +623,7 @@ export function createRoutes(
       metadata: { name: terminalRouteName, namespace, labels: buildLabels(name) },
       spec: {
         to: { kind: 'Service', name: serviceName, weight: 100 },
-        port: { targetPort: 'terminal' },
+        port: { targetPort: 'oauth-proxy-terminal' },
         tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' },
       },
     });
@@ -655,6 +663,9 @@ export interface WorkspaceRecipeProps {
   sshAuthorizedKeys?: string;
   ghcrPullSecret?: string;
   resources?: Record<string, unknown>;
+  /** Recipe-level flag: when true the terminal Route exists and the SA
+   *  OAuth client needs a second redirect URI for the terminal host. */
+  terminalRoute?: boolean;
   values?: {
     serviceAccountName?: string;
     serviceAccountAnnotations?: Record<string, string>;
@@ -673,6 +684,8 @@ export interface CreateWorkspaceRecipeOpts {
   extraVolumes: Array<{ name: string; [key: string]: unknown }>;
   extraVolumeMounts: Array<{ name: string; mountPath: string; readOnly?: boolean }>;
   oauthProxySidecar: SidecarContainer;
+  /** Second oauth-proxy fronting the terminal port (SSO route). */
+  terminalProxySidecar?: SidecarContainer;
   lifecycle: PodLifecycle | undefined;
   initContainers?: Array<Record<string, unknown>>;
   probes?: {
@@ -694,6 +707,14 @@ export function buildWorkspaceRecipeValues(
     serviceAccountAnnotations: {
       ...props.values?.serviceAccountAnnotations,
       'serviceaccounts.openshift.io/oauth-redirecturi.primary': paseoRedirectUri,
+      // Second oauth-proxy sidecar fronts the terminal Route — the SA
+      // OAuth client must whitelist its callback too, or the SSO dance
+      // dies at the redirect check.
+      ...(props.terminalRoute
+        ? {
+            'serviceaccounts.openshift.io/oauth-redirecturi.secondary': `https://${name}-terminal-${namespace}.${appsDomain}/oauth/callback`,
+          }
+        : {}),
     },
   };
 }
@@ -712,6 +733,7 @@ export function buildWorkspaceRecipeProps(
     extraVolumes,
     extraVolumeMounts,
     oauthProxySidecar,
+    terminalProxySidecar,
     lifecycle,
     initContainers,
   } = opts;
@@ -732,11 +754,22 @@ export function buildWorkspaceRecipeProps(
     annotations: podAnnotations,
     volumes: extraVolumes,
     volumeMounts: extraVolumeMounts,
-    sidecars: [oauthProxySidecar],
+    sidecars: [oauthProxySidecar, ...(terminalProxySidecar ? [terminalProxySidecar] : [])],
     initContainers,
     lifecycle,
     ...opts.probes,
-    extraServicePorts: [{ name: 'oauth-proxy', port: OAUTH_PROXY_PORT, targetPort: 'oauth-proxy' }],
+    extraServicePorts: [
+      { name: 'oauth-proxy', port: OAUTH_PROXY_PORT, targetPort: 'oauth-proxy' },
+      ...(terminalProxySidecar
+        ? [
+            {
+              name: 'oauth-proxy-terminal',
+              port: OAUTH_PROXY_TERMINAL_PORT,
+              targetPort: 'oauth-proxy-terminal',
+            },
+          ]
+        : []),
+    ],
     values: buildWorkspaceRecipeValues(name, namespace, appsDomain, props),
   };
 }
