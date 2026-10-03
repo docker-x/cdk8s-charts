@@ -494,9 +494,11 @@ describe('paseo auto-resume', () => {
 });
 
 describe('backup script', () => {
-  it('excludes devin secrets and regenerable dirs but keeps the session store', () => {
+  it('excludes devin ephemeral dirs but keeps credentials and the session store', () => {
     const script = buildBackupScript('devenv');
-    expect(script).toContain('--exclude=.local/share/devin/credentials.toml');
+    // credentials.toml survives: the archive is encrypted and losing it
+    // leaves the restored workspace with an unauthenticated devin agent.
+    expect(script).not.toContain('--exclude=.local/share/devin/credentials.toml');
     expect(script).toContain('--exclude=.local/share/devin/mcp');
     expect(script).toContain('--exclude=.local/share/devin/cli/logs');
     // The session store is the point — the bare dir must not be excluded.
@@ -504,6 +506,42 @@ describe('backup script', () => {
     expect(script).not.toContain('--exclude=.local/share/devin"');
     expect(script).not.toContain('--exclude=.local/share/devin/cli"');
     expect(script).not.toContain('--exclude=.local/share/devin/cli ');
+  });
+
+  it('has no exclusion pattern that could match the credential path', () => {
+    const script = buildBackupScript('devenv');
+    const pats = [...script.matchAll(/--exclude=([^\s"']+)/g)].map((m) => m[1]);
+    const target = '.local/share/devin/credentials.toml';
+    // A file is dropped when a pattern glob-matches it or any ancestor dir.
+    const candidates = [target, '.local/share/devin', '.local/share', '.local'];
+    // Classic wildcard matcher for `*`/`?` — no RegExp from dynamic input.
+    const globMatch = (pat: string, s: string): boolean => {
+      let pi = 0;
+      let si = 0;
+      let star = -1;
+      let ss = 0;
+      while (si < s.length) {
+        if (pi < pat.length && (pat[pi] === '?' || pat[pi] === s[si])) {
+          pi++;
+          si++;
+        } else if (pi < pat.length && pat[pi] === '*') {
+          star = pi++;
+          ss = si;
+        } else if (star !== -1) {
+          pi = star + 1;
+          si = ++ss;
+        } else {
+          return false;
+        }
+      }
+      while (pi < pat.length && pat[pi] === '*') pi++;
+      return pi === pat.length;
+    };
+    for (const p of pats) {
+      for (const c of candidates) {
+        expect(globMatch(p, c), `pattern "${p}" must not match "${c}"`).toBe(false);
+      }
+    }
   });
 
   it('caps aws multipart buffering inside the workspace pod', () => {

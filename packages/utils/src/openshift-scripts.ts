@@ -77,10 +77,12 @@ function buildBackupExcludes(extraExcludes: string): string[] {
     '  EXCLUDES="--exclude=.ssh --exclude=.aws --exclude=.kube --exclude=.gnupg --exclude=.env --exclude=.env.*"',
     '  EXCLUDES="$EXCLUDES --exclude=*_history --exclude=node_modules --exclude=.bun --exclude=.nix-profile --exclude=.local/bin"',
     // Devin CLI state is backed up — sessions.db + transcripts are what
-    // let provider sessions survive a PVC rebuild — minus secrets and
-    // regenerable/ephemeral content (credentials, MCP OAuth tokens,
-    // logs, runtime locks, plugin cache, downloaded CLI versions).
-    '  EXCLUDES="$EXCLUDES --exclude=.local/share/devin/credentials.toml --exclude=.local/share/devin/mcp"',
+    // let provider sessions survive a PVC rebuild — minus regenerable or
+    // ephemeral content (logs, runtime locks, plugin cache, downloaded
+    // CLI versions). credentials.toml IS kept: the archive is encrypted
+    // (restic/openssl) and losing it strands the restored workspace
+    // unauthenticated — the exact failure this backup exists to prevent.
+    '  EXCLUDES="$EXCLUDES --exclude=.local/share/devin/mcp"',
     '  EXCLUDES="$EXCLUDES --exclude=.local/share/devin/cli/logs --exclude=.local/share/devin/cli/session_locks"',
     '  EXCLUDES="$EXCLUDES --exclude=.local/share/devin/cli/plugins --exclude=.local/share/devin/cli/_versions"',
     '  EXCLUDES="$EXCLUDES --exclude=.local/share/terminal-browser --exclude=.cache --exclude=.npm"',
@@ -120,7 +122,9 @@ export function buildBackupScript(variant: 'devcontainer' | 'devenv' = 'devconta
     '  exit 1',
     'fi',
     'echo "Backing up from pod: ${POD}"',
-    `oc exec -n "\${NAMESPACE}" "\${POD}" -c ${containerName} -- env HOME_MOUNT_PATH="\${HOME_MOUNT_PATH}" BACKUP_KEEP="\${BACKUP_KEEP}" BACKUP_PREFIX="\${BACKUP_PREFIX}" BACKUP_RETENTION_PREFIX="\${BACKUP_RETENTION_PREFIX}" /bin/sh -ec '`,
+    'oc exec -n "${NAMESPACE}" "${POD}" -c ' +
+      containerName +
+      ' -- env HOME_MOUNT_PATH="${HOME_MOUNT_PATH}" BACKUP_KEEP="${BACKUP_KEEP}" BACKUP_PREFIX="${BACKUP_PREFIX}" BACKUP_RETENTION_PREFIX="${BACKUP_RETENTION_PREFIX}" /bin/sh -ec \'',
     // PATH fixed inside the exec'd script: an env-arg $PATH would
     // expand in the CronJob container. The profile dir is appended,
     // not prepended, so image-owned system binaries win over binaries
