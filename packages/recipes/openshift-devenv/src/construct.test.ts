@@ -171,7 +171,7 @@ describe('OpenShiftDevenv recipe — terminal Route', () => {
     };
     // The Route points at the terminal oauth-proxy sidecar, not the app —
     // the upstream is only reachable over loopback inside the pod.
-    expect(spec.port.targetPort).toBe('oauth-proxy-terminal');
+    expect(spec.port.targetPort).toBe('terminal-sso');
     expect(spec.tls.termination).toBe('edge');
 
     // Second oauth-proxy sidecar: upstream the terminal port, own listener.
@@ -183,13 +183,17 @@ describe('OpenShiftDevenv recipe — terminal Route', () => {
     const args = proxy?.args?.join(' ') ?? '';
     expect(args).toContain('--upstream=http://127.0.0.1:8081');
     expect(args).toContain('--http-address=0.0.0.0:4181');
-    expect(args).toContain('--openshift-sar=');
+    expect(args).toContain(
+      '--openshift-sar={"namespace":"test-ns","resource":"pods","verb":"get"}',
+    );
+    // No probes route through this proxy — no unauthenticated /healthz.
+    expect(args).not.toContain('--skip-auth-regex');
 
-    // Service exposes the proxy port.
+    // Service exposes the proxy port (name ≤15 chars).
     const svc = findManifest(m, 'Service', 'devenv');
     const ports = (svc.spec as { ports: { name: string; port: number }[] }).ports;
-    expect(ports.map((p) => p.name)).toContain('oauth-proxy-terminal');
-    expect(ports.find((p) => p.name === 'oauth-proxy-terminal')?.port).toBe(4181);
+    expect(ports.map((p) => p.name)).toContain('terminal-sso');
+    expect(ports.find((p) => p.name === 'terminal-sso')?.port).toBe(4181);
 
     // The SA OAuth client whitelists the terminal callback on a dedicated
     // suffix — never clobbering a caller's own .secondary.
@@ -220,7 +224,7 @@ describe('OpenShiftDevenv recipe — terminal Route', () => {
     expect(spec.containers?.map((c) => c.name)).not.toContain('oauth-proxy-terminal');
     const svc = findManifest(m, 'Service', 'devenv');
     const ports = (svc.spec as { ports: { name: string }[] }).ports;
-    expect(ports.map((p) => p.name)).not.toContain('oauth-proxy-terminal');
+    expect(ports.map((p) => p.name)).not.toContain('terminal-sso');
   });
 
   it('exports the terminal Route name and URL only when enabled', () => {

@@ -30,6 +30,7 @@ import {
   createTfDeployer,
   createWorkspacePodRbac,
   OAUTH_PROXY_TERMINAL_PORT,
+  TERMINAL_PROXY_PORT_NAME,
   validateDnsLabels,
   validateHomeMountPath,
 } from '@cdk8s-charts/utils';
@@ -107,6 +108,9 @@ export class OpenShiftDevenv extends Chart {
       ? buildOauthProxySidecar(namespace, saName, terminalPort, {
           name: 'oauth-proxy-terminal',
           listenPort: OAUTH_PROXY_TERMINAL_PORT,
+          portName: TERMINAL_PROXY_PORT_NAME,
+          // No kubelet probes route through this proxy — no healthz bypass.
+          skipAuthRegex: null,
         })
       : undefined;
     const initContainers =

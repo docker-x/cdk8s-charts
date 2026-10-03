@@ -1210,7 +1210,7 @@ following the same pattern as `@cdk8s-charts/devcontainer`.
 | `paseoPort` | `number` | no | Paseo port — devenv paseo process (default: `6767`) |
 | `caddyPort` | `number` | no | Caddy proxy port — devenv caddy process (default: `8080`) |
 | `previewPort` | `number` | no | Preview port for web UIs (default: `3000`) |
-| `terminalPort` | `number` | no | Terminal port — dedicated app port for secondary workloads that ship their own HTTP server; not a devenv-managed process. When `terminalRoute` is on, the app is fronted by the `oauth-proxy-terminal` SSO sidecar and should bind 127.0.0.1 (default: `8081`, 8080 is the caddy process) |
+| `terminalPort` | `number` | no | Terminal port — dedicated app port for secondary workloads that ship their own HTTP server; not a devenv-managed process. When `terminalRoute` is on, the app is fronted by the `oauth-proxy-terminal` SSO sidecar and should bind 127.0.0.1 — the `terminal` Service port is then unreachable by design, external access goes through the Route (default: `8081`, 8080 is the caddy process) |
 | `sshAuthorizedKeys` | `string` | no | SSH authorized_keys content (creates a Secret) |
 | `sshSecretName` | `string` | no | Existing Secret name with `authorized_keys` key |
 | `imagePullSecret` | `string` | no | Base64 docker config JSON for private registry auth |

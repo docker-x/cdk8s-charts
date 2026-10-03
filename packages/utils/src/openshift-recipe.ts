@@ -15,6 +15,8 @@ import {
 export const OAUTH_PROXY_IMAGE = 'quay.io/openshift/origin-oauth-proxy:4.18';
 export const OAUTH_PROXY_PORT = 4180;
 export const OAUTH_PROXY_TERMINAL_PORT = 4181;
+// K8s port names cap at 15 chars — 'oauth-proxy-terminal' won't fit.
+export const TERMINAL_PROXY_PORT_NAME = 'terminal-sso';
 export const OC_CLI_IMAGE = 'quay.io/openshift/origin-cli:4.18';
 // Debian-based aws-cli: carries aws + openssl + tar + gzip in one image.
 // The workspace image's `aws` lives under the PVC's .devenv/profile/bin,
@@ -387,7 +389,14 @@ export function buildOauthProxySidecar(
   namespace: string,
   saName: string,
   upstreamPort = 6767,
-  opts: { name?: string; listenPort?: number } = {},
+  opts: {
+    name?: string;
+    listenPort?: number;
+    /** K8s port names cap at 15 chars — needed when `name` exceeds it. */
+    portName?: string;
+    /** Health endpoint to expose unauthenticated; null disables the bypass. */
+    skipAuthRegex?: string | null;
+  } = {},
 ): SidecarContainer {
   if (!Number.isInteger(upstreamPort) || upstreamPort < 1 || upstreamPort > 65535) {
     throw new Error(
@@ -396,6 +405,11 @@ export function buildOauthProxySidecar(
   }
   const name = opts.name ?? 'oauth-proxy';
   const listenPort = opts.listenPort ?? OAUTH_PROXY_PORT;
+  if (!Number.isInteger(listenPort) || listenPort < 1 || listenPort > 65535) {
+    throw new Error(`Invalid listenPort "${listenPort}": must be an integer between 1 and 65535`);
+  }
+  const portName = opts.portName ?? name;
+  const skipAuthRegex = opts.skipAuthRegex === undefined ? '^/healthz/?$' : opts.skipAuthRegex;
   return {
     name,
     image: OAUTH_PROXY_IMAGE,
@@ -415,11 +429,13 @@ export function buildOauthProxySidecar(
       // /ws must stay authenticated: it is Paseo's control channel and the
       // daemon's own password auth is optional. The browser UI sends the
       // OAuth session cookie on the WebSocket upgrade, so SSO still applies.
-      '--skip-auth-regex=^/healthz/?$',
+      // The /healthz bypass exists so kubelet probes can reach the daemon
+      // through the proxy — a proxy without probes passes null instead.
+      ...(skipAuthRegex ? [`--skip-auth-regex=${skipAuthRegex}`] : []),
       `--client-id=system:serviceaccount:${namespace}:${saName}`,
       '--client-secret-file=/var/run/secrets/openshift/serviceaccount/token',
     ],
-    ports: [{ containerPort: listenPort, name }],
+    ports: [{ containerPort: listenPort, name: portName }],
     // The workspace container's probes reach Paseo through this sidecar,
     // so a hung proxy must be restarted independently — otherwise a dead
     // proxy would restart the healthy workspace instead.
@@ -623,7 +639,7 @@ export function createRoutes(
       metadata: { name: terminalRouteName, namespace, labels: buildLabels(name) },
       spec: {
         to: { kind: 'Service', name: serviceName, weight: 100 },
-        port: { targetPort: 'oauth-proxy-terminal' },
+        port: { targetPort: TERMINAL_PROXY_PORT_NAME },
         tls: { termination: 'edge', insecureEdgeTerminationPolicy: 'Redirect' },
       },
     });
@@ -768,9 +784,9 @@ export function buildWorkspaceRecipeProps(
       ...(terminalProxySidecar
         ? [
             {
-              name: 'oauth-proxy-terminal',
+              name: TERMINAL_PROXY_PORT_NAME,
               port: OAUTH_PROXY_TERMINAL_PORT,
-              targetPort: 'oauth-proxy-terminal',
+              targetPort: TERMINAL_PROXY_PORT_NAME,
             },
           ]
         : []),
