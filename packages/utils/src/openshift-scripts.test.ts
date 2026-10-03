@@ -494,9 +494,11 @@ describe('paseo auto-resume', () => {
 });
 
 describe('backup script', () => {
-  it('excludes devin secrets and regenerable dirs but keeps the session store', () => {
+  it('excludes devin ephemeral dirs but keeps credentials and the session store', () => {
     const script = buildBackupScript('devenv');
-    expect(script).toContain('--exclude=.local/share/devin/credentials.toml');
+    // credentials.toml survives: the archive is encrypted and losing it
+    // leaves the restored workspace with an unauthenticated devin agent.
+    expect(script).not.toContain('--exclude=.local/share/devin/credentials.toml');
     expect(script).toContain('--exclude=.local/share/devin/mcp');
     expect(script).toContain('--exclude=.local/share/devin/cli/logs');
     // The session store is the point — the bare dir must not be excluded.
