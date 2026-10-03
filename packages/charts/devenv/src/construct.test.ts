@@ -71,5 +71,9 @@ describe('Devenv construct — terminal port', () => {
     const m = synth({ ...baseProps, terminalPort: 8090 });
     const ports = podSpec(m).containers?.[0]?.ports ?? [];
     expect(ports).toContainEqual({ containerPort: 8090, name: 'terminal' });
+    const svc = findManifest(m, 'Service', 'dev');
+    const svcPorts = (svc.spec as { ports: { port: number; name: string; targetPort: string }[] })
+      .ports;
+    expect(svcPorts).toContainEqual({ port: 8090, name: 'terminal', targetPort: 'terminal' });
   });
 });

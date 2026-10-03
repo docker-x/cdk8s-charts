@@ -1185,7 +1185,7 @@ Deploys a devenv.sh workspace as raw K8s ApiObjects. The container image is
 built by `devenv container build processes` (Nix/nix2container) and pushed to
 a registry. This construct deploys that image as a Kubernetes Deployment with
 a durable PVC, SSH access, and devenv process ports (sshd, paseo, caddy,
-preview, terminal).
+preview), plus a dedicated terminal app port.
 
 The container runs the image's ENTRYPOINT (`devenv up`) unless `command`
 is set, which starts all configured processes via devenv's native

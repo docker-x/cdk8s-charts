@@ -91,7 +91,8 @@ export interface Values {
   livenessProbe?: Probe;
   readinessProbe?: Probe;
   startupProbe?: Probe;
-  /** Extra service ports to expose (in addition to ssh, paseo, caddy, preview). */
+  /** Extra service ports to expose (in addition to ssh, paseo, caddy, preview,
+   *  and terminal — the last is app-bound, not a devenv-managed process). */
   extraServicePorts?: ServicePort[];
   /** SA name (default: {id}-sa). */
   serviceAccountName?: string;
