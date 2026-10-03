@@ -514,17 +514,32 @@ describe('backup script', () => {
     const target = '.local/share/devin/credentials.toml';
     // A file is dropped when a pattern glob-matches it or any ancestor dir.
     const candidates = [target, '.local/share/devin', '.local/share', '.local'];
-    const glob = (p: string) =>
-      new RegExp(
-        `^${p
-          .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-          .replace(/\*/g, '.*')
-          .replace(/\?/g, '.')}$`,
-      );
+    // Classic wildcard matcher for `*`/`?` — no RegExp from dynamic input.
+    const globMatch = (pat: string, s: string): boolean => {
+      let pi = 0;
+      let si = 0;
+      let star = -1;
+      let ss = 0;
+      while (si < s.length) {
+        if (pi < pat.length && (pat[pi] === '?' || pat[pi] === s[si])) {
+          pi++;
+          si++;
+        } else if (pi < pat.length && pat[pi] === '*') {
+          star = pi++;
+          ss = si;
+        } else if (star !== -1) {
+          pi = star + 1;
+          si = ++ss;
+        } else {
+          return false;
+        }
+      }
+      while (pi < pat.length && pat[pi] === '*') pi++;
+      return pi === pat.length;
+    };
     for (const p of pats) {
-      const re = glob(p);
       for (const c of candidates) {
-        expect(re.test(c), `pattern "${p}" must not match "${c}"`).toBe(false);
+        expect(globMatch(p, c), `pattern "${p}" must not match "${c}"`).toBe(false);
       }
     }
   });
