@@ -191,12 +191,27 @@ describe('OpenShiftDevenv recipe — terminal Route', () => {
     expect(ports.map((p) => p.name)).toContain('oauth-proxy-terminal');
     expect(ports.find((p) => p.name === 'oauth-proxy-terminal')?.port).toBe(4181);
 
-    // The SA OAuth client whitelists the terminal callback.
+    // The SA OAuth client whitelists the terminal callback on a dedicated
+    // suffix — never clobbering a caller's own .secondary.
     const sa = findManifest(m, 'ServiceAccount', 'devenv-sa');
     const ann = (sa.metadata as { annotations: Record<string, string> }).annotations;
-    expect(ann['serviceaccounts.openshift.io/oauth-redirecturi.secondary']).toBe(
+    expect(ann['serviceaccounts.openshift.io/oauth-redirecturi.terminal']).toBe(
       'https://devenv-terminal-test-ns.apps.example.com/oauth/callback',
     );
+  });
+
+  it('rejects a caller-set terminal redirect annotation', () => {
+    expect(() =>
+      synth({
+        ...baseProps,
+        terminalRoute: true,
+        values: {
+          serviceAccountAnnotations: {
+            'serviceaccounts.openshift.io/oauth-redirecturi.terminal': 'https://x.example.com',
+          },
+        },
+      }),
+    ).toThrow('chart-managed');
   });
 
   it('omits the terminal proxy sidecar without terminalRoute', () => {

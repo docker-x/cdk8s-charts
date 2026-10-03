@@ -100,7 +100,9 @@ export class OpenShiftDevenv extends Chart {
     // terminalRoute → second oauth-proxy sidecar fronts the terminal port:
     // same OpenShift SSO as paseo, so the app on 127.0.0.1:terminalPort
     // needs no auth of its own.
-    const terminalPort = (props.values?.terminalPort as number | undefined) ?? 8081;
+    // `||` not `??`: an untyped null terminalPort must fall back to 8081
+    // so the proxy upstream and the container port can't diverge.
+    const terminalPort = (props.values?.terminalPort as number | undefined) || 8081;
     const terminalProxySidecar = props.terminalRoute
       ? buildOauthProxySidecar(namespace, saName, terminalPort, {
           name: 'oauth-proxy-terminal',

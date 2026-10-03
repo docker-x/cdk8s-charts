@@ -702,6 +702,12 @@ export function buildWorkspaceRecipeValues(
   props: WorkspaceRecipeProps,
 ): Record<string, unknown> {
   const paseoRedirectUri = `https://${name}-paseo-${namespace}.${appsDomain}/oauth/callback`;
+  const terminalKey = 'serviceaccounts.openshift.io/oauth-redirecturi.terminal';
+  if (props.terminalRoute && props.values?.serviceAccountAnnotations?.[terminalKey]) {
+    throw new Error(
+      `serviceAccountAnnotations["${terminalKey}"] is chart-managed when terminalRoute is enabled`,
+    );
+  }
   return {
     ...props.values,
     serviceAccountAnnotations: {
@@ -709,11 +715,10 @@ export function buildWorkspaceRecipeValues(
       'serviceaccounts.openshift.io/oauth-redirecturi.primary': paseoRedirectUri,
       // Second oauth-proxy sidecar fronts the terminal Route — the SA
       // OAuth client must whitelist its callback too, or the SSO dance
-      // dies at the redirect check.
+      // dies at the redirect check. A dedicated `.terminal` suffix avoids
+      // silently clobbering a caller-provided `.secondary`.
       ...(props.terminalRoute
-        ? {
-            'serviceaccounts.openshift.io/oauth-redirecturi.secondary': `https://${name}-terminal-${namespace}.${appsDomain}/oauth/callback`,
-          }
+        ? { [terminalKey]: `https://${name}-terminal-${namespace}.${appsDomain}/oauth/callback` }
         : {}),
     },
   };
