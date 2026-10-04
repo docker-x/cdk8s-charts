@@ -593,19 +593,23 @@ export function createWorkspaceService(
     'app.kubernetes.io/name': name,
     'app.kubernetes.io/managed-by': 'cdk8s',
   };
+  const svcType = values.serviceType ?? 'ClusterIP';
   new ApiObject(scope, 'service', {
     apiVersion: 'v1',
     kind: 'Service',
     metadata: { name, namespace, labels: podLabels },
     spec: {
       selector: { 'app.kubernetes.io/name': name },
+      // nodePort is only meaningful on NodePort/LoadBalancer — emit it
+      // only then; a ClusterIP spec carrying nodePort fields is dead
+      // config.
       ports: [...servicePorts.ports, ...(values.extraServicePorts ?? [])].map((p) => ({
         ...p,
-        ...((p.nodePort ?? values.serviceNodePorts?.[p.name])
+        ...(svcType !== 'ClusterIP' && (p.nodePort ?? values.serviceNodePorts?.[p.name])
           ? { nodePort: p.nodePort ?? values.serviceNodePorts?.[p.name] }
           : {}),
       })),
-      type: values.serviceType ?? 'ClusterIP',
+      type: svcType,
     },
   });
 }

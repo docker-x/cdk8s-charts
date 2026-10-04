@@ -89,6 +89,7 @@ export class DevenvOci extends Chart {
         ? [buildRestoreInitContainer(name, homeMountPath, backup.restoreToken)]
         : [];
     const lifecycle = buildLifecycle(paseoAutoResume, homeMountPath, 'devenv');
+    assertNoChartManagedEnv(props.env, 'devenv');
     assertNoChartManagedEnv(props.values?.env as Record<string, unknown> | undefined, 'devenv');
     const workspaceEnv = {
       TERM: 'xterm-256color',
@@ -122,7 +123,10 @@ export class DevenvOci extends Chart {
       lifecycle,
       serviceType: 'NodePort',
       serviceNodePorts,
-      values: props.values,
+      // NodePort is structural for this recipe — the tailnet `tailscale
+      // serve` targets it. Values overrides must not be able to switch
+      // it back to ClusterIP or renumber the fixed ports.
+      values: { ...props.values, serviceType: 'NodePort', serviceNodePorts },
     });
 
     if (hasBackupSecrets) createBackupRbac(this, name, namespace);
