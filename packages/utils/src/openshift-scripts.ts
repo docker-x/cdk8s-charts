@@ -308,7 +308,7 @@ export function buildRestoreScript(): string {
     // --output text emits the key list tab-separated on one line ("None"
     // when Contents is null), avoiding a jq dependency. The listing
     // streams to a file — capturing it in a variable would hold every
-    // key in the 512Mi init container's shell memory. Its rc is checked
+    // key in the init container's shell memory. Its rc is checked
     // on its own line — inside the KEY pipeline /bin/sh would report
     // only head's status, so a failed aws would read as "no backups"
     // and start the workspace without restoring.
