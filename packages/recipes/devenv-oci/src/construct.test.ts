@@ -86,6 +86,22 @@ describe('DevenvOci — backup', () => {
     expect(init?.map((c) => c.name)).toContain('r2-restore');
   });
 
+  it('runs the backup CronJob on a multi-arch kubectl image (no amd64-only oc)', () => {
+    const cj = findManifest(synth(backupProps), 'CronJob', 'devenv-backup');
+    const container = (
+      cj.spec as {
+        jobTemplate: {
+          spec: { template: { spec: { containers: { image: string; command: string[] }[] } } };
+        };
+      }
+    ).jobTemplate.spec.template.spec.containers[0];
+    expect(container.image).toContain('kubectl');
+    const cmd = container.command.join(' ');
+    expect(cmd).toContain('kubectl get pods');
+    expect(cmd).toContain('kubectl exec');
+    expect(cmd).not.toMatch(/(^|[^a-z])oc (get|exec)/);
+  });
+
   it('emits no backup resources without credentials', () => {
     const m = synth(baseProps);
     expect(m.some((d) => d.kind === 'CronJob')).toBe(false);

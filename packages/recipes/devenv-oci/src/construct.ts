@@ -127,7 +127,13 @@ export class DevenvOci extends Chart {
 
     if (hasBackupSecrets) createBackupRbac(this, name, namespace);
     if (hasBackupSecrets)
-      createBackupCronJob(this, name, namespace, backup, homeMountPath, 'devenv');
+      // origin-cli is amd64-only — on ARM nodes (OCI Ampere) use the
+      // multi-arch bitnami kubectl image; the backup script only needs
+      // vanilla kubectl verbs (get/exec).
+      createBackupCronJob(this, name, namespace, backup, homeMountPath, 'devenv', {
+        cli: 'kubectl',
+        cliImage: 'docker.io/bitnamilegacy/kubectl:1.33',
+      });
     if (podSandbox.enabled) createWorkspacePodRbac(this, name, namespace, `${name}-sa`);
 
     this.exports = {
