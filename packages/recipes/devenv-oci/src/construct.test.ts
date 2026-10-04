@@ -66,7 +66,7 @@ describe('DevenvOci — vanilla k8s surface', () => {
       dep.spec as {
         template: {
           spec: {
-            containers: { name: string; image?: string; args?: string[] }[];
+            containers: { name: string; image?: string; args?: string[]; env?: unknown[] }[];
           };
         };
       }
@@ -74,7 +74,12 @@ describe('DevenvOci — vanilla k8s surface', () => {
     const fwd = containers.find((c) => c.name === 'paseo-forwarder');
     expect(fwd?.image).toBe('docker.io/alpine/socat:1.8.1.1');
     expect(fwd?.args?.join(' ')).toContain('TCP4-LISTEN:6767');
+    expect(fwd?.args?.join(' ')).toContain('bind="$POD_IP"');
     expect(fwd?.args?.join(' ')).toContain('TCP4:127.0.0.1:6767');
+    expect(fwd?.env).toContainEqual({
+      name: 'POD_IP',
+      valueFrom: { fieldRef: { fieldPath: 'status.podIP' } },
+    });
   });
 
   it('rejects a zero nodePort for exported ports at synth time', () => {
