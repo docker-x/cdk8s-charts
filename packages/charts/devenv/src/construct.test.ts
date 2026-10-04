@@ -77,3 +77,43 @@ describe('Devenv construct — terminal port', () => {
     expect(svcPorts).toContainEqual({ port: 8090, name: 'terminal', targetPort: 'terminal' });
   });
 });
+
+describe('Devenv construct — service type', () => {
+  it('defaults to ClusterIP without nodePorts', () => {
+    const svc = findManifest(synth(baseProps), 'Service', 'dev');
+    const spec = svc.spec as { type: string; ports: { nodePort?: number }[] };
+    expect(spec.type).toBe('ClusterIP');
+    expect(spec.ports.every((p) => p.nodePort === undefined)).toBe(true);
+  });
+
+  it('honours serviceType NodePort with fixed per-port nodePorts', () => {
+    const svc = findManifest(
+      synth({
+        ...baseProps,
+        serviceType: 'NodePort',
+        serviceNodePorts: { paseo: 30676, ssh: 30222 },
+      }),
+      'Service',
+      'dev',
+    );
+    const spec = svc.spec as {
+      type: string;
+      ports: { port: number; name: string; nodePort?: number }[];
+    };
+    expect(spec.type).toBe('NodePort');
+    expect(spec.ports).toContainEqual({
+      port: 6767,
+      name: 'paseo',
+      targetPort: 'paseo',
+      nodePort: 30676,
+    });
+    expect(spec.ports).toContainEqual({
+      port: 2222,
+      name: 'ssh',
+      targetPort: 'ssh',
+      nodePort: 30222,
+    });
+    // ports not listed in serviceNodePorts get a cluster-assigned nodePort
+    expect(spec.ports.find((p) => p.name === 'caddy')?.nodePort).toBeUndefined();
+  });
+});

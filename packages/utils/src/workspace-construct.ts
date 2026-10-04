@@ -48,7 +48,15 @@ export interface WorkspaceValues {
   resources?: Record<string, unknown>;
   sshPort?: number;
   previewPort?: number;
-  extraServicePorts?: Array<{ port: number; targetPort: string | number; name: string }>;
+  serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
+  /** Fixed nodePort per service port name (only meaningful with NodePort type). */
+  serviceNodePorts?: Record<string, number>;
+  extraServicePorts?: Array<{
+    port: number;
+    targetPort: string | number;
+    name: string;
+    nodePort?: number;
+  }>;
 }
 
 /** Derived state from workspace values (shared between Devcontainer and Devenv). */
@@ -303,7 +311,7 @@ export interface WorkspaceContainerSpec {
 }
 
 export interface WorkspaceServicePorts {
-  ports: Array<{ port: number; targetPort: string | number; name: string }>;
+  ports: Array<{ port: number; targetPort: string | number; name: string; nodePort?: number }>;
 }
 
 export interface WorkspaceSidecars {
@@ -591,8 +599,13 @@ export function createWorkspaceService(
     metadata: { name, namespace, labels: podLabels },
     spec: {
       selector: { 'app.kubernetes.io/name': name },
-      ports: [...servicePorts.ports, ...(values.extraServicePorts ?? [])],
-      type: 'ClusterIP',
+      ports: [...servicePorts.ports, ...(values.extraServicePorts ?? [])].map((p) => ({
+        ...p,
+        ...((p.nodePort ?? values.serviceNodePorts?.[p.name])
+          ? { nodePort: p.nodePort ?? values.serviceNodePorts?.[p.name] }
+          : {}),
+      })),
+      type: values.serviceType ?? 'ClusterIP',
     },
   });
 }
@@ -632,7 +645,14 @@ export interface WorkspaceValuesProps {
   livenessProbe?: Probe;
   readinessProbe?: Probe;
   startupProbe?: Probe;
-  extraServicePorts?: Array<{ port: number; targetPort: string | number; name: string }>;
+  serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
+  serviceNodePorts?: Record<string, number>;
+  extraServicePorts?: Array<{
+    port: number;
+    targetPort: string | number;
+    name: string;
+    nodePort?: number;
+  }>;
   serviceAccountName?: string;
   serviceAccountAnnotations?: Record<string, string>;
   automountServiceAccountToken?: boolean;
@@ -675,6 +695,8 @@ export function buildWorkspaceComputedValues(
     readinessProbe: props.readinessProbe,
     startupProbe: props.startupProbe,
     extraServicePorts: props.extraServicePorts,
+    serviceType: props.serviceType,
+    serviceNodePorts: props.serviceNodePorts,
     serviceAccountName: props.serviceAccountName ?? `${name}-sa`,
     serviceAccountAnnotations: props.serviceAccountAnnotations,
     automountServiceAccountToken: props.automountServiceAccountToken ?? true,
