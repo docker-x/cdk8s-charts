@@ -1210,7 +1210,7 @@ following the same pattern as `@cdk8s-charts/devcontainer`.
 | `paseoPort` | `number` | no | Paseo port — devenv paseo process (default: `6767`) |
 | `caddyPort` | `number` | no | Caddy proxy port — devenv caddy process (default: `8080`) |
 | `previewPort` | `number` | no | Preview port for web UIs (default: `3000`) |
-| `terminalPort` | `number` | no | Terminal port — dedicated app port for secondary workloads that ship their own HTTP server and auth; not a devenv-managed process (default: `8081`, 8080 is the caddy process) |
+| `terminalPort` | `number` | no | Terminal port — dedicated app port for secondary workloads that ship their own HTTP server; not a devenv-managed process. When `terminalRoute` is on, the app is fronted by the `oauth-proxy-terminal` SSO sidecar and should bind 127.0.0.1 — the `terminal` Service port is then unreachable by design, external access goes through the Route (default: `8081`, 8080 is the caddy process) |
 | `sshAuthorizedKeys` | `string` | no | SSH authorized_keys content (creates a Secret) |
 | `sshSecretName` | `string` | no | Existing Secret name with `authorized_keys` key |
 | `imagePullSecret` | `string` | no | Base64 docker config JSON for private registry auth |
@@ -1299,9 +1299,10 @@ but using the Devenv chart:
 2. **OAuth proxy sidecar** — OpenShift OAuth proxy for SSO-protected web access
 3. **OpenShift Routes** — edge-terminated TLS route for the Paseo web UI;
    the preview Route is opt-in (`previewRoute: true`) because it bypasses
-   oauth-proxy; the terminal Route is likewise opt-in
-   (`terminalRoute: true`) and also bypasses oauth-proxy — the app on the
-   terminal port must enforce its own auth
+   oauth-proxy; the terminal Route is opt-in
+   (`terminalRoute: true`) and is fronted by a second oauth-proxy sidecar
+   (`oauth-proxy-terminal`, port 4181) — same OpenShift SSO as paseo, so
+   the app on the terminal port should bind 127.0.0.1
 4. **Keepalive CronJob** — anti-idle: scales Deployment back to 1, deletes stuck pods
 5. **Backup CronJob** — daily encrypted tar backup of PVC to Cloudflare R2; retention keeps the newest `backup.keep` objects under `backup.retentionPrefix` (default: the upload prefix `workspace-state-<name>-`). Widening `retentionPrefix` reaps backups orphaned by a workload rename — and any other keys sharing the stem in the bucket
    The archive excludes secrets and regenerable paths; the Devin
@@ -1458,7 +1459,7 @@ but using the Devenv chart:
 | `tfDeployer` | `{ enabled, extraManagedSecrets }` | no | TF deployer SA + RBAC; `extraManagedSecrets` adds names to the scoped secrets set |
 | `podSandbox` | `{ enabled }` | no | Workspace SA pod-spawn RBAC (default: enabled) |
 | `previewRoute` | `boolean` | no | Public Route for the preview port, unauthenticated (default: `false`) |
-| `terminalRoute` | `boolean` | no | Public Route for the terminal port — bypasses oauth-proxy, the app on the port must enforce its own auth (default: `false`) |
+| `terminalRoute` | `boolean` | no | Public Route for the terminal port — fronted by the `oauth-proxy-terminal` SSO sidecar; the app should bind 127.0.0.1 (default: `false`) |
 | `values` | `DeepPartial<DevenvValues>` | no | Raw devenv value overrides |
 
 **Exports (`OpenShiftDevenvExports`):**
