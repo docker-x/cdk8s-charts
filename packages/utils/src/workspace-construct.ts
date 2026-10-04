@@ -626,12 +626,13 @@ export function createWorkspaceService(
       // only then; a ClusterIP spec carrying nodePort fields is dead
       // config.
       ports: allPorts.map((p) => {
-        if (svcType === 'ClusterIP') {
-          const { nodePort: _nodePort, ...rest } = p;
-          return rest;
-        }
         const np = p.nodePort ?? values.serviceNodePorts?.[p.name];
-        return np !== undefined ? { ...p, nodePort: np } : p;
+        return {
+          port: p.port,
+          targetPort: p.targetPort,
+          name: p.name,
+          ...(svcType !== 'ClusterIP' && np !== undefined ? { nodePort: np } : {}),
+        };
       }),
       type: svcType,
     },
