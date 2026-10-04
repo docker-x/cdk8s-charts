@@ -23,6 +23,8 @@ export interface ServicePort {
   name: string;
   port: number;
   targetPort: string | number;
+  /** Fixed nodePort (only meaningful when serviceType is NodePort/LoadBalancer). */
+  nodePort?: number;
 }
 
 export interface Values {
@@ -94,6 +96,10 @@ export interface Values {
   /** Extra service ports to expose (in addition to ssh, paseo, caddy, preview,
    *  and terminal — the last is app-bound, not a devenv-managed process). */
   extraServicePorts?: ServicePort[];
+  /** Service type (default: ClusterIP). */
+  serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
+  /** Fixed nodePort per service port name (only meaningful with NodePort/LoadBalancer). */
+  serviceNodePorts?: Record<string, number>;
   /** SA name (default: {id}-sa). */
   serviceAccountName?: string;
   /** Annotations for the ServiceAccount (e.g. OpenShift OAuth redirect URIs). */

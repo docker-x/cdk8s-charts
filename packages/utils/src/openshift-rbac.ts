@@ -124,16 +124,34 @@ export function createBackupRbac(scope: Construct, name: string, namespace: stri
   });
 }
 
+export interface BackupCronJobOptions {
+  /**
+   * CLI binary for pod discovery/exec (default: "oc"). Must be a plain
+   * executable name — it is interpolated into the backup shell script.
+   * Pair with `cliImage`: a kubectl-only image needs `cli: 'kubectl'`,
+   * an origin-cli image carries both `oc` and `kubectl`.
+   */
+  cli?: string;
+  /**
+   * Cron container image (default: OC_CLI_IMAGE — quay.io openshift
+   * origin-cli, amd64-only; on ARM clusters pass a multi-arch kubectl
+   * image AND `cli: 'kubectl'`, or the script will invoke a binary that
+   * is not in the image).
+   */
+  cliImage?: string;
+}
+
 function buildBackupContainerSpec(
   name: string,
   namespace: string,
   backup: ResolvedBackup,
   homeMountPath: string,
   variant: 'devcontainer' | 'devenv',
+  opts: BackupCronJobOptions = {},
 ) {
   return {
     name: 'r2-backup',
-    image: OC_CLI_IMAGE,
+    image: opts.cliImage ?? OC_CLI_IMAGE,
     imagePullPolicy: 'IfNotPresent' as const,
     securityContext: {
       runAsNonRoot: true,
@@ -153,8 +171,15 @@ function buildBackupContainerSpec(
         value: backup.retentionPrefix ? backup.retentionPrefix : `workspace-state-${name}-`,
       },
     ],
-    command: ['/bin/sh', '-ec', buildBackupScript(variant)],
+    command: ['/bin/sh', '-ec', buildBackupScript(variant, opts.cli ?? 'oc')],
   };
+}
+
+/** Validate that a CLI override is a plain executable name, not shell. */
+function assertCliExecutableName(cli: string): void {
+  if (!/^[a-zA-Z0-9._-]+$/.test(cli)) {
+    throw new Error(`backup cli must be a plain executable name, got: ${cli}`);
+  }
 }
 
 export function createBackupCronJob(
@@ -164,10 +189,12 @@ export function createBackupCronJob(
   backup: ResolvedBackup,
   homeMountPath: string,
   variant: 'devcontainer' | 'devenv' = 'devcontainer',
+  opts: BackupCronJobOptions = {},
 ): void {
   if (!Number.isInteger(backup.keep) || backup.keep <= 0) {
     throw new Error(`backup.keep must be a positive integer, got: ${backup.keep}`);
   }
+  if (opts.cli !== undefined) assertCliExecutableName(opts.cli);
   if (backup.retentionPrefix !== undefined && backup.retentionPrefix.trim() === '') {
     throw new Error('backup.retentionPrefix must be non-blank when provided');
   }
@@ -190,7 +217,7 @@ export function createBackupCronJob(
               serviceAccountName: saName,
               restartPolicy: 'OnFailure',
               containers: [
-                buildBackupContainerSpec(name, namespace, backup, homeMountPath, variant),
+                buildBackupContainerSpec(name, namespace, backup, homeMountPath, variant, opts),
               ],
             },
           },

@@ -48,7 +48,15 @@ export interface WorkspaceValues {
   resources?: Record<string, unknown>;
   sshPort?: number;
   previewPort?: number;
-  extraServicePorts?: Array<{ port: number; targetPort: string | number; name: string }>;
+  serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
+  /** Fixed nodePort per service port name (only meaningful with NodePort/LoadBalancer). */
+  serviceNodePorts?: Record<string, number>;
+  extraServicePorts?: Array<{
+    port: number;
+    targetPort: string | number;
+    name: string;
+    nodePort?: number;
+  }>;
 }
 
 /** Derived state from workspace values (shared between Devcontainer and Devenv). */
@@ -303,7 +311,7 @@ export interface WorkspaceContainerSpec {
 }
 
 export interface WorkspaceServicePorts {
-  ports: Array<{ port: number; targetPort: string | number; name: string }>;
+  ports: Array<{ port: number; targetPort: string | number; name: string; nodePort?: number }>;
 }
 
 export interface WorkspaceSidecars {
@@ -585,14 +593,48 @@ export function createWorkspaceService(
     'app.kubernetes.io/name': name,
     'app.kubernetes.io/managed-by': 'cdk8s',
   };
+  const svcType = values.serviceType ?? 'ClusterIP';
+  const allPorts = [...servicePorts.ports, ...(values.extraServicePorts ?? [])];
+  if (values.serviceNodePorts) {
+    const portNames = new Set(allPorts.map((p) => p.name));
+    for (const key of Object.keys(values.serviceNodePorts)) {
+      if (!portNames.has(key)) {
+        throw new Error(
+          `serviceNodePorts key "${key}" does not match a service port ` +
+            `(${[...portNames].join(', ')})`,
+        );
+      }
+    }
+  }
+  if (svcType !== 'ClusterIP') {
+    for (const p of allPorts) {
+      const np = p.nodePort ?? values.serviceNodePorts?.[p.name];
+      if (np !== undefined && (!Number.isInteger(np) || np < 1 || np > 65535)) {
+        throw new Error(
+          `nodePort for service port "${p.name}" must be an integer in 1-65535, got: ${np}`,
+        );
+      }
+    }
+  }
   new ApiObject(scope, 'service', {
     apiVersion: 'v1',
     kind: 'Service',
     metadata: { name, namespace, labels: podLabels },
     spec: {
       selector: { 'app.kubernetes.io/name': name },
-      ports: [...servicePorts.ports, ...(values.extraServicePorts ?? [])],
-      type: 'ClusterIP',
+      // nodePort is only meaningful on NodePort/LoadBalancer — emit it
+      // only then; a ClusterIP spec carrying nodePort fields is dead
+      // config.
+      ports: allPorts.map((p) => {
+        const np = p.nodePort ?? values.serviceNodePorts?.[p.name];
+        return {
+          port: p.port,
+          targetPort: p.targetPort,
+          name: p.name,
+          ...(svcType !== 'ClusterIP' && np !== undefined ? { nodePort: np } : {}),
+        };
+      }),
+      type: svcType,
     },
   });
 }
@@ -632,7 +674,14 @@ export interface WorkspaceValuesProps {
   livenessProbe?: Probe;
   readinessProbe?: Probe;
   startupProbe?: Probe;
-  extraServicePorts?: Array<{ port: number; targetPort: string | number; name: string }>;
+  serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
+  serviceNodePorts?: Record<string, number>;
+  extraServicePorts?: Array<{
+    port: number;
+    targetPort: string | number;
+    name: string;
+    nodePort?: number;
+  }>;
   serviceAccountName?: string;
   serviceAccountAnnotations?: Record<string, string>;
   automountServiceAccountToken?: boolean;
@@ -675,6 +724,8 @@ export function buildWorkspaceComputedValues(
     readinessProbe: props.readinessProbe,
     startupProbe: props.startupProbe,
     extraServicePorts: props.extraServicePorts,
+    serviceType: props.serviceType,
+    serviceNodePorts: props.serviceNodePorts,
     serviceAccountName: props.serviceAccountName ?? `${name}-sa`,
     serviceAccountAnnotations: props.serviceAccountAnnotations,
     automountServiceAccountToken: props.automountServiceAccountToken ?? true,
