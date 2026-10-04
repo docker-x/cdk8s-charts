@@ -377,7 +377,9 @@ export function buildRestoreInitContainer(
     ],
     resources: {
       requests: { cpu: '50m', memory: '128Mi' },
-      limits: { cpu: '500m', memory: '512Mi' },
+      // aws-cli multipart buffers + openssl/tar stream exceed 512Mi on
+      // multi-GB home restores — observed OOMKilled at 512Mi on sandbox.
+      limits: { cpu: '500m', memory: '1Gi' },
     },
   };
 }
