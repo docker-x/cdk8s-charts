@@ -38,7 +38,16 @@ export class DevenvOci extends Chart {
     const podSandbox: ResolvedPodSandbox = { enabled: true, ...props.podSandbox };
     const backup: ResolvedBackup = { schedule: '0 2 * * *', keep: 3, ...props.backup };
     const paseoPort = (props.values?.paseoPort as number | undefined) ?? 6767;
-    const nodePorts = { paseo: 30676, ssh: 30222, ...props.nodePorts };
+    // Merge nodePorts defaults, dropping explicit `undefined` so the
+    // tailnet-facing ports always resolve to real fixed values. Zero is
+    // not allowed: createWorkspaceService rejects it at synth time.
+    const nodePorts = {
+      paseo: 30676,
+      ssh: 30222,
+      ...Object.fromEntries(
+        Object.entries(props.nodePorts ?? {}).filter(([, v]) => v !== undefined),
+      ),
+    };
 
     const { r2SecretName, hasBackupSecrets } = createR2Secret(this, name, namespace, backup);
     const autoResumeConfigMapName = createPaseoConfigMap(
@@ -101,7 +110,26 @@ export class DevenvOci extends Chart {
     };
     const podAnnotations = buildPodAnnotations(paseoAutoResume, 'devenv', paseoPort);
 
-    const serviceNodePorts = Object.fromEntries(Object.entries(nodePorts).filter(([, v]) => v));
+    const serviceNodePorts = nodePorts;
+    // Paseo binds 127.0.0.1 inside the workspace container, so NodePort
+    // DNAT to the pod IP would be refused (no oauth-proxy here). A tiny
+    // socat sidecar binds the pod IP and forwards to loopback — the only
+    // caller reaching it is `tailscale serve` via the nodePort.
+    const paseoForwarder = {
+      name: 'paseo-forwarder',
+      image: 'docker.io/alpine/socat:1.8.1.1',
+      command: ['/bin/sh', '-ec'],
+      args: [
+        `exec socat TCP4-LISTEN:${paseoPort},fork,reuseaddr,bind="$POD_IP" TCP4:127.0.0.1:${paseoPort}`,
+      ],
+      env: [{ name: 'POD_IP', valueFrom: { fieldRef: { fieldPath: 'status.podIP' } } }],
+      securityContext: {
+        runAsNonRoot: true,
+        runAsUser: 65534,
+        allowPrivilegeEscalation: false,
+        capabilities: { drop: ['ALL'] },
+      },
+    };
     const devenv = new Devenv(this, 'workspace', {
       namespace,
       image: props.image,
@@ -121,6 +149,7 @@ export class DevenvOci extends Chart {
       volumeMounts: extraVolumeMounts,
       initContainers,
       lifecycle,
+      sidecars: [paseoForwarder],
       serviceType: 'NodePort',
       serviceNodePorts,
       // NodePort is structural for this recipe — the tailnet `tailscale
@@ -138,13 +167,14 @@ export class DevenvOci extends Chart {
         cli: 'kubectl',
         cliImage: 'docker.io/bitnamilegacy/kubectl:1.33',
       });
-    if (podSandbox.enabled) createWorkspacePodRbac(this, name, namespace, `${name}-sa`);
+    const saName = props.values?.serviceAccountName ?? `${name}-sa`;
+    if (podSandbox.enabled) createWorkspacePodRbac(this, name, namespace, saName);
 
     this.exports = {
       pvcName: devenv.exports.pvcName,
       serviceName: devenv.exports.serviceName,
-      paseoNodePort: nodePorts.paseo ?? 30676,
-      sshNodePort: nodePorts.ssh ?? 30222,
+      paseoNodePort: nodePorts.paseo,
+      sshNodePort: nodePorts.ssh,
       backupCronJobName: hasBackupSecrets ? `${name}-backup` : '',
     };
   }

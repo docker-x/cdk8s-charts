@@ -23,7 +23,7 @@ export interface ServicePort {
   name: string;
   port: number;
   targetPort: string | number;
-  /** Fixed nodePort (only meaningful when serviceType is NodePort). */
+  /** Fixed nodePort (only meaningful when serviceType is NodePort/LoadBalancer). */
   nodePort?: number;
 }
 
@@ -98,7 +98,7 @@ export interface Values {
   extraServicePorts?: ServicePort[];
   /** Service type (default: ClusterIP). */
   serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
-  /** Fixed nodePort per service port name (only meaningful with NodePort). */
+  /** Fixed nodePort per service port name (only meaningful with NodePort/LoadBalancer). */
   serviceNodePorts?: Record<string, number>;
   /** SA name (default: {id}-sa). */
   serviceAccountName?: string;

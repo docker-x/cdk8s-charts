@@ -109,14 +109,18 @@ export interface DevenvOciProps {
   /**
    * Fixed nodePorts on the Service (type NodePort). Defaults expose
    * paseo:30676 and ssh:30222 so host-level `tailscale serve` has stable
-   * targets. Set a port to 0 to leave it cluster-assigned.
+   * targets. Values must be integers in 1-65535 (cluster node-port range
+   * is typically 30000-32767); paseo and ssh are exported and must
+   * resolve to fixed ports — `preview` may be left unset for a
+   * cluster-assigned port.
    */
   nodePorts?: NodePorts;
   /**
    * Raw devenv value overrides. Note: unlike the OpenShift recipe there
    * is no oauth-proxy in front of paseo — the daemon binds 127.0.0.1, so
-   * kubelet httpGet probes cannot reach it. Probes stay off; access
-   * control is the tailnet ACL on the node.
+   * a `paseo-forwarder` socat sidecar exposes it on the pod IP and
+   * kubelet httpGet probes stay off. Access control is the tailnet ACL
+   * on the node.
    */
   values?: DeepPartial<DevenvValues>;
 }

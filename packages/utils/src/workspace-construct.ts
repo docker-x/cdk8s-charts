@@ -49,7 +49,7 @@ export interface WorkspaceValues {
   sshPort?: number;
   previewPort?: number;
   serviceType?: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
-  /** Fixed nodePort per service port name (only meaningful with NodePort type). */
+  /** Fixed nodePort per service port name (only meaningful with NodePort/LoadBalancer). */
   serviceNodePorts?: Record<string, number>;
   extraServicePorts?: Array<{
     port: number;
@@ -594,6 +594,28 @@ export function createWorkspaceService(
     'app.kubernetes.io/managed-by': 'cdk8s',
   };
   const svcType = values.serviceType ?? 'ClusterIP';
+  const allPorts = [...servicePorts.ports, ...(values.extraServicePorts ?? [])];
+  if (values.serviceNodePorts) {
+    const portNames = new Set(allPorts.map((p) => p.name));
+    for (const key of Object.keys(values.serviceNodePorts)) {
+      if (!portNames.has(key)) {
+        throw new Error(
+          `serviceNodePorts key "${key}" does not match a service port ` +
+            `(${[...portNames].join(', ')})`,
+        );
+      }
+    }
+  }
+  if (svcType !== 'ClusterIP') {
+    for (const p of allPorts) {
+      const np = p.nodePort ?? values.serviceNodePorts?.[p.name];
+      if (np !== undefined && (!Number.isInteger(np) || np < 1 || np > 65535)) {
+        throw new Error(
+          `nodePort for service port "${p.name}" must be an integer in 1-65535, got: ${np}`,
+        );
+      }
+    }
+  }
   new ApiObject(scope, 'service', {
     apiVersion: 'v1',
     kind: 'Service',
@@ -603,12 +625,14 @@ export function createWorkspaceService(
       // nodePort is only meaningful on NodePort/LoadBalancer — emit it
       // only then; a ClusterIP spec carrying nodePort fields is dead
       // config.
-      ports: [...servicePorts.ports, ...(values.extraServicePorts ?? [])].map((p) => ({
-        ...p,
-        ...(svcType !== 'ClusterIP' && (p.nodePort ?? values.serviceNodePorts?.[p.name])
-          ? { nodePort: p.nodePort ?? values.serviceNodePorts?.[p.name] }
-          : {}),
-      })),
+      ports: allPorts.map((p) => {
+        if (svcType === 'ClusterIP') {
+          const { nodePort: _nodePort, ...rest } = p;
+          return rest;
+        }
+        const np = p.nodePort ?? values.serviceNodePorts?.[p.name];
+        return np !== undefined ? { ...p, nodePort: np } : p;
+      }),
       type: svcType,
     },
   });

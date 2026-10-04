@@ -60,6 +60,29 @@ describe('DevenvOci — vanilla k8s surface', () => {
     });
   });
 
+  it('adds a socat forwarder binding the pod IP for loopback-only paseo', () => {
+    const dep = findManifest(synth(baseProps), 'Deployment', 'devenv');
+    const containers = (
+      dep.spec as {
+        template: {
+          spec: {
+            containers: { name: string; image?: string; args?: string[] }[];
+          };
+        };
+      }
+    ).template.spec.containers;
+    const fwd = containers.find((c) => c.name === 'paseo-forwarder');
+    expect(fwd?.image).toBe('docker.io/alpine/socat:1.8.1.1');
+    expect(fwd?.args?.join(' ')).toContain('TCP4-LISTEN:6767');
+    expect(fwd?.args?.join(' ')).toContain('TCP4:127.0.0.1:6767');
+  });
+
+  it('rejects a zero nodePort for exported ports at synth time', () => {
+    expect(() => synth({ ...baseProps, nodePorts: { paseo: 0 } })).toThrow(
+      /nodePort for service port "paseo"/,
+    );
+  });
+
   it('sets PASEO_HOSTNAMES from externalHostnames', () => {
     const dep = findManifest(
       synth({ ...baseProps, externalHostnames: ['a.ts.net', 'b.ts.net'] }),
@@ -95,7 +118,7 @@ describe('DevenvOci — backup', () => {
         };
       }
     ).jobTemplate.spec.template.spec.containers[0];
-    expect(container.image).toContain('kubectl');
+    expect(container.image).toBe('docker.io/bitnamilegacy/kubectl:1.33');
     const cmd = container.command.join(' ');
     expect(cmd).toContain('kubectl get pods');
     expect(cmd).toContain('kubectl exec');
