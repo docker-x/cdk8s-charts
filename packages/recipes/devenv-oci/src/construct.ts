@@ -132,13 +132,15 @@ function buildTailscaleSidecar(
       '-ec',
       [
         'tailscaled --statedir=$TS_STATE_DIR --socket=$TS_SOCKET --tun=userspace-networking &',
+        'DAEMON=$!',
         // Retried `tailscale up` is idempotent: with persisted state it
         // just re-affirms settings; fresh state consumes the authkey.
-        'until tailscale up --authkey="$TS_AUTHKEY" --hostname="$TS_HOSTNAME" --accept-dns=false; do sleep 2; done',
-        `tailscale serve --bg --https=443 "http://127.0.0.1:${paseoPort}"`,
-        `tailscale serve --bg --tcp=${TAILSCALE_SSH_PORT} "tcp://127.0.0.1:${sshPort}"`,
+        // A dead daemon during the loop exits the container (restart).
+        'until tailscale up --authkey="$TS_AUTHKEY" --hostname="$TS_HOSTNAME" --accept-dns=false; do kill -0 "$DAEMON" || exit 1; sleep 2; done',
+        `tailscale serve --bg --https=443 "http://127.0.0.1:${paseoPort}" || exit 1`,
+        `tailscale serve --bg --tcp=${TAILSCALE_SSH_PORT} "tcp://127.0.0.1:${sshPort}" || exit 1`,
         // Exit if tailscaled dies — the pod restarts the sidecar.
-        'wait',
+        'wait "$DAEMON"',
       ].join('\n'),
     ],
     env: [
@@ -183,8 +185,10 @@ function buildTailscaleInitContainer(ts: TailscaleConfig): Record<string, unknow
     volumeMounts: [{ name: 'workspace-state', mountPath: '/workspace-state' }],
     securityContext: {
       runAsNonRoot: false,
+      runAsUser: 0,
       allowPrivilegeEscalation: false,
-      capabilities: { drop: ['ALL'] },
+      // chown needs CAP_CHOWN — drop everything else.
+      capabilities: { drop: ['ALL'], add: ['CHOWN'] },
     },
     resources: {
       requests: { cpu: '10m', memory: '16Mi' },
@@ -276,6 +280,14 @@ export class DevenvOci extends Chart {
     const sshPort = (props.values?.sshPort as number | undefined) ?? 2222;
     const sidecars = [buildPaseoForwarder(paseoPort)];
     if (props.tailscale) {
+      // Replicas share the PVC: each would mount the same .tailscale
+      // state and claim the same tailnet hostname — pin to a single pod.
+      const replicas = (props.values?.replicas as number | undefined) ?? 1;
+      if (replicas !== 1) {
+        throw new Error(
+          'tailscale sidecar requires replicas=1 (shared PVC state + unique tailnet hostname)',
+        );
+      }
       createTailscaleSecret(this, name, namespace, props.tailscale.authKey);
       initContainers.push(buildTailscaleInitContainer(props.tailscale));
       sidecars.push(buildTailscaleSidecar(name, props.tailscale, paseoPort, sshPort));
