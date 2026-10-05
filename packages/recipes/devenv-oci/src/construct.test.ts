@@ -103,6 +103,69 @@ describe('DevenvOci — vanilla k8s surface', () => {
   });
 });
 
+describe('DevenvOci — tailscale sidecar', () => {
+  const tsProps: DevenvOciProps = {
+    ...baseProps,
+    tailscale: { hostname: 'devenv-civo', authKey: 'tskey-auth-test' },
+  };
+
+  it('emits the authkey Secret and a tailscale sidecar serving paseo/ssh on loopback', () => {
+    const m = synth(tsProps);
+    const secret = findManifest(m, 'Secret', 'devenv-tailscale');
+    expect((secret as { stringData?: Record<string, string> }).stringData).toEqual({
+      authkey: 'tskey-auth-test',
+    });
+
+    const dep = findManifest(m, 'Deployment', 'devenv');
+    const containers = (
+      dep.spec as {
+        template: {
+          spec: {
+            containers: { name: string; command?: string[]; env?: unknown[] }[];
+          };
+        };
+      }
+    ).template.spec.containers;
+    const ts = containers.find((c) => c.name === 'tailscale');
+    expect(ts).toBeDefined();
+    const script = ts?.command?.join(' ') ?? '';
+    expect(script).toContain('--tun=userspace-networking');
+    expect(script).toContain('tailscale serve --bg --https=443 "http://127.0.0.1:6767"');
+    expect(script).toContain('tailscale serve --bg --tcp=2222 "tcp://127.0.0.1:2222"');
+    expect(ts?.env).toContainEqual({
+      name: 'TS_AUTHKEY',
+      valueFrom: { secretKeyRef: { name: 'devenv-tailscale', key: 'authkey' } },
+    });
+    expect(ts?.env).toContainEqual({ name: 'TS_HOSTNAME', value: 'devenv-civo' });
+  });
+
+  it('persists tailnet state in the workspace PVC', () => {
+    const dep = findManifest(synth(tsProps), 'Deployment', 'devenv');
+    const containers = (
+      dep.spec as {
+        template: {
+          spec: { containers: { name: string; volumeMounts?: unknown[] }[] };
+        };
+      }
+    ).template.spec.containers;
+    const ts = containers.find((c) => c.name === 'tailscale');
+    expect(ts?.volumeMounts).toContainEqual({
+      name: 'workspace-state',
+      mountPath: '/var/lib/tailscale',
+      subPath: '.tailscale',
+    });
+  });
+
+  it('omits the sidecar and secret without the tailscale prop', () => {
+    const m = synth(baseProps);
+    expect(m.some((d) => d.metadata?.name === 'devenv-tailscale')).toBe(false);
+    const dep = findManifest(m, 'Deployment', 'devenv');
+    const containers = (dep.spec as { template: { spec: { containers: { name: string }[] } } })
+      .template.spec.containers;
+    expect(containers.map((c) => c.name)).not.toContain('tailscale');
+  });
+});
+
 describe('DevenvOci — backup', () => {
   it('wires R2 credentials, restore init and the backup CronJob', () => {
     const m = synth(backupProps);

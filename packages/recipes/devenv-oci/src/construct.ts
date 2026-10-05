@@ -17,9 +17,9 @@ import {
   validateDnsLabels,
   validateHomeMountPath,
 } from '@cdk8s-charts/utils';
-import { Chart } from 'cdk8s';
+import { ApiObject, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
-import type { DevenvOciExports, DevenvOciProps, NodePorts } from './types';
+import type { DevenvOciExports, DevenvOciProps, NodePorts, TailscaleConfig } from './types';
 
 type VolumeSpec = { name: string; [key: string]: unknown };
 type MountSpec = { name: string; mountPath: string; readOnly?: boolean };
@@ -100,6 +100,83 @@ function buildPaseoForwarder(paseoPort: number): Record<string, unknown> {
   };
 }
 
+const TAILSCALE_IMAGE = 'docker.io/tailscale/tailscale:v1.102.5';
+const TAILSCALE_STATE_PATH = '/var/lib/tailscale';
+
+/**
+ * In-pod tailscale for clusters with no host-level tailscale (managed
+ * k8s). Shares the pod netns, so `tailscale serve` proxies paseo and
+ * sshd on loopback — no socat hop needed on this path. Userspace
+ * networking avoids any dependency on the node's /dev/net/tun, and the
+ * node key lives in a PVC subPath so restarts keep tailnet identity.
+ */
+function buildTailscaleSidecar(
+  name: string,
+  ts: TailscaleConfig,
+  paseoPort: number,
+  sshPort: number,
+): Record<string, unknown> {
+  const secretName = `${name}-tailscale`;
+  return {
+    name: 'tailscale',
+    image: ts.image ?? TAILSCALE_IMAGE,
+    command: [
+      '/bin/sh',
+      '-ec',
+      [
+        'tailscaled --statedir=$TS_STATE_DIR --tun=userspace-networking &',
+        // Retried `tailscale up` is idempotent: with persisted state it
+        // just re-affirms settings; fresh state consumes the authkey.
+        'until tailscale up --authkey="$TS_AUTHKEY" --hostname="$TS_HOSTNAME" --accept-dns=false; do sleep 2; done',
+        `tailscale serve --bg --https=443 "http://127.0.0.1:${paseoPort}"`,
+        `tailscale serve --bg --tcp=2222 "tcp://127.0.0.1:${sshPort}"`,
+        // Exit if tailscaled dies — the pod restarts the sidecar.
+        'wait',
+      ].join('\n'),
+    ],
+    env: [
+      { name: 'TS_STATE_DIR', value: TAILSCALE_STATE_PATH },
+      { name: 'TS_HOSTNAME', value: ts.hostname },
+      {
+        name: 'TS_AUTHKEY',
+        valueFrom: { secretKeyRef: { name: secretName, key: 'authkey' } },
+      },
+    ],
+    volumeMounts: [
+      { name: 'workspace-state', mountPath: TAILSCALE_STATE_PATH, subPath: '.tailscale' },
+    ],
+    // tailscaled must run as root to write the root-owned PVC subdir;
+    // userspace networking means no NET_ADMIN is needed.
+    securityContext: {
+      runAsNonRoot: false,
+      allowPrivilegeEscalation: false,
+      capabilities: { drop: ['ALL'] },
+    },
+    resources: {
+      requests: { cpu: '50m', memory: '64Mi' },
+      limits: { cpu: '200m', memory: '256Mi' },
+    },
+  };
+}
+
+/** `${name}-tailscale` Secret — the pod reads TS_AUTHKEY via secretKeyRef. */
+function createTailscaleSecret(
+  scope: Construct,
+  name: string,
+  namespace: string,
+  authKey: string,
+): string {
+  const secretName = `${name}-tailscale`;
+  new ApiObject(scope, 'tailscale-secret', {
+    apiVersion: 'v1',
+    kind: 'Secret',
+    metadata: { name: secretName, namespace },
+    type: 'Opaque',
+    stringData: { authkey: authKey },
+  });
+  return secretName;
+}
+
 /** Chart-managed env + caller extras (guarded against managed-name collisions). */
 function resolveWorkspaceEnv(props: DevenvOciProps): Record<string, string> {
   assertNoChartManagedEnv(props.env, 'devenv');
@@ -159,6 +236,12 @@ export class DevenvOci extends Chart {
       hasBackupSecrets && (backup.restore ?? true)
         ? [buildRestoreInitContainer(name, homeMountPath, backup.restoreToken)]
         : [];
+    const sshPort = (props.values?.sshPort as number | undefined) ?? 2222;
+    const sidecars = [buildPaseoForwarder(paseoPort)];
+    if (props.tailscale) {
+      createTailscaleSecret(this, name, namespace, props.tailscale.authKey);
+      sidecars.push(buildTailscaleSidecar(name, props.tailscale, paseoPort, sshPort));
+    }
     const devenv = new Devenv(
       this,
       'workspace',
@@ -172,6 +255,7 @@ export class DevenvOci extends Chart {
         volumes,
         mounts,
         initContainers,
+        sidecars,
       }),
     );
 
@@ -202,6 +286,7 @@ export class DevenvOci extends Chart {
       volumes: VolumeSpec[];
       mounts: MountSpec[];
       initContainers: Array<Record<string, unknown>>;
+      sidecars: Array<Record<string, unknown>>;
     },
   ): DevenvProps {
     return {
@@ -223,7 +308,7 @@ export class DevenvOci extends Chart {
       volumeMounts: resolved.mounts,
       initContainers: resolved.initContainers,
       lifecycle: buildLifecycle(resolved.paseoAutoResume, resolved.homeMountPath, 'devenv'),
-      sidecars: [buildPaseoForwarder(resolved.paseoPort)],
+      sidecars: resolved.sidecars,
       serviceType: 'NodePort',
       serviceNodePorts: resolved.nodePorts,
       // NodePort is structural for this recipe — the tailnet `tailscale
