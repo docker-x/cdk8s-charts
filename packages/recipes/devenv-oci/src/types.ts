@@ -70,6 +70,12 @@ export interface TailscaleConfig {
    */
   authKey: string;
   /**
+   * Tailnet MagicDNS suffix (e.g. "tail1234.ts.net"). When set, the
+   * chart appends `<hostname>.<tailnetDomain>` to PASEO_HOSTNAMES — the
+   * sidecar serve URL otherwise gets rejected by paseo's host check.
+   */
+  tailnetDomain?: string;
+  /**
    * tailscale container image (default: pinned stable tag). Override for
    * private registries or to track a different release.
    */

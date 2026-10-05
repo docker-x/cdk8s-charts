@@ -106,7 +106,11 @@ describe('DevenvOci — vanilla k8s surface', () => {
 describe('DevenvOci — tailscale sidecar', () => {
   const tsProps: DevenvOciProps = {
     ...baseProps,
-    tailscale: { hostname: 'devenv-civo', authKey: 'tskey-auth-test' },
+    tailscale: {
+      hostname: 'devenv-civo',
+      authKey: 'tskey-auth-test',
+      tailnetDomain: 'tail1234.ts.net',
+    },
   };
 
   it('emits the authkey Secret and a tailscale sidecar serving paseo/ssh on loopback', () => {
@@ -137,6 +141,49 @@ describe('DevenvOci — tailscale sidecar', () => {
       valueFrom: { secretKeyRef: { name: 'devenv-tailscale', key: 'authkey' } },
     });
     expect(ts?.env).toContainEqual({ name: 'TS_HOSTNAME', value: 'devenv-civo' });
+  });
+
+  it('runs the sidecar as a non-root user with a chowned PVC state dir', () => {
+    const dep = findManifest(synth(tsProps), 'Deployment', 'devenv');
+    const spec = (
+      dep.spec as {
+        template: {
+          spec: {
+            containers: { name: string; securityContext?: Record<string, unknown> }[];
+            initContainers?: {
+              name: string;
+              command?: string[];
+              volumeMounts?: unknown[];
+            }[];
+          };
+        };
+      }
+    ).template.spec;
+    const ts = spec.containers.find((c) => c.name === 'tailscale');
+    expect(ts?.securityContext).toMatchObject({
+      runAsNonRoot: true,
+      runAsUser: 1000,
+      allowPrivilegeEscalation: false,
+    });
+
+    const init = spec.initContainers?.find((c) => c.name === 'tailscale-state-init');
+    expect(init).toBeDefined();
+    expect(init?.command?.join(' ')).toContain('chown 1000:1000 /workspace-state/.tailscale');
+    expect(init?.volumeMounts).toContainEqual({
+      name: 'workspace-state',
+      mountPath: '/workspace-state',
+    });
+  });
+
+  it('adds the tailnet FQDN to PASEO_HOSTNAMES when tailnetDomain is set', () => {
+    const dep = findManifest(synth(tsProps), 'Deployment', 'devenv');
+    const env = (
+      dep.spec as {
+        template: { spec: { containers: { env: { name: string; value: string }[] }[] } };
+      }
+    ).template.spec.containers[0].env;
+    const paseoHostnames = env.find((e) => e.name === 'PASEO_HOSTNAMES')?.value ?? '';
+    expect(paseoHostnames).toContain('devenv-civo.tail1234.ts.net');
   });
 
   it('persists tailnet state in the workspace PVC', () => {

@@ -102,6 +102,9 @@ function buildPaseoForwarder(paseoPort: number): Record<string, unknown> {
 
 const TAILSCALE_IMAGE = 'docker.io/tailscale/tailscale:v1.102.5';
 const TAILSCALE_STATE_PATH = '/var/lib/tailscale';
+const TAILSCALE_UID = 1000;
+/** Tailnet-side ssh port — `ssh <tailnet-host> -p 2222`. */
+const TAILSCALE_SSH_PORT = 2222;
 
 /**
  * In-pod tailscale for clusters with no host-level tailscale (managed
@@ -109,6 +112,10 @@ const TAILSCALE_STATE_PATH = '/var/lib/tailscale';
  * sshd on loopback — no socat hop needed on this path. Userspace
  * networking avoids any dependency on the node's /dev/net/tun, and the
  * node key lives in a PVC subPath so restarts keep tailnet identity.
+ *
+ * The sidecar runs as a non-root user: the PVC state dir is chowned by
+ * `buildTailscaleInitContainer` and the LocalAPI socket is relocated
+ * into the state dir (default /var/run/tailscale is root-owned).
  */
 function buildTailscaleSidecar(
   name: string,
@@ -124,18 +131,19 @@ function buildTailscaleSidecar(
       '/bin/sh',
       '-ec',
       [
-        'tailscaled --statedir=$TS_STATE_DIR --tun=userspace-networking &',
+        'tailscaled --statedir=$TS_STATE_DIR --socket=$TS_SOCKET --tun=userspace-networking &',
         // Retried `tailscale up` is idempotent: with persisted state it
         // just re-affirms settings; fresh state consumes the authkey.
         'until tailscale up --authkey="$TS_AUTHKEY" --hostname="$TS_HOSTNAME" --accept-dns=false; do sleep 2; done',
         `tailscale serve --bg --https=443 "http://127.0.0.1:${paseoPort}"`,
-        `tailscale serve --bg --tcp=2222 "tcp://127.0.0.1:${sshPort}"`,
+        `tailscale serve --bg --tcp=${TAILSCALE_SSH_PORT} "tcp://127.0.0.1:${sshPort}"`,
         // Exit if tailscaled dies — the pod restarts the sidecar.
         'wait',
       ].join('\n'),
     ],
     env: [
       { name: 'TS_STATE_DIR', value: TAILSCALE_STATE_PATH },
+      { name: 'TS_SOCKET', value: `${TAILSCALE_STATE_PATH}/tailscaled.sock` },
       { name: 'TS_HOSTNAME', value: ts.hostname },
       {
         name: 'TS_AUTHKEY',
@@ -145,16 +153,42 @@ function buildTailscaleSidecar(
     volumeMounts: [
       { name: 'workspace-state', mountPath: TAILSCALE_STATE_PATH, subPath: '.tailscale' },
     ],
-    // tailscaled must run as root to write the root-owned PVC subdir;
-    // userspace networking means no NET_ADMIN is needed.
     securityContext: {
-      runAsNonRoot: false,
+      runAsNonRoot: true,
+      runAsUser: TAILSCALE_UID,
+      runAsGroup: TAILSCALE_UID,
       allowPrivilegeEscalation: false,
       capabilities: { drop: ['ALL'] },
     },
     resources: {
       requests: { cpu: '50m', memory: '64Mi' },
       limits: { cpu: '200m', memory: '256Mi' },
+    },
+  };
+}
+
+/**
+ * Chowns the PVC-backed tailscale state dir for the non-root sidecar.
+ * Runs as root — init containers are the standard place for privilege.
+ */
+function buildTailscaleInitContainer(ts: TailscaleConfig): Record<string, unknown> {
+  return {
+    name: 'tailscale-state-init',
+    image: ts.image ?? TAILSCALE_IMAGE,
+    command: [
+      '/bin/sh',
+      '-ec',
+      `mkdir -p /workspace-state/.tailscale && chown ${TAILSCALE_UID}:${TAILSCALE_UID} /workspace-state/.tailscale`,
+    ],
+    volumeMounts: [{ name: 'workspace-state', mountPath: '/workspace-state' }],
+    securityContext: {
+      runAsNonRoot: false,
+      allowPrivilegeEscalation: false,
+      capabilities: { drop: ['ALL'] },
+    },
+    resources: {
+      requests: { cpu: '10m', memory: '16Mi' },
+      limits: { cpu: '50m', memory: '32Mi' },
     },
   };
 }
@@ -181,11 +215,14 @@ function createTailscaleSecret(
 function resolveWorkspaceEnv(props: DevenvOciProps): Record<string, string> {
   assertNoChartManagedEnv(props.env, 'devenv');
   assertNoChartManagedEnv(props.values?.env as Record<string, unknown> | undefined, 'devenv');
+  const hostnames = [...props.externalHostnames];
+  const ts = props.tailscale;
+  if (ts?.tailnetDomain) hostnames.push(`${ts.hostname}.${ts.tailnetDomain}`);
   return {
     TERM: 'xterm-256color',
     HUSKY: '0',
     DEVENV: 'true',
-    PASEO_HOSTNAMES: props.externalHostnames.join(','),
+    PASEO_HOSTNAMES: hostnames.join(','),
     PASEO_TRUSTED_PROXIES: 'loopback',
     ...props.env,
   };
@@ -240,6 +277,7 @@ export class DevenvOci extends Chart {
     const sidecars = [buildPaseoForwarder(paseoPort)];
     if (props.tailscale) {
       createTailscaleSecret(this, name, namespace, props.tailscale.authKey);
+      initContainers.push(buildTailscaleInitContainer(props.tailscale));
       sidecars.push(buildTailscaleSidecar(name, props.tailscale, paseoPort, sshPort));
     }
     const devenv = new Devenv(
