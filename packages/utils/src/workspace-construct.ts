@@ -37,6 +37,7 @@ export interface WorkspaceValues {
   annotations?: Record<string, string>;
   replicas?: number;
   runAsNonRoot?: boolean;
+  runAsUser?: number;
   fsGroup?: number;
   image?: string;
   command?: string[];
@@ -511,6 +512,7 @@ function buildWorkspacePodSpec(
     image: container.image ?? values.image,
     securityContext: {
       runAsNonRoot: values.runAsNonRoot,
+      ...(values.runAsUser !== undefined ? { runAsUser: values.runAsUser } : {}),
       allowPrivilegeEscalation: false,
       capabilities: { drop: ['ALL'] },
     },
@@ -686,6 +688,7 @@ export interface WorkspaceValuesProps {
   serviceAccountAnnotations?: Record<string, string>;
   automountServiceAccountToken?: boolean;
   runAsNonRoot?: boolean;
+  runAsUser?: number;
   fsGroup?: number;
   values?: Record<string, unknown>;
 }
@@ -695,6 +698,11 @@ export function buildWorkspaceComputedValues(
   name: string,
   defaults: WorkspaceValuesDefaults,
 ): Record<string, unknown> {
+  if (props.runAsUser === 0 && (props.runAsNonRoot ?? true)) {
+    throw new Error(
+      'runAsUser=0 requires runAsNonRoot=false — kubelet would reject the combination',
+    );
+  }
   const computed: Record<string, unknown> = {
     image: props.image,
     imageDigest: props.imageDigest ?? 'unknown',
@@ -730,6 +738,7 @@ export function buildWorkspaceComputedValues(
     serviceAccountAnnotations: props.serviceAccountAnnotations,
     automountServiceAccountToken: props.automountServiceAccountToken ?? true,
     runAsNonRoot: props.runAsNonRoot ?? true,
+    runAsUser: props.runAsUser,
     fsGroup: props.fsGroup,
     name,
   };
