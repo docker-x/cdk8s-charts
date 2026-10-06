@@ -172,7 +172,7 @@ describe('DevenvOci — tailscale sidecar', () => {
 
     const init = spec.initContainers?.find((c) => c.name === 'tailscale-state-init');
     expect(init).toBeDefined();
-    expect(init?.command?.join(' ')).toContain('chown 1000:1000 /workspace-state/.tailscale');
+    expect(init?.command?.join(' ')).toContain('chown -R 1000:1000 /workspace-state/.tailscale');
     expect(init?.volumeMounts).toContainEqual({
       name: 'workspace-state',
       mountPath: '/workspace-state',
@@ -207,9 +207,88 @@ describe('DevenvOci — tailscale sidecar', () => {
     });
   });
 
+  it('routes https through oauth2-proxy and enables funnel when funnel is set', () => {
+    const m = synth({
+      ...tsProps,
+      tailscale: {
+        ...tsProps.tailscale!,
+        funnel: {
+          githubClientId: 'Iv1.testclient',
+          githubClientSecret: 'ghs_secret',
+          githubUser: 'ThePlenkov',
+          cookieSecret: 'dGVzdC1jb29raWUtc2VjcmV0LWJhc2U2NA==',
+        },
+      },
+    });
+    const dep = findManifest(m, 'Deployment', 'devenv');
+    const spec = dep.spec as {
+      template: {
+        spec: {
+          containers: { name: string; command?: string[]; args?: string[]; env?: unknown[] }[];
+        };
+      };
+    };
+    const ts = spec.template.spec.containers.find((c) => c.name === 'tailscale');
+    const script = ts?.command?.join(' ') ?? '';
+    expect(script).toContain('funnel --bg --https=443 "http://127.0.0.1:4180"');
+    expect(script).not.toContain('serve --bg --https=443 "http://127.0.0.1:6767"');
+    // ssh stays tailnet-only.
+    expect(script).toContain('serve --bg --tcp=2222 "tcp://127.0.0.1:2222"');
+
+    const proxy = spec.template.spec.containers.find((c) => c.name === 'oauth2-proxy');
+    expect(proxy).toBeDefined();
+    expect(proxy?.args).toContain(
+      '--redirect-url=https://devenv-civo.tail1234.ts.net/oauth2/callback',
+    );
+    expect(proxy?.args).toContain('--github-user=ThePlenkov');
+    expect(proxy?.args).toContain('--provider=github');
+    expect(proxy?.env).toContainEqual({
+      name: 'OAUTH2_PROXY_CLIENT_SECRET',
+      valueFrom: { secretKeyRef: { name: 'devenv-oauth-proxy', key: 'client-secret' } },
+    });
+
+    const secret = findManifest(m, 'Secret', 'devenv-oauth-proxy');
+    expect((secret as { stringData?: Record<string, string> }).stringData).toEqual({
+      'client-id': 'Iv1.testclient',
+      'client-secret': 'ghs_secret',
+      'cookie-secret': 'dGVzdC1jb29raWUtc2VjcmV0LWJhc2U2NA==',
+    });
+  });
+
+  it('rejects funnel without tailnetDomain — the redirect URL needs the FQDN', () => {
+    expect(() =>
+      synth({
+        ...tsProps,
+        tailscale: {
+          hostname: 'devenv-civo',
+          authKey: 'tskey-auth-test',
+          funnel: {
+            githubClientId: 'x',
+            githubClientSecret: 'y',
+            githubUser: 'ThePlenkov',
+            cookieSecret: 'z',
+          },
+        },
+      }),
+    ).toThrow(/tailnetDomain/);
+  });
+
+  it('omits the oauth2-proxy sidecar without the funnel prop', () => {
+    const m = synth(tsProps);
+    const dep = findManifest(m, 'Deployment', 'devenv');
+    const containers = (dep.spec as { template: { spec: { containers: { name: string }[] } } })
+      .template.spec.containers;
+    expect(containers.map((c) => c.name)).not.toContain('oauth2-proxy');
+    expect(
+      m.some((d) => (d.metadata as { name?: string } | undefined)?.name === 'devenv-oauth-proxy'),
+    ).toBe(false);
+  });
+
   it('omits the sidecar and secret without the tailscale prop', () => {
     const m = synth(baseProps);
-    expect(m.some((d) => d.metadata?.name === 'devenv-tailscale')).toBe(false);
+    expect(
+      m.some((d) => (d.metadata as { name?: string } | undefined)?.name === 'devenv-tailscale'),
+    ).toBe(false);
     const dep = findManifest(m, 'Deployment', 'devenv');
     const containers = (dep.spec as { template: { spec: { containers: { name: string }[] } } })
       .template.spec.containers;

@@ -3,6 +3,7 @@ import type {
   ResolvedBackup,
   ResolvedPaseoAutoResume,
   ResolvedPodSandbox,
+  SidecarContainer,
 } from '@cdk8s-charts/utils';
 import {
   assertNoChartManagedEnv,
@@ -19,7 +20,13 @@ import {
 } from '@cdk8s-charts/utils';
 import { ApiObject, Chart } from 'cdk8s';
 import type { Construct } from 'constructs';
-import type { DevenvOciExports, DevenvOciProps, NodePorts, TailscaleConfig } from './types';
+import type {
+  DevenvOciExports,
+  DevenvOciProps,
+  NodePorts,
+  TailscaleConfig,
+  TailscaleFunnelConfig,
+} from './types';
 
 type VolumeSpec = { name: string; [key: string]: unknown };
 type MountSpec = { name: string; mountPath: string; readOnly?: boolean };
@@ -82,7 +89,7 @@ function buildExtraMounts(
  * sidecar binds the pod IP and forwards to loopback — the only caller
  * reaching it is `tailscale serve` via the nodePort.
  */
-function buildPaseoForwarder(paseoPort: number): Record<string, unknown> {
+function buildPaseoForwarder(paseoPort: number): SidecarContainer {
   return {
     name: 'paseo-forwarder',
     image: 'docker.io/alpine/socat:1.8.1.1',
@@ -105,6 +112,9 @@ const TAILSCALE_STATE_PATH = '/var/lib/tailscale';
 const TAILSCALE_UID = 1000;
 /** Tailnet-side ssh port — `ssh <tailnet-host> -p 2222`. */
 const TAILSCALE_SSH_PORT = 2222;
+const OAUTH2_PROXY_IMAGE = 'quay.io/oauth2-proxy/oauth2-proxy:v7.15.4';
+/** Loopback-only — only the in-pod tailscaled reaches the proxy. */
+const OAUTH_PROXY_PORT = 4180;
 
 /**
  * In-pod tailscale for clusters with no host-level tailscale (managed
@@ -122,7 +132,7 @@ function buildTailscaleSidecar(
   ts: TailscaleConfig,
   paseoPort: number,
   sshPort: number,
-): Record<string, unknown> {
+): SidecarContainer {
   const secretName = `${name}-tailscale`;
   return {
     name: 'tailscale',
@@ -139,7 +149,16 @@ function buildTailscaleSidecar(
         // --socket is needed on every CLI call: TS_SOCKET is a
         // containerboot env, not read by the tailscale CLI.
         'until tailscale --socket="$TS_SOCKET" up --authkey="$TS_AUTHKEY" --hostname="$TS_HOSTNAME" --accept-dns=false; do kill -0 "$DAEMON" || exit 1; sleep 2; done',
-        `tailscale --socket="$TS_SOCKET" serve --bg --https=443 "http://127.0.0.1:${paseoPort}" || exit 1`,
+        // With funnel the public route lands on oauth2-proxy first —
+        // paseo itself has no auth, so the unproxied https target would
+        // be an open shell. Tailnet-only mode keeps serving paseo directly.
+        // A hard exit here would also kill the tailnet ssh serve below
+        // while the funnel nodeAttr is still pending on the tailnet —
+        // soft-fail with a loud log line instead; rerun `tailscale
+        // funnel` from the pod once enabled.
+        ts.funnel
+          ? `tailscale --socket="$TS_SOCKET" funnel --bg --https=443 "http://127.0.0.1:${OAUTH_PROXY_PORT}" || echo "FUNNEL DISABLED — enable the funnel nodeAttr on the tailnet, then rerun this command" >&2`
+          : `tailscale --socket="$TS_SOCKET" serve --bg --https=443 "http://127.0.0.1:${paseoPort}" || exit 1`,
         `tailscale --socket="$TS_SOCKET" serve --bg --tcp=${TAILSCALE_SSH_PORT} "tcp://127.0.0.1:${sshPort}" || exit 1`,
         // Exit if tailscaled dies — the pod restarts the sidecar.
         'wait "$DAEMON"',
@@ -175,14 +194,17 @@ function buildTailscaleSidecar(
  * Chowns the PVC-backed tailscale state dir for the non-root sidecar.
  * Runs as root — init containers are the standard place for privilege.
  */
-function buildTailscaleInitContainer(ts: TailscaleConfig): Record<string, unknown> {
+function buildTailscaleInitContainer(ts: TailscaleConfig): SidecarContainer {
   return {
     name: 'tailscale-state-init',
     image: ts.image ?? TAILSCALE_IMAGE,
     command: [
       '/bin/sh',
       '-ec',
-      `mkdir -p /workspace-state/.tailscale && chown ${TAILSCALE_UID}:${TAILSCALE_UID} /workspace-state/.tailscale`,
+      // -R: restored backups can carry state files written under a
+      // different uid — a shallow chown leaves the daemon unable to
+      // read its own state ("state store is unhealthy").
+      `mkdir -p /workspace-state/.tailscale && chown -R ${TAILSCALE_UID}:${TAILSCALE_UID} /workspace-state/.tailscale`,
     ],
     volumeMounts: [{ name: 'workspace-state', mountPath: '/workspace-state' }],
     securityContext: {
@@ -197,6 +219,84 @@ function buildTailscaleInitContainer(ts: TailscaleConfig): Record<string, unknow
       limits: { cpu: '50m', memory: '32Mi' },
     },
   };
+}
+
+/**
+ * oauth2-proxy sidecar — the SSO gate in front of paseo when funnel
+ * publishes the HTTPS route publicly. Binds loopback only; every
+ * unauthenticated request gets the GitHub login redirect instead of
+ * reaching paseo.
+ */
+function buildOauthProxySidecar(
+  name: string,
+  funnel: TailscaleFunnelConfig,
+  paseoPort: number,
+  redirectFqdn: string,
+): SidecarContainer {
+  const secretName = `${name}-oauth-proxy`;
+  return {
+    name: 'oauth2-proxy',
+    image: funnel.image ?? OAUTH2_PROXY_IMAGE,
+    args: [
+      '--provider=github',
+      `--redirect-url=https://${redirectFqdn}/oauth2/callback`,
+      `--github-user=${funnel.githubUser}`,
+      `--upstream=http://127.0.0.1:${paseoPort}`,
+      // funnel relays raw TCP — the tailscaled on this pod terminates
+      // TLS, so trust the forwarded headers it sets.
+      '--reverse-proxy=true',
+      '--cookie-secure=true',
+      '--cookie-httponly=true',
+      '--cookie-samesite=lax',
+    ],
+    env: [
+      { name: 'OAUTH2_PROXY_HTTP_ADDRESS', value: `127.0.0.1:${OAUTH_PROXY_PORT}` },
+      {
+        name: 'OAUTH2_PROXY_CLIENT_ID',
+        valueFrom: { secretKeyRef: { name: secretName, key: 'client-id' } },
+      },
+      {
+        name: 'OAUTH2_PROXY_CLIENT_SECRET',
+        valueFrom: { secretKeyRef: { name: secretName, key: 'client-secret' } },
+      },
+      {
+        name: 'OAUTH2_PROXY_COOKIE_SECRET',
+        valueFrom: { secretKeyRef: { name: secretName, key: 'cookie-secret' } },
+      },
+    ],
+    securityContext: {
+      runAsNonRoot: true,
+      runAsUser: 65532,
+      runAsGroup: 65532,
+      allowPrivilegeEscalation: false,
+      capabilities: { drop: ['ALL'] },
+      readOnlyRootFilesystem: true,
+    },
+    resources: {
+      requests: { cpu: '25m', memory: '32Mi' },
+      limits: { cpu: '200m', memory: '128Mi' },
+    },
+  };
+}
+
+/** `${name}-oauth-proxy` Secret — proxy creds reach the pod via env refs. */
+function createOauthProxySecret(
+  scope: Construct,
+  name: string,
+  namespace: string,
+  funnel: TailscaleFunnelConfig,
+): void {
+  new ApiObject(scope, 'oauth-proxy-secret', {
+    apiVersion: 'v1',
+    kind: 'Secret',
+    metadata: { name: `${name}-oauth-proxy`, namespace },
+    type: 'Opaque',
+    stringData: {
+      'client-id': funnel.githubClientId,
+      'client-secret': funnel.githubClientSecret,
+      'cookie-secret': funnel.cookieSecret,
+    },
+  });
 }
 
 /** `${name}-tailscale` Secret — the pod reads TS_AUTHKEY via secretKeyRef. */
@@ -293,6 +393,22 @@ export class DevenvOci extends Chart {
       createTailscaleSecret(this, name, namespace, props.tailscale.authKey);
       initContainers.push(buildTailscaleInitContainer(props.tailscale));
       sidecars.push(buildTailscaleSidecar(name, props.tailscale, paseoPort, sshPort));
+      if (props.tailscale.funnel) {
+        if (!props.tailscale.tailnetDomain) {
+          throw new Error(
+            'tailscale funnel requires tailnetDomain — the OAuth redirect URL is derived from the node FQDN',
+          );
+        }
+        createOauthProxySecret(this, name, namespace, props.tailscale.funnel);
+        sidecars.push(
+          buildOauthProxySidecar(
+            name,
+            props.tailscale.funnel,
+            paseoPort,
+            `${props.tailscale.hostname}.${props.tailscale.tailnetDomain}`,
+          ),
+        );
+      }
     }
     const devenv = new Devenv(
       this,
@@ -337,8 +453,8 @@ export class DevenvOci extends Chart {
       nodePorts: Record<string, number>;
       volumes: VolumeSpec[];
       mounts: MountSpec[];
-      initContainers: Array<Record<string, unknown>>;
-      sidecars: Array<Record<string, unknown>>;
+      initContainers: SidecarContainer[];
+      sidecars: SidecarContainer[];
     },
   ): DevenvProps {
     return {

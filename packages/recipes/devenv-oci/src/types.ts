@@ -58,6 +58,29 @@ export interface PodSandboxConfig {
  * paseo on loopback directly — the socat forwarder and NodePorts become
  * debug conveniences, not the access path.
  */
+/**
+ * Public access via `tailscale funnel` + `oauth2-proxy` — for clients
+ * that cannot join the tailnet (phone with another VPN active, plain
+ * browser). Funnel terminates TLS on the pod's tailscaled and forwards
+ * to the proxy, which gates every request behind GitHub SSO before
+ * reaching paseo. The ssh serve route stays tailnet-only.
+ */
+export interface TailscaleFunnelConfig {
+  /** GitHub OAuth client id (OAuth App or GitHub App). */
+  githubClientId: string;
+  /**
+   * GitHub OAuth client secret — emitted into the `${name}-oauth-proxy`
+   * Secret and read via secretKeyRef, never an inline literal.
+   */
+  githubClientSecret: string;
+  /** GitHub username allowlist entry (oauth2-proxy --github-user). */
+  githubUser: string;
+  /** Base64 cookie-encryption secret for the proxy session cookie. */
+  cookieSecret: string;
+  /** oauth2-proxy image override (default: pinned stable tag). */
+  image?: string;
+}
+
 export interface TailscaleConfig {
   /**
    * Tailnet node name — FQDN becomes `<hostname>.<tailnet>.ts.net`.
@@ -75,6 +98,15 @@ export interface TailscaleConfig {
    * sidecar serve URL otherwise gets rejected by paseo's host check.
    */
   tailnetDomain?: string;
+  /**
+   * Expose paseo publicly on `https://<hostname>.<tailnetDomain>` via
+   * `tailscale funnel` behind a GitHub-gated oauth2-proxy sidecar —
+   * client devices then need no VPN. Requires `tailnetDomain` (the
+   * OAuth redirect URL is derived from the FQDN) and the funnel
+   * nodeAttr enabled on the tailnet. The ssh serve route stays
+   * tailnet-only — only the paseo HTTPS route goes public.
+   */
+  funnel?: TailscaleFunnelConfig;
   /**
    * tailscale container image (default: pinned stable tag). Override for
    * private registries or to track a different release.
