@@ -221,6 +221,19 @@ function buildTailscaleInitContainer(ts: TailscaleConfig): SidecarContainer {
   };
 }
 
+/** oauth2-proxy env — creds arrive via secretKeyRef, never literals. */
+function oauthProxyEnv(secretName: string) {
+  const ref = (key: string) => ({
+    valueFrom: { secretKeyRef: { name: secretName, key } },
+  });
+  return [
+    { name: 'OAUTH2_PROXY_HTTP_ADDRESS', value: `127.0.0.1:${OAUTH_PROXY_PORT}` },
+    { name: 'OAUTH2_PROXY_CLIENT_ID', ...ref('client-id') },
+    { name: 'OAUTH2_PROXY_CLIENT_SECRET', ...ref('client-secret') },
+    { name: 'OAUTH2_PROXY_COOKIE_SECRET', ...ref('cookie-secret') },
+  ];
+}
+
 /**
  * oauth2-proxy sidecar — the SSO gate in front of paseo when funnel
  * publishes the HTTPS route publicly. Binds loopback only; every
@@ -233,7 +246,6 @@ function buildOauthProxySidecar(
   paseoPort: number,
   redirectFqdn: string,
 ): SidecarContainer {
-  const secretName = `${name}-oauth-proxy`;
   return {
     name: 'oauth2-proxy',
     image: funnel.image ?? OAUTH2_PROXY_IMAGE,
@@ -252,21 +264,7 @@ function buildOauthProxySidecar(
       '--cookie-httponly=true',
       '--cookie-samesite=lax',
     ],
-    env: [
-      { name: 'OAUTH2_PROXY_HTTP_ADDRESS', value: `127.0.0.1:${OAUTH_PROXY_PORT}` },
-      {
-        name: 'OAUTH2_PROXY_CLIENT_ID',
-        valueFrom: { secretKeyRef: { name: secretName, key: 'client-id' } },
-      },
-      {
-        name: 'OAUTH2_PROXY_CLIENT_SECRET',
-        valueFrom: { secretKeyRef: { name: secretName, key: 'client-secret' } },
-      },
-      {
-        name: 'OAUTH2_PROXY_COOKIE_SECRET',
-        valueFrom: { secretKeyRef: { name: secretName, key: 'cookie-secret' } },
-      },
-    ],
+    env: oauthProxyEnv(`${name}-oauth-proxy`),
     securityContext: {
       runAsNonRoot: true,
       runAsUser: 65532,
