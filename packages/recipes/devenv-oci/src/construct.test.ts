@@ -134,8 +134,12 @@ describe('DevenvOci — tailscale sidecar', () => {
     expect(ts).toBeDefined();
     const script = ts?.command?.join(' ') ?? '';
     expect(script).toContain('--tun=userspace-networking');
-    expect(script).toContain('tailscale serve --bg --https=443 "http://127.0.0.1:6767"');
-    expect(script).toContain('tailscale serve --bg --tcp=2222 "tcp://127.0.0.1:2222"');
+    expect(script).toContain(
+      'tailscale --socket="$TS_SOCKET" serve --bg --https=443 "http://127.0.0.1:6767"',
+    );
+    expect(script).toContain(
+      'tailscale --socket="$TS_SOCKET" serve --bg --tcp=2222 "tcp://127.0.0.1:2222"',
+    );
     expect(ts?.env).toContainEqual({
       name: 'TS_AUTHKEY',
       valueFrom: { secretKeyRef: { name: 'devenv-tailscale', key: 'authkey' } },
