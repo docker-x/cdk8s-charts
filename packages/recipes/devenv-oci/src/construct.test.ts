@@ -216,7 +216,7 @@ describe('DevenvOci — tailscale sidecar', () => {
           githubClientId: 'Iv1.testclient',
           githubClientSecret: 'ghs_secret',
           githubUser: 'ThePlenkov',
-          cookieSecret: 'dGVzdC1jb29raWUtc2VjcmV0LWJhc2U2NA==',
+          cookieSecret: 'YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=', // 32 bytes
         },
       },
     });
@@ -251,8 +251,53 @@ describe('DevenvOci — tailscale sidecar', () => {
     expect((secret as { stringData?: Record<string, string> }).stringData).toEqual({
       'client-id': 'Iv1.testclient',
       'client-secret': 'ghs_secret',
-      'cookie-secret': 'dGVzdC1jb29raWUtc2VjcmV0LWJhc2U2NA==',
+      'cookie-secret': 'YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=',
     });
+  });
+
+  it('rejects funnel with missing/empty OAuth fields', () => {
+    for (const field of [
+      'githubClientId',
+      'githubClientSecret',
+      'githubUser',
+      'cookieSecret',
+    ] as const) {
+      expect(() =>
+        synth({
+          ...tsProps,
+          tailscale: {
+            ...tsProps.tailscale!,
+            funnel: {
+              githubClientId: 'Iv1.testclient',
+              githubClientSecret: 'ghs_secret',
+              githubUser: 'ThePlenkov',
+              cookieSecret: 'YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=',
+              [field]: '',
+            },
+          },
+        }),
+      ).toThrow(new RegExp(field));
+    }
+  });
+
+  it('rejects funnel with a cookieSecret that is not base64 of 16/24/32 bytes', () => {
+    for (const bad of ['not-base64!!!', 'emVybw==', 'YWFhYWFhYWFhYQ==']) {
+      // 'emVybw==' = 4 bytes, 'YWFhYWFhYWFhYQ==' = 12 bytes.
+      expect(() =>
+        synth({
+          ...tsProps,
+          tailscale: {
+            ...tsProps.tailscale!,
+            funnel: {
+              githubClientId: 'Iv1.testclient',
+              githubClientSecret: 'ghs_secret',
+              githubUser: 'ThePlenkov',
+              cookieSecret: bad,
+            },
+          },
+        }),
+      ).toThrow(/cookieSecret/);
+    }
   });
 
   it('rejects funnel without tailnetDomain — the redirect URL needs the FQDN', () => {

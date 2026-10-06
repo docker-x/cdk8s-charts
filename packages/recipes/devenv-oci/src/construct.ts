@@ -279,6 +279,37 @@ function buildOauthProxySidecar(
   };
 }
 
+/**
+ * oauth2-proxy fails closed-but-late on bad input: an empty client id just
+ * breaks login, and cookieSecret must be base64 of exactly 16, 24 or 32
+ * bytes (AES-128/192/256). Reject early so a half-configured funnel fails
+ * at synth time instead of serving a broken SSO page.
+ */
+function validateFunnelConfig(funnel: TailscaleFunnelConfig): void {
+  const missing = (
+    [
+      ['githubClientId', funnel.githubClientId],
+      ['githubClientSecret', funnel.githubClientSecret],
+      ['githubUser', funnel.githubUser],
+      ['cookieSecret', funnel.cookieSecret],
+    ] as const
+  )
+    .filter(([, v]) => !v)
+    .map(([k]) => k);
+  if (missing.length > 0) {
+    throw new Error(`tailscale funnel: missing/empty field(s): ${missing.join(', ')}`);
+  }
+  const decoded = Buffer.from(funnel.cookieSecret, 'base64');
+  if (
+    ![16, 24, 32].includes(decoded.length) ||
+    decoded.toString('base64') !== funnel.cookieSecret
+  ) {
+    throw new Error(
+      'tailscale funnel: cookieSecret must be base64 encoding exactly 16, 24 or 32 bytes',
+    );
+  }
+}
+
 /** `${name}-oauth-proxy` Secret — proxy creds reach the pod via env refs. */
 function createOauthProxySecret(
   scope: Construct,
@@ -399,6 +430,7 @@ export class DevenvOci extends Chart {
             'tailscale funnel requires tailnetDomain — the OAuth redirect URL is derived from the node FQDN',
           );
         }
+        validateFunnelConfig(props.tailscale.funnel);
         createOauthProxySecret(this, name, namespace, props.tailscale.funnel);
         sidecars.push(
           buildOauthProxySidecar(
