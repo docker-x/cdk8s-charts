@@ -1493,6 +1493,64 @@ PostgreSQL StatefulSet — plain ApiObjects, no Helm chart.
 
 **Exports** (`TemporalExports`): `frontendHost`, `frontendPort`, `webHost`, `webPort`.
 
+### 3.22 DevenvOci Recipe
+
+**Package**: `@cdk8s-charts/devenv-oci`
+
+Composes the Devenv construct for vanilla Kubernetes (OCI cloud VMs, Civo
+managed k3s — anywhere without OpenShift Routes/SCC):
+
+1. **Devenv workspace** — Deployment + PVC + SSH, fixed NodePorts
+   (paseo `30676`, ssh `30222`) as defaults for direct/debug access —
+   the tailscale access path serves loopback inside the pod instead
+2. **Paseo forwarder** — socat sidecar bridging the pod IP to the
+   loopback-bound paseo daemon (no oauth-proxy by default; the funnel
+   variant adds one — see below)
+3. **Tailscale sidecar** (`tailscale`, optional) — userspace-networking
+   `tailscaled` sharing the pod netns; `serve` proxies paseo https/443
+   and sshd tcp/2222 on loopback. Node state persists in the workspace
+   PVC (`.tailscale` subPath), chowned recursively by a root init
+   container — restored backups may carry files owned by a different uid
+4. **Funnel + oauth2-proxy** (`tailscale.funnel`, optional) — publishes
+   the paseo https route publicly: `tailscale funnel` on 443 targets an
+   `oauth2-proxy` sidecar (loopback `4180`, GitHub provider, per-user
+   allowlist) instead of paseo directly — the funnel command soft-fails
+   with a log line while the tailnet `funnel` nodeAttr is pending, so
+   the tailnet ssh serve keeps working. Requires `tailnetDomain` (the
+   OAuth redirect URL is derived from the node FQDN). Emits an
+   `${name}-oauth-proxy` Secret (client id/secret + cookie secret) read
+   via `secretKeyRef`. The ssh serve route stays tailnet-only.
+5. **R2 backup CronJob + restore init** — same contract as the OpenShift
+   recipe (see §3.20)
+
+**Guards**: `tailscale` requires `replicas=1` (shared PVC state +
+unique tailnet hostname); `tailscale.funnel` requires `tailnetDomain`.
+
+**Props** (`DevenvOciProps`):
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `image` | `string` | yes | Workspace image |
+| `externalHostnames` | `string[]` | yes | Allowed paseo hosts |
+| `sshAuthorizedKeys` | `string` | yes | sshd authorized_keys |
+| `tailscale` | `TailscaleConfig` | no | In-pod tailnet sidecar; `hostname` + `authKey` required inside it |
+| `tailscale.funnel` | `TailscaleFunnelConfig` | no | Public access via funnel + oauth2-proxy (all four creds required together) |
+| `backup` | `BackupConfig` | no | R2 backup/restore |
+| `paseoAutoResume` | `object` | no | Idle-resume ConfigMap |
+| `podSandbox` | `object` | no | Workspace pod RBAC |
+| `nodePorts` | `object` | no | NodePort overrides |
+| `pvcSize`/`pvcStorageClass`/`existingPvcName` | `string` | no | Storage |
+| `homeMountPath`/`name`/`env`/`resources`/`ghcrPullSecret`/`imageDigest`/`values` | — | no | Misc overrides |
+
+Synth-time validation: `tailscale.hostname` must be a DNS label (the
+MagicDNS FQDN is derived from it verbatim) and `funnel.cookieSecret`
+must be canonical base64 decoding to exactly 16, 24 or 32 bytes
+(oauth2-proxy AES key size).
+
+**Exports** (`DevenvOciExports`): `pvcName`, `serviceName`,
+`paseoNodePort`, `sshNodePort`, `backupCronJobName`.
+
 ## 4. Memory bank configuration
 
 Bank templates live in `examples/coding-agent-memory/banks/`. They define:

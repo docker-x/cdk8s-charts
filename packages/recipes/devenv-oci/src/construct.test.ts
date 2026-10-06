@@ -2,7 +2,7 @@ import { findManifest, type Manifest, synthChart } from '@cdk8s-charts/utils';
 import { App } from 'cdk8s';
 import { describe, expect, it } from 'vitest';
 import { DevenvOci } from './construct';
-import type { DevenvOciProps } from './types';
+import type { DevenvOciProps, TailscaleFunnelConfig } from './types';
 
 /** Synthesize a DevenvOci chart for assertions. */
 function synth(props: DevenvOciProps): Manifest[] {
@@ -112,6 +112,14 @@ describe('DevenvOci — tailscale sidecar', () => {
       tailnetDomain: 'tail1234.ts.net',
     },
   };
+  const tailscaleCfg = tsProps.tailscale as NonNullable<DevenvOciProps['tailscale']>;
+  // Computed, not a literal — secret scanners flag high-entropy strings.
+  const funnelCfg = {
+    githubClientId: 'Iv1.testclient',
+    githubClientSecret: 'ghs_secret',
+    githubUser: 'ThePlenkov',
+    cookieSecret: Buffer.from('a'.repeat(32)).toString('base64'),
+  };
 
   it('emits the authkey Secret and a tailscale sidecar serving paseo/ssh on loopback', () => {
     const m = synth(tsProps);
@@ -172,7 +180,7 @@ describe('DevenvOci — tailscale sidecar', () => {
 
     const init = spec.initContainers?.find((c) => c.name === 'tailscale-state-init');
     expect(init).toBeDefined();
-    expect(init?.command?.join(' ')).toContain('chown 1000:1000 /workspace-state/.tailscale');
+    expect(init?.command?.join(' ')).toContain('chown -R 1000:1000 /workspace-state/.tailscale');
     expect(init?.volumeMounts).toContainEqual({
       name: 'workspace-state',
       mountPath: '/workspace-state',
@@ -207,9 +215,118 @@ describe('DevenvOci — tailscale sidecar', () => {
     });
   });
 
+  it('routes https through oauth2-proxy and enables funnel when funnel is set', () => {
+    const m = synth({
+      ...tsProps,
+      tailscale: {
+        ...tailscaleCfg,
+        funnel: funnelCfg,
+      },
+    });
+    const dep = findManifest(m, 'Deployment', 'devenv');
+    const spec = dep.spec as {
+      template: {
+        spec: {
+          containers: { name: string; command?: string[]; args?: string[]; env?: unknown[] }[];
+        };
+      };
+    };
+    const ts = spec.template.spec.containers.find((c) => c.name === 'tailscale');
+    const script = ts?.command?.join(' ') ?? '';
+    expect(script).toContain('funnel --bg --https=443 "http://127.0.0.1:4180"');
+    expect(script).not.toContain('serve --bg --https=443 "http://127.0.0.1:6767"');
+    // ssh stays tailnet-only.
+    expect(script).toContain('serve --bg --tcp=2222 "tcp://127.0.0.1:2222"');
+
+    const proxy = spec.template.spec.containers.find((c) => c.name === 'oauth2-proxy');
+    expect(proxy).toBeDefined();
+    expect(proxy?.args).toContain(
+      '--redirect-url=https://devenv-civo.tail1234.ts.net/oauth2/callback',
+    );
+    expect(proxy?.args).toContain('--github-user=ThePlenkov');
+    expect(proxy?.args).toContain('--provider=github');
+    expect(proxy?.env).toContainEqual({
+      name: 'OAUTH2_PROXY_CLIENT_SECRET',
+      valueFrom: { secretKeyRef: { name: 'devenv-oauth-proxy', key: 'client-secret' } },
+    });
+
+    const secret = findManifest(m, 'Secret', 'devenv-oauth-proxy');
+    expect((secret as { stringData?: Record<string, string> }).stringData).toEqual({
+      'client-id': 'Iv1.testclient',
+      'client-secret': 'ghs_secret',
+      'cookie-secret': funnelCfg.cookieSecret,
+    });
+  });
+
+  it('rejects funnel with missing/empty OAuth fields', () => {
+    for (const field of [
+      'githubClientId',
+      'githubClientSecret',
+      'githubUser',
+      'cookieSecret',
+    ] as const) {
+      const missing = Object.fromEntries(Object.entries(funnelCfg).filter(([k]) => k !== field));
+      for (const funnel of [missing, { ...funnelCfg, [field]: '' }]) {
+        const badFunnel = funnel as unknown as TailscaleFunnelConfig;
+        expect(() =>
+          synth({
+            ...tsProps,
+            tailscale: { ...tailscaleCfg, funnel: badFunnel },
+          }),
+        ).toThrow(field);
+      }
+    }
+  });
+
+  it('rejects funnel with a cookieSecret that is not base64 of 16/24/32 bytes', () => {
+    for (const bad of ['not-base64!!!', 'emVybw==', 'YWFhYWFhYWFhYQ==']) {
+      // 'emVybw==' = 4 bytes, 'YWFhYWFhYWFhYQ==' = 12 bytes.
+      expect(() =>
+        synth({
+          ...tsProps,
+          tailscale: {
+            ...tailscaleCfg,
+            funnel: { ...funnelCfg, cookieSecret: bad },
+          },
+        }),
+      ).toThrow(/cookieSecret/);
+    }
+  });
+
+  it('rejects funnel without tailnetDomain — the redirect URL needs the FQDN', () => {
+    expect(() =>
+      synth({
+        ...tsProps,
+        tailscale: {
+          hostname: 'devenv-civo',
+          authKey: 'tskey-auth-test',
+          funnel: {
+            githubClientId: 'x',
+            githubClientSecret: 'y',
+            githubUser: 'ThePlenkov',
+            cookieSecret: 'z',
+          },
+        },
+      }),
+    ).toThrow(/tailnetDomain/);
+  });
+
+  it('omits the oauth2-proxy sidecar without the funnel prop', () => {
+    const m = synth(tsProps);
+    const dep = findManifest(m, 'Deployment', 'devenv');
+    const containers = (dep.spec as { template: { spec: { containers: { name: string }[] } } })
+      .template.spec.containers;
+    expect(containers.map((c) => c.name)).not.toContain('oauth2-proxy');
+    expect(
+      m.some((d) => (d.metadata as { name?: string } | undefined)?.name === 'devenv-oauth-proxy'),
+    ).toBe(false);
+  });
+
   it('omits the sidecar and secret without the tailscale prop', () => {
     const m = synth(baseProps);
-    expect(m.some((d) => d.metadata?.name === 'devenv-tailscale')).toBe(false);
+    expect(
+      m.some((d) => (d.metadata as { name?: string } | undefined)?.name === 'devenv-tailscale'),
+    ).toBe(false);
     const dep = findManifest(m, 'Deployment', 'devenv');
     const containers = (dep.spec as { template: { spec: { containers: { name: string }[] } } })
       .template.spec.containers;

@@ -30,7 +30,12 @@ export interface SidecarContainer {
   securityContext?: Record<string, unknown>;
   args?: string[];
   ports?: Array<{ containerPort: number; name: string }>;
-  volumeMounts?: Array<{ name: string; mountPath: string; readOnly?: boolean }>;
+  volumeMounts?: Array<{
+    name: string;
+    mountPath: string;
+    readOnly?: boolean;
+    subPath?: string;
+  }>;
   resources?: Record<string, unknown>;
   [key: string]: unknown;
 }
