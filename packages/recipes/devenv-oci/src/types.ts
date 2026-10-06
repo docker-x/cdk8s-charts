@@ -52,6 +52,36 @@ export interface PodSandboxConfig {
   enabled?: boolean;
 }
 
+/**
+ * In-pod tailscale for clusters with no host-level tailscale (managed
+ * k8s). The sidecar shares the pod netns, so `tailscale serve` proxies
+ * paseo on loopback directly — the socat forwarder and NodePorts become
+ * debug conveniences, not the access path.
+ */
+export interface TailscaleConfig {
+  /**
+   * Tailnet node name — FQDN becomes `<hostname>.<tailnet>.ts.net`.
+   * Must be unique in the tailnet.
+   */
+  hostname: string;
+  /**
+   * Reusable auth key — the chart emits a `${name}-tailscale` Secret so
+   * the value reaches the pod via secretKeyRef, not an inline env literal.
+   */
+  authKey: string;
+  /**
+   * Tailnet MagicDNS suffix (e.g. "tail1234.ts.net"). When set, the
+   * chart appends `<hostname>.<tailnetDomain>` to PASEO_HOSTNAMES — the
+   * sidecar serve URL otherwise gets rejected by paseo's host check.
+   */
+  tailnetDomain?: string;
+  /**
+   * tailscale container image (default: pinned stable tag). Override for
+   * private registries or to track a different release.
+   */
+  image?: string;
+}
+
 /** Fixed nodePort assignments for the workspace Service (type NodePort). */
 export interface NodePorts {
   /** Paseo web UI nodePort — the tailnet `tailscale serve` target (default: 30676). */
@@ -115,6 +145,12 @@ export interface DevenvOciProps {
    * cluster-assigned port.
    */
   nodePorts?: NodePorts;
+  /**
+   * In-pod tailscale sidecar — the access path on clusters whose nodes
+   * have no tailscale (managed k3s like Civo). State persists in the
+   * workspace PVC so pod restarts keep the same tailnet identity.
+   */
+  tailscale?: TailscaleConfig;
   /**
    * Raw devenv value overrides. Note: unlike the OpenShift recipe there
    * is no oauth-proxy in front of paseo — the daemon binds 127.0.0.1, so
