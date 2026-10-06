@@ -265,8 +265,7 @@ describe('DevenvOci — tailscale sidecar', () => {
       'githubUser',
       'cookieSecret',
     ] as const) {
-      const missing = { ...funnelCfg } as Record<string, string>;
-      delete missing[field];
+      const missing = Object.fromEntries(Object.entries(funnelCfg).filter(([k]) => k !== field));
       for (const funnel of [missing, { ...funnelCfg, [field]: '' }]) {
         const badFunnel = funnel as unknown as TailscaleFunnelConfig;
         expect(() =>
