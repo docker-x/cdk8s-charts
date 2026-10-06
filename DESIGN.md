@@ -1501,9 +1501,11 @@ Composes the Devenv construct for vanilla Kubernetes (OCI cloud VMs, Civo
 managed k3s — anywhere without OpenShift Routes/SCC):
 
 1. **Devenv workspace** — Deployment + PVC + SSH, fixed NodePorts
-   (paseo `30676`, ssh `30222`) as stable targets for the access path
+   (paseo `30676`, ssh `30222`) as defaults for direct/debug access —
+   the tailscale access path serves loopback inside the pod instead
 2. **Paseo forwarder** — socat sidecar bridging the pod IP to the
-   loopback-bound paseo daemon (there is no oauth-proxy on this recipe)
+   loopback-bound paseo daemon (no oauth-proxy by default; the funnel
+   variant adds one — see below)
 3. **Tailscale sidecar** (`tailscale`, optional) — userspace-networking
    `tailscaled` sharing the pod netns; `serve` proxies paseo https/443
    and sshd tcp/2222 on loopback. Node state persists in the workspace
@@ -1524,13 +1526,22 @@ managed k3s — anywhere without OpenShift Routes/SCC):
 **Guards**: `tailscale` requires `replicas=1` (shared PVC state +
 unique tailnet hostname); `tailscale.funnel` requires `tailnetDomain`.
 
-**Props** (`DevenvOciProps`): `namespace`, `image`, `externalHostnames`,
-`sshAuthorizedKeys` (required); `tailscale` (`hostname`, `authKey`,
-`tailnetDomain`, `funnel`{`githubClientId`, `githubClientSecret`,
-`githubUser`, `cookieSecret`, `image`}, `image`), `backup`,
-`paseoAutoResume`, `podSandbox`, `nodePorts`, `pvcSize`,
-`pvcStorageClass`, `existingPvcName`, `homeMountPath`, `name`, `env`,
-`resources`, `ghcrPullSecret`, `imageDigest`, `values` (optional).
+**Props** (`DevenvOciProps`):
+
+| Prop | Type | Required | Purpose |
+|------|------|----------|---------|
+| `namespace` | `string` | yes | K8s namespace |
+| `image` | `string` | yes | Workspace image |
+| `externalHostnames` | `string[]` | yes | Allowed paseo hosts |
+| `sshAuthorizedKeys` | `string` | yes | sshd authorized_keys |
+| `tailscale` | `TailscaleConfig` | no | In-pod tailnet sidecar; `hostname` + `authKey` required inside it |
+| `tailscale.funnel` | `TailscaleFunnelConfig` | no | Public access via funnel + oauth2-proxy (all four creds required together) |
+| `backup` | `BackupConfig` | no | R2 backup/restore |
+| `paseoAutoResume` | `object` | no | Idle-resume ConfigMap |
+| `podSandbox` | `object` | no | Workspace pod RBAC |
+| `nodePorts` | `object` | no | NodePort overrides |
+| `pvcSize`/`pvcStorageClass`/`existingPvcName` | `string` | no | Storage |
+| `homeMountPath`/`name`/`env`/`resources`/`ghcrPullSecret`/`imageDigest`/`values` | — | no | Misc overrides |
 
 **Exports** (`DevenvOciExports`): `pvcName`, `serviceName`,
 `paseoNodePort`, `sshNodePort`, `backupCronJobName`.

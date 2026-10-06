@@ -241,6 +241,9 @@ function buildOauthProxySidecar(
       '--provider=github',
       `--redirect-url=https://${redirectFqdn}/oauth2/callback`,
       `--github-user=${funnel.githubUser}`,
+      // oauth2-proxy refuses to start without an email-validation option;
+      // the github-user allowlist above is the real gate.
+      '--email-domain=*',
       `--upstream=http://127.0.0.1:${paseoPort}`,
       // funnel relays raw TCP — the tailscaled on this pod terminates
       // TLS, so trust the forwarded headers it sets.
@@ -421,6 +424,10 @@ export class DevenvOci extends Chart {
           'tailscale sidecar requires replicas=1 (shared PVC state + unique tailnet hostname)',
         );
       }
+      // The MagicDNS FQDN is derived from this label — the OAuth redirect
+      // URL and PASEO_HOSTNAMES assume tailscale accepts it verbatim, so
+      // reject anything that would get normalized or renamed.
+      validateDnsLabels(props.tailscale.hostname, props.tailscale.hostname);
       createTailscaleSecret(this, name, namespace, props.tailscale.authKey);
       initContainers.push(buildTailscaleInitContainer(props.tailscale));
       sidecars.push(buildTailscaleSidecar(name, props.tailscale, paseoPort, sshPort));
