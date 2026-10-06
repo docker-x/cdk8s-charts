@@ -131,14 +131,16 @@ function buildTailscaleSidecar(
       '/bin/sh',
       '-ec',
       [
-        'tailscaled --statedir=$TS_STATE_DIR --socket=$TS_SOCKET --tun=userspace-networking &',
+        'tailscaled --statedir=$TS_STATE_DIR --socket="$TS_SOCKET" --tun=userspace-networking &',
         'DAEMON=$!',
         // Retried `tailscale up` is idempotent: with persisted state it
         // just re-affirms settings; fresh state consumes the authkey.
         // A dead daemon during the loop exits the container (restart).
-        'until tailscale up --authkey="$TS_AUTHKEY" --hostname="$TS_HOSTNAME" --accept-dns=false; do kill -0 "$DAEMON" || exit 1; sleep 2; done',
-        `tailscale serve --bg --https=443 "http://127.0.0.1:${paseoPort}" || exit 1`,
-        `tailscale serve --bg --tcp=${TAILSCALE_SSH_PORT} "tcp://127.0.0.1:${sshPort}" || exit 1`,
+        // --socket is needed on every CLI call: TS_SOCKET is a
+        // containerboot env, not read by the tailscale CLI.
+        'until tailscale --socket="$TS_SOCKET" up --authkey="$TS_AUTHKEY" --hostname="$TS_HOSTNAME" --accept-dns=false; do kill -0 "$DAEMON" || exit 1; sleep 2; done',
+        `tailscale --socket="$TS_SOCKET" serve --bg --https=443 "http://127.0.0.1:${paseoPort}" || exit 1`,
+        `tailscale --socket="$TS_SOCKET" serve --bg --tcp=${TAILSCALE_SSH_PORT} "tcp://127.0.0.1:${sshPort}" || exit 1`,
         // Exit if tailscaled dies — the pod restarts the sidecar.
         'wait "$DAEMON"',
       ].join('\n'),
