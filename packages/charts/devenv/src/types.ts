@@ -108,6 +108,13 @@ export interface Values {
   automountServiceAccountToken?: boolean;
   /** Security context runAsNonRoot (default: true). */
   runAsNonRoot?: boolean;
+  /**
+   * Container security context runAsUser (default: undefined — image
+   * USER). Set a numeric uid on clusters without an SCC/mutating
+   * admission: kubelet can't verify runAsNonRoot when the image USER
+   * is a name (e.g. "user") and refuses to start the container.
+   */
+  runAsUser?: number;
   /** Pod security context fsGroup for PVC ownership (default: undefined). */
   fsGroup?: number;
   /** Resource name prefix (default: {id}). */

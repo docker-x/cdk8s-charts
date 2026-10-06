@@ -511,6 +511,7 @@ function buildWorkspacePodSpec(
     image: container.image ?? values.image,
     securityContext: {
       runAsNonRoot: values.runAsNonRoot,
+      ...(values.runAsUser !== undefined ? { runAsUser: values.runAsUser } : {}),
       allowPrivilegeEscalation: false,
       capabilities: { drop: ['ALL'] },
     },
@@ -686,6 +687,7 @@ export interface WorkspaceValuesProps {
   serviceAccountAnnotations?: Record<string, string>;
   automountServiceAccountToken?: boolean;
   runAsNonRoot?: boolean;
+  runAsUser?: number;
   fsGroup?: number;
   values?: Record<string, unknown>;
 }
@@ -730,6 +732,7 @@ export function buildWorkspaceComputedValues(
     serviceAccountAnnotations: props.serviceAccountAnnotations,
     automountServiceAccountToken: props.automountServiceAccountToken ?? true,
     runAsNonRoot: props.runAsNonRoot ?? true,
+    runAsUser: props.runAsUser,
     fsGroup: props.fsGroup,
     name,
   };
