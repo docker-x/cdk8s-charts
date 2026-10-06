@@ -2,7 +2,7 @@ import { findManifest, type Manifest, synthChart } from '@cdk8s-charts/utils';
 import { App } from 'cdk8s';
 import { describe, expect, it } from 'vitest';
 import { DevenvOci } from './construct';
-import type { DevenvOciProps } from './types';
+import type { DevenvOciProps, TailscaleFunnelConfig } from './types';
 
 /** Synthesize a DevenvOci chart for assertions. */
 function synth(props: DevenvOciProps): Manifest[] {
@@ -265,15 +265,17 @@ describe('DevenvOci — tailscale sidecar', () => {
       'githubUser',
       'cookieSecret',
     ] as const) {
-      expect(() =>
-        synth({
-          ...tsProps,
-          tailscale: {
-            ...tailscaleCfg,
-            funnel: { ...funnelCfg, [field]: '' },
-          },
-        }),
-      ).toThrow(field);
+      const missing = { ...funnelCfg } as Record<string, string>;
+      delete missing[field];
+      for (const funnel of [missing, { ...funnelCfg, [field]: '' }]) {
+        const badFunnel = funnel as unknown as TailscaleFunnelConfig;
+        expect(() =>
+          synth({
+            ...tsProps,
+            tailscale: { ...tailscaleCfg, funnel: badFunnel },
+          }),
+        ).toThrow(field);
+      }
     }
   });
 

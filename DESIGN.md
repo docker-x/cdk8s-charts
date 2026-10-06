@@ -1543,6 +1543,11 @@ unique tailnet hostname); `tailscale.funnel` requires `tailnetDomain`.
 | `pvcSize`/`pvcStorageClass`/`existingPvcName` | `string` | no | Storage |
 | `homeMountPath`/`name`/`env`/`resources`/`ghcrPullSecret`/`imageDigest`/`values` | — | no | Misc overrides |
 
+Synth-time validation: `tailscale.hostname` must be a DNS label (the
+MagicDNS FQDN is derived from it verbatim) and `funnel.cookieSecret`
+must be canonical base64 decoding to exactly 16, 24 or 32 bytes
+(oauth2-proxy AES key size).
+
 **Exports** (`DevenvOciExports`): `pvcName`, `serviceName`,
 `paseoNodePort`, `sshNodePort`, `backupCronJobName`.
 
