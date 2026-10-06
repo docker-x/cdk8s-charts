@@ -37,6 +37,7 @@ export interface WorkspaceValues {
   annotations?: Record<string, string>;
   replicas?: number;
   runAsNonRoot?: boolean;
+  runAsUser?: number;
   fsGroup?: number;
   image?: string;
   command?: string[];
@@ -697,6 +698,11 @@ export function buildWorkspaceComputedValues(
   name: string,
   defaults: WorkspaceValuesDefaults,
 ): Record<string, unknown> {
+  if (props.runAsUser === 0 && (props.runAsNonRoot ?? true)) {
+    throw new Error(
+      'runAsUser=0 requires runAsNonRoot=false — kubelet would reject the combination',
+    );
+  }
   const computed: Record<string, unknown> = {
     image: props.image,
     imageDigest: props.imageDigest ?? 'unknown',
