@@ -1546,7 +1546,11 @@ unique tailnet hostname); `tailscale.funnel` requires `tailnetDomain`.
 Synth-time validation: `tailscale.hostname` must be a DNS label (the
 MagicDNS FQDN is derived from it verbatim) and `funnel.cookieSecret`
 must be canonical base64 decoding to exactly 16, 24 or 32 bytes
-(oauth2-proxy AES key size).
+(oauth2-proxy AES key size). Keep the string **urlsafe-compatible** —
+no `+`/`/` characters: oauth2-proxy decodes the secret URL-safe and
+treats a std-base64 value containing those characters as a raw 44-byte
+string, which fails its AES-length check. Generate with
+`openssl rand -base64 32` and retry until no `+`/`/` appears.
 
 **Exports** (`DevenvOciExports`): `pvcName`, `serviceName`,
 `paseoNodePort`, `sshNodePort`, `backupCronJobName`.
