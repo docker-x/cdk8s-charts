@@ -278,6 +278,66 @@ describe('DevenvOci — tailscale sidecar', () => {
     }
   });
 
+  it('configures oauth2-proxy for a generic OIDC issuer when provider is oidc', () => {
+    const m = synth({
+      ...tsProps,
+      tailscale: {
+        ...tailscaleCfg,
+        funnel: {
+          provider: 'oidc',
+          oidcIssuerUrl: 'https://tenant.logto.app/oidc',
+          oidcClientId: 'oidc-client',
+          oidcClientSecret: 'oidc-secret',
+          cookieSecret: funnelCfg.cookieSecret,
+        },
+      },
+    });
+    const spec = findManifest(m, 'Deployment', 'devenv').spec as {
+      template: { spec: { containers: { name: string; args?: string[] }[] } };
+    };
+    const proxy = spec.template.spec.containers.find((c) => c.name === 'oauth2-proxy');
+    expect(proxy?.args).toContain('--provider=oidc');
+    expect(proxy?.args).toContain('--oidc-issuer-url=https://tenant.logto.app/oidc');
+    expect(proxy?.args).toContain('--code-challenge-method=S256');
+    expect(proxy?.args).not.toContain('--provider=github');
+
+    const secret = findManifest(m, 'Secret', 'devenv-oauth-proxy');
+    expect((secret as { stringData?: Record<string, string> }).stringData).toEqual({
+      'client-id': 'oidc-client',
+      'client-secret': 'oidc-secret',
+      'cookie-secret': funnelCfg.cookieSecret,
+    });
+  });
+
+  it('rejects an oidc funnel with missing/empty OIDC fields', () => {
+    const base = {
+      provider: 'oidc' as const,
+      oidcIssuerUrl: 'https://tenant.logto.app/oidc',
+      oidcClientId: 'oidc-client',
+      oidcClientSecret: 'oidc-secret',
+      cookieSecret: funnelCfg.cookieSecret,
+    };
+    for (const field of [
+      'oidcIssuerUrl',
+      'oidcClientId',
+      'oidcClientSecret',
+      'cookieSecret',
+    ] as const) {
+      const missing = Object.fromEntries(Object.entries(base).filter(([k]) => k !== field));
+      for (const funnel of [missing, { ...base, [field]: '' }]) {
+        expect(() =>
+          synth({
+            ...tsProps,
+            tailscale: {
+              ...tailscaleCfg,
+              funnel: funnel as unknown as TailscaleFunnelConfig,
+            },
+          }),
+        ).toThrow(field);
+      }
+    }
+  });
+
   it('rejects funnel with a cookieSecret that is not base64 of 16/24/32 bytes', () => {
     for (const bad of ['not-base64!!!', 'emVybw==', 'YWFhYWFhYWFhYQ==']) {
       // 'emVybw==' = 4 bytes, 'YWFhYWFhYWFhYQ==' = 12 bytes.
