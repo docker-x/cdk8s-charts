@@ -250,11 +250,19 @@ function buildOauthProxySidecar(
     name: 'oauth2-proxy',
     image: funnel.image ?? OAUTH2_PROXY_IMAGE,
     args: [
-      '--provider=github',
+      ...(funnel.provider === 'oidc'
+        ? [
+            '--provider=oidc',
+            `--oidc-issuer-url=${funnel.oidcIssuerUrl}`,
+            '--oidc-email-claim=email',
+            // Logto and most modern issuers require PKCE.
+            '--code-challenge-method=S256',
+          ]
+        : ['--provider=github', `--github-user=${funnel.githubUser}`]),
       `--redirect-url=https://${redirectFqdn}/oauth2/callback`,
-      `--github-user=${funnel.githubUser}`,
       // oauth2-proxy refuses to start without an email-validation option;
-      // the github-user allowlist above is the real gate.
+      // for github the --github-user allowlist is the real gate, for oidc
+      // the issuer's private tenant is.
       '--email-domain=*',
       `--upstream=http://127.0.0.1:${paseoPort}`,
       // funnel relays raw TCP — the tailscaled on this pod terminates
@@ -289,18 +297,39 @@ function buildOauthProxySidecar(
  * synth time instead of serving a broken SSO page.
  */
 function validateFunnelConfig(funnel: TailscaleFunnelConfig): void {
-  const missing = (
-    [
-      ['githubClientId', funnel.githubClientId],
-      ['githubClientSecret', funnel.githubClientSecret],
-      ['githubUser', funnel.githubUser],
-      ['cookieSecret', funnel.cookieSecret],
-    ] as const
-  )
+  const providerFields =
+    funnel.provider === 'oidc'
+      ? ([
+          ['oidcIssuerUrl', funnel.oidcIssuerUrl],
+          ['oidcClientId', funnel.oidcClientId],
+          ['oidcClientSecret', funnel.oidcClientSecret],
+        ] as const)
+      : ([
+          ['githubClientId', funnel.githubClientId],
+          ['githubClientSecret', funnel.githubClientSecret],
+          ['githubUser', funnel.githubUser],
+        ] as const);
+  const missing = [...providerFields, ['cookieSecret', funnel.cookieSecret] as const]
     .filter(([, v]) => !v)
     .map(([k]) => k);
   if (missing.length > 0) {
     throw new Error(`tailscale funnel: missing/empty field(s): ${missing.join(', ')}`);
+  }
+  // A malformed issuer passes the truthiness check above but makes
+  // oauth2-proxy's discovery fetch fail at runtime — the same
+  // "broken SSO page" outcome the validator exists to prevent.
+  if (funnel.provider === 'oidc') {
+    let issuer: URL;
+    try {
+      issuer = new URL(funnel.oidcIssuerUrl ?? '');
+    } catch {
+      throw new Error(
+        `tailscale funnel: oidcIssuerUrl is not a valid URL: ${funnel.oidcIssuerUrl}`,
+      );
+    }
+    if (issuer.protocol !== 'https:') {
+      throw new Error(`tailscale funnel: oidcIssuerUrl must be https: ${funnel.oidcIssuerUrl}`);
+    }
   }
   const decoded = Buffer.from(funnel.cookieSecret, 'base64');
   if (
@@ -332,8 +361,12 @@ function createOauthProxySecret(
     metadata: { name: `${name}-oauth-proxy`, namespace },
     type: 'Opaque',
     stringData: {
-      'client-id': funnel.githubClientId,
-      'client-secret': funnel.githubClientSecret,
+      'client-id':
+        funnel.provider === 'oidc' ? (funnel.oidcClientId ?? '') : (funnel.githubClientId ?? ''),
+      'client-secret':
+        funnel.provider === 'oidc'
+          ? (funnel.oidcClientSecret ?? '')
+          : (funnel.githubClientSecret ?? ''),
       'cookie-secret': funnel.cookieSecret,
     },
   });

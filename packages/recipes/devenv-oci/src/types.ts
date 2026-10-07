@@ -66,15 +66,36 @@ export interface PodSandboxConfig {
  * reaching paseo. The ssh serve route stays tailnet-only.
  */
 export interface TailscaleFunnelConfig {
-  /** GitHub OAuth client id (OAuth App or GitHub App). */
-  githubClientId: string;
+  /**
+   * oauth2-proxy provider (default `'github'`). `'oidc'` targets any
+   * generic OIDC issuer (Logto, Auth0, Keycloak) — its hosted login page
+   * replaces GitHub's scope-and-org consent screen.
+   */
+  provider?: 'github' | 'oidc';
+  /** GitHub OAuth client id (OAuth App or GitHub App). Required for `provider: 'github'`. */
+  githubClientId?: string;
   /**
    * GitHub OAuth client secret — emitted into the `${name}-oauth-proxy`
    * Secret and read via secretKeyRef, never an inline literal.
+   * Required for `provider: 'github'`.
    */
-  githubClientSecret: string;
-  /** GitHub username allowlist entry (oauth2-proxy --github-user). */
-  githubUser: string;
+  githubClientSecret?: string;
+  /** GitHub username allowlist entry (oauth2-proxy --github-user). Required for `provider: 'github'`. */
+  githubUser?: string;
+  /**
+   * OIDC issuer URL (e.g. `https://<tenant>.logto.app/oidc`) — required
+   * for `provider: 'oidc'`. The issuer must be a private tenant with
+   * self-registration disabled: the proxy accepts any authenticated
+   * user it issues tokens for.
+   */
+  oidcIssuerUrl?: string;
+  /** OIDC client id — required for `provider: 'oidc'`. */
+  oidcClientId?: string;
+  /**
+   * OIDC client secret — emitted into the `${name}-oauth-proxy` Secret
+   * and read via secretKeyRef. Required for `provider: 'oidc'`.
+   */
+  oidcClientSecret?: string;
   /**
    * Base64 cookie-encryption secret for the proxy session cookie.
    * Must decode to exactly 16, 24 or 32 bytes and be urlsafe-compatible
