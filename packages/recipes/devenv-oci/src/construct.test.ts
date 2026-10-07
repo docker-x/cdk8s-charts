@@ -298,6 +298,7 @@ describe('DevenvOci — tailscale sidecar', () => {
     const proxy = spec.template.spec.containers.find((c) => c.name === 'oauth2-proxy');
     expect(proxy?.args).toContain('--provider=oidc');
     expect(proxy?.args).toContain('--oidc-issuer-url=https://tenant.logto.app/oidc');
+    expect(proxy?.args).toContain('--oidc-email-claim=email');
     expect(proxy?.args).toContain('--code-challenge-method=S256');
     expect(proxy?.args).not.toContain('--provider=github');
 
@@ -335,6 +336,26 @@ describe('DevenvOci — tailscale sidecar', () => {
           }),
         ).toThrow(field);
       }
+    }
+  });
+
+  it('rejects an oidc funnel with a malformed or non-https issuer URL', () => {
+    const base = {
+      provider: 'oidc' as const,
+      oidcClientId: 'oidc-client',
+      oidcClientSecret: 'oidc-secret',
+      cookieSecret: funnelCfg.cookieSecret,
+    };
+    for (const bad of ['not-a-url', 'logto.app/oidc', 'http://tenant.logto.app/oidc']) {
+      expect(() =>
+        synth({
+          ...tsProps,
+          tailscale: {
+            ...tailscaleCfg,
+            funnel: { ...base, oidcIssuerUrl: bad },
+          },
+        }),
+      ).toThrow(/oidcIssuerUrl/);
     }
   });
 

@@ -315,6 +315,22 @@ function validateFunnelConfig(funnel: TailscaleFunnelConfig): void {
   if (missing.length > 0) {
     throw new Error(`tailscale funnel: missing/empty field(s): ${missing.join(', ')}`);
   }
+  // A malformed issuer passes the truthiness check above but makes
+  // oauth2-proxy's discovery fetch fail at runtime — the same
+  // "broken SSO page" outcome the validator exists to prevent.
+  if (funnel.provider === 'oidc') {
+    let issuer: URL;
+    try {
+      issuer = new URL(funnel.oidcIssuerUrl ?? '');
+    } catch {
+      throw new Error(
+        `tailscale funnel: oidcIssuerUrl is not a valid URL: ${funnel.oidcIssuerUrl}`,
+      );
+    }
+    if (issuer.protocol !== 'https:') {
+      throw new Error(`tailscale funnel: oidcIssuerUrl must be https: ${funnel.oidcIssuerUrl}`);
+    }
+  }
   const decoded = Buffer.from(funnel.cookieSecret, 'base64');
   if (
     ![16, 24, 32].includes(decoded.length) ||
