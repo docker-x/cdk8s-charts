@@ -283,8 +283,10 @@ function buildOauthProxySidecar(
 /**
  * oauth2-proxy fails closed-but-late on bad input: an empty client id just
  * breaks login, and cookieSecret must be base64 of exactly 16, 24 or 32
- * bytes (AES-128/192/256). Reject early so a half-configured funnel fails
- * at synth time instead of serving a broken SSO page.
+ * bytes (AES-128/192/256) with a urlsafe-compatible alphabet — oauth2-proxy
+ * decodes it URL-safe, so std base64 containing + or / fails its startup
+ * AES-length check. Reject early so a half-configured funnel fails at
+ * synth time instead of serving a broken SSO page.
  */
 function validateFunnelConfig(funnel: TailscaleFunnelConfig): void {
   const missing = (
@@ -307,6 +309,12 @@ function validateFunnelConfig(funnel: TailscaleFunnelConfig): void {
   ) {
     throw new Error(
       'tailscale funnel: cookieSecret must be base64 encoding exactly 16, 24 or 32 bytes',
+    );
+  }
+  if (/[+/]/.test(funnel.cookieSecret)) {
+    throw new Error(
+      'tailscale funnel: cookieSecret must be urlsafe-compatible (no + or /) — ' +
+        'oauth2-proxy decodes it URL-safe and rejects std-base64 containing those characters',
     );
   }
 }

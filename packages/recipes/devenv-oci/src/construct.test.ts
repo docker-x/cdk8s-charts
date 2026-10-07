@@ -293,6 +293,22 @@ describe('DevenvOci — tailscale sidecar', () => {
     }
   });
 
+  it('rejects funnel with a cookieSecret containing + or / (urlsafe-unsafe)', () => {
+    // 32 bytes whose std-base64 form contains '+' — valid canonical
+    // base64 but oauth2-proxy decodes the secret URL-safe and fails.
+    const unsafe = Buffer.from(Array(32).fill(251)).toString('base64');
+    expect(unsafe).toMatch(/[+/]/);
+    expect(() =>
+      synth({
+        ...tsProps,
+        tailscale: {
+          ...tailscaleCfg,
+          funnel: { ...funnelCfg, cookieSecret: unsafe },
+        },
+      }),
+    ).toThrow(/urlsafe/);
+  });
+
   it('rejects funnel without tailnetDomain — the redirect URL needs the FQDN', () => {
     expect(() =>
       synth({

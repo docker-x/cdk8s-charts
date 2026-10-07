@@ -79,8 +79,9 @@ export interface TailscaleFunnelConfig {
    * Base64 cookie-encryption secret for the proxy session cookie.
    * Must decode to exactly 16, 24 or 32 bytes and be urlsafe-compatible
    * (no `+`/`/`) — oauth2-proxy decodes it URL-safe; std base64 with
-   * those characters crashes it. Generate: `openssl rand -base64 32`,
-   * retry until no `+`/`/` appears.
+   * those characters fails its startup AES-length check. Enforced at
+   * synth time. Generate: `openssl rand -base64 32`, retry until no
+   * `+`/`/` appears.
    */
   cookieSecret: string;
   /** oauth2-proxy image override (default: pinned stable tag). */
