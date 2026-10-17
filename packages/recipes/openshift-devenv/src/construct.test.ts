@@ -161,7 +161,7 @@ describe('OpenShiftDevenv recipe — terminal Route', () => {
     expect(routeNames).not.toContain('devenv-terminal');
   });
 
-  it('creates the terminal Route when terminalRoute is enabled', () => {
+  it('creates the SSO-fronted terminal Route when terminalRoute is enabled', () => {
     const m = synth({ ...baseProps, terminalRoute: true });
     const route = findManifest(m, 'Route', 'devenv-terminal');
     expect(route).toBeDefined();
@@ -169,8 +169,62 @@ describe('OpenShiftDevenv recipe — terminal Route', () => {
       port: { targetPort: string };
       tls: { termination: string };
     };
-    expect(spec.port.targetPort).toBe('terminal');
+    // The Route points at the terminal oauth-proxy sidecar, not the app —
+    // the upstream is only reachable over loopback inside the pod.
+    expect(spec.port.targetPort).toBe('terminal-sso');
     expect(spec.tls.termination).toBe('edge');
+
+    // Second oauth-proxy sidecar: upstream the terminal port, own listener.
+    const spec2 = podSpec(m) as unknown as {
+      containers?: { name: string; args?: string[] }[];
+    };
+    const proxy = spec2.containers?.find((c) => c.name === 'oauth-proxy-terminal');
+    expect(proxy).toBeDefined();
+    const args = proxy?.args?.join(' ') ?? '';
+    expect(args).toContain('--upstream=http://127.0.0.1:8081');
+    expect(args).toContain('--http-address=0.0.0.0:4181');
+    expect(args).toContain(
+      '--openshift-sar={"namespace":"test-ns","resource":"pods","verb":"get"}',
+    );
+    // No probes route through this proxy — no unauthenticated /healthz.
+    expect(args).not.toContain('--skip-auth-regex');
+
+    // Service exposes the proxy port (name ≤15 chars).
+    const svc = findManifest(m, 'Service', 'devenv');
+    const ports = (svc.spec as { ports: { name: string; port: number }[] }).ports;
+    expect(ports.map((p) => p.name)).toContain('terminal-sso');
+    expect(ports.find((p) => p.name === 'terminal-sso')?.port).toBe(4181);
+
+    // The SA OAuth client whitelists the terminal callback on a dedicated
+    // suffix — never clobbering a caller's own .secondary.
+    const sa = findManifest(m, 'ServiceAccount', 'devenv-sa');
+    const ann = (sa.metadata as { annotations: Record<string, string> }).annotations;
+    expect(ann['serviceaccounts.openshift.io/oauth-redirecturi.terminal']).toBe(
+      'https://devenv-terminal-test-ns.apps.example.com/oauth/callback',
+    );
+  });
+
+  it('rejects a caller-set terminal redirect annotation', () => {
+    expect(() =>
+      synth({
+        ...baseProps,
+        terminalRoute: true,
+        values: {
+          serviceAccountAnnotations: {
+            'serviceaccounts.openshift.io/oauth-redirecturi.terminal': 'https://x.example.com',
+          },
+        },
+      }),
+    ).toThrow('chart-managed');
+  });
+
+  it('omits the terminal proxy sidecar without terminalRoute', () => {
+    const m = synth(baseProps);
+    const spec = podSpec(m) as unknown as { containers?: { name: string }[] };
+    expect(spec.containers?.map((c) => c.name)).not.toContain('oauth-proxy-terminal');
+    const svc = findManifest(m, 'Service', 'devenv');
+    const ports = (svc.spec as { ports: { name: string }[] }).ports;
+    expect(ports.map((p) => p.name)).not.toContain('terminal-sso');
   });
 
   it('exports the terminal Route name and URL only when enabled', () => {

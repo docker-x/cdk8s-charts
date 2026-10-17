@@ -124,9 +124,10 @@ export interface OpenShiftDevenvProps {
   previewRoute?: boolean;
   /**
    * Create a public Route for the terminal port (`values.terminalPort`,
-   * default 8081). Like the preview Route this bypasses oauth-proxy — the
-   * app on the port must enforce its own auth (e.g. a bearer token);
-   * without it anything the port serves is reachable. Default: false.
+   * default 8081). The Route is fronted by a second oauth-proxy sidecar
+   * (OpenShift SSO, same as the paseo Route) — the app on the port should
+   * bind 127.0.0.1 so only in-pod callers (the sidecar) can reach it.
+   * Default: false.
    */
   terminalRoute?: boolean;
   /** Raw devenv value overrides. */
